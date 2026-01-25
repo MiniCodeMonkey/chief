@@ -24,6 +24,12 @@ func main() {
 		case "edit":
 			runEdit()
 			return
+		case "status":
+			runStatus()
+			return
+		case "list":
+			runList()
+			return
 		case "help", "--help", "-h":
 			printHelp()
 			return
@@ -71,6 +77,29 @@ func runEdit() {
 	}
 
 	if err := cmd.RunEdit(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runStatus() {
+	opts := cmd.StatusOptions{}
+
+	// Parse arguments: chief status [name]
+	if len(os.Args) > 2 && !strings.HasPrefix(os.Args[2], "-") {
+		opts.Name = os.Args[2]
+	}
+
+	if err := cmd.RunStatus(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runList() {
+	opts := cmd.ListOptions{}
+
+	if err := cmd.RunList(opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -150,6 +179,8 @@ Usage:
 Commands:
   init [name] [context]     Create a new PRD interactively
   edit [name] [options]     Edit an existing PRD interactively
+  status [name]             Show progress for a PRD (default: main)
+  list                      List all PRDs with progress
   help                      Show this help message
 
 Global Options:
@@ -167,5 +198,8 @@ Examples:
   chief edit                Edit PRD in .chief/prds/main/
   chief edit auth           Edit PRD in .chief/prds/auth/
   chief edit auth --merge   Edit and auto-merge progress
+  chief status              Show progress for default PRD
+  chief status auth         Show progress for auth PRD
+  chief list                List all PRDs with progress
   chief --no-sound          Launch TUI without audio notifications`)
 }
