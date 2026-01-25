@@ -50,30 +50,16 @@ func (a *App) renderHeader() string {
 	// Branding
 	brand := headerStyle.Render("chief")
 
-	// State indicator
-	stateStyle := lipgloss.NewStyle().Bold(true)
-	switch a.state {
-	case StateRunning:
-		stateStyle = stateStyle.Foreground(primaryColor)
-	case StatePaused:
-		stateStyle = stateStyle.Foreground(warningColor)
-	case StateComplete:
-		stateStyle = stateStyle.Foreground(successColor)
-	case StateError:
-		stateStyle = stateStyle.Foreground(errorColor)
-	default:
-		stateStyle = stateStyle.Foreground(mutedColor)
-	}
+	// State indicator - use the centralized style system
+	stateStyle := GetStateStyle(a.state)
 	state := stateStyle.Render(fmt.Sprintf("[%s]", a.state.String()))
 
 	// Iteration count
-	iteration := lipgloss.NewStyle().Foreground(mutedColor).
-		Render(fmt.Sprintf("Iteration: %d", a.iteration))
+	iteration := SubtitleStyle.Render(fmt.Sprintf("Iteration: %d", a.iteration))
 
 	// Elapsed time
 	elapsed := a.GetElapsedTime()
-	elapsedStr := lipgloss.NewStyle().Foreground(mutedColor).
-		Render(fmt.Sprintf("Time: %s", formatDuration(elapsed)))
+	elapsedStr := SubtitleStyle.Render(fmt.Sprintf("Time: %s", formatDuration(elapsed)))
 
 	// Combine elements
 	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, brand, "  ", state)
@@ -84,7 +70,7 @@ func (a *App) renderHeader() string {
 	headerLine := lipgloss.JoinHorizontal(lipgloss.Center, leftPart, spacing, rightPart)
 
 	// Add a border below
-	border := lipgloss.NewStyle().Foreground(borderColor).Render(strings.Repeat("─", a.width))
+	border := DividerStyle.Render(strings.Repeat("─", a.width))
 
 	return lipgloss.JoinVertical(lipgloss.Left, headerLine, border)
 }
@@ -116,7 +102,7 @@ func (a *App) renderFooter() string {
 	activityLine := a.renderActivityLine()
 
 	// Add border above
-	border := lipgloss.NewStyle().Foreground(borderColor).Render(strings.Repeat("─", a.width))
+	border := DividerStyle.Render(strings.Repeat("─", a.width))
 
 	return lipgloss.JoinVertical(lipgloss.Left, border, activityLine, footerLine)
 }
@@ -134,18 +120,8 @@ func (a *App) renderActivityLine() string {
 		activity = activity[:maxLen-3] + "..."
 	}
 
-	// Style based on state
-	var activityStyle lipgloss.Style
-	switch a.state {
-	case StateRunning:
-		activityStyle = lipgloss.NewStyle().Foreground(primaryColor).Padding(0, 1)
-	case StateError:
-		activityStyle = lipgloss.NewStyle().Foreground(errorColor).Padding(0, 1)
-	case StateComplete:
-		activityStyle = lipgloss.NewStyle().Foreground(successColor).Padding(0, 1)
-	default:
-		activityStyle = lipgloss.NewStyle().Foreground(mutedColor).Padding(0, 1)
-	}
+	// Use the centralized activity style system
+	activityStyle := GetActivityStyle(a.state)
 
 	return activityStyle.Render(activity)
 }
@@ -154,11 +130,11 @@ func (a *App) renderActivityLine() string {
 func (a *App) renderStoriesPanel(width, height int) string {
 	var content strings.Builder
 
-	// Panel title
-	title := labelStyle.Render("Stories")
+	// Panel title using centralized style
+	title := PanelTitleStyle.Render("Stories")
 	content.WriteString(title)
 	content.WriteString("\n")
-	content.WriteString(strings.Repeat("─", width-2))
+	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-2)))
 	content.WriteString("\n")
 
 	// Story list
@@ -197,7 +173,7 @@ func (a *App) renderStoriesPanel(width, height int) string {
 	}
 
 	// Progress bar
-	content.WriteString(strings.Repeat("─", width-2))
+	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-2)))
 	content.WriteString("\n")
 	progressBar := a.renderProgressBar(width - 4)
 	content.WriteString(progressBar)
@@ -218,16 +194,22 @@ func (a *App) renderDetailsPanel(width, height int) string {
 	content.WriteString(titleStyle.Render(story.Title))
 	content.WriteString("\n\n")
 
-	// Status and Priority
+	// Status and Priority with proper styling
 	statusIcon := GetStatusIcon(story.Passes, story.InProgress)
-	statusText := "Pending"
+	var statusText string
+	var statusStyle lipgloss.Style
 	if story.Passes {
 		statusText = "Passed"
+		statusStyle = statusPassedStyle
 	} else if story.InProgress {
 		statusText = "In Progress"
+		statusStyle = statusInProgressStyle
+	} else {
+		statusText = "Pending"
+		statusStyle = statusPendingStyle
 	}
-	content.WriteString(fmt.Sprintf("%s %s  │  Priority: %d\n", statusIcon, statusText, story.Priority))
-	content.WriteString(strings.Repeat("─", width-4))
+	content.WriteString(fmt.Sprintf("%s %s  │  Priority: %d\n", statusIcon, statusStyle.Render(statusText), story.Priority))
+	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-4)))
 	content.WriteString("\n\n")
 
 	// Description
