@@ -161,6 +161,42 @@ var (
 				Bold(true)
 )
 
+// Tab bar styles
+var (
+	// TabStyle - inactive tab with rounded border
+	TabStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(BorderColor).
+			Padding(0, 1)
+
+	// TabActiveStyle - active/viewed tab with primary color border and background
+	TabActiveStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(PrimaryColor).
+			Background(BgSelectedColor).
+			Bold(true).
+			Padding(0, 1)
+
+	// TabRunningStyle - running state with primary color border
+	TabRunningStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(PrimaryColor).
+			Padding(0, 1)
+
+	// TabErrorStyle - error state with error color border
+	TabErrorStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ErrorColor).
+			Padding(0, 1)
+
+	// TabNewStyle - "+ New" button with muted styling
+	TabNewStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(MutedColor).
+			Foreground(MutedColor).
+			Padding(0, 1)
+)
+
 // Status icons
 const (
 	IconPassed     = "✓"

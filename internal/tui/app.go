@@ -65,6 +65,16 @@ type PRDCompletedMsg struct {
 	PRDName string
 }
 
+// LaunchInitMsg signals the TUI should exit to launch the init flow.
+type LaunchInitMsg struct {
+	Name string
+}
+
+// LaunchEditMsg signals the TUI should exit to launch the edit flow.
+type LaunchEditMsg struct {
+	Name string
+}
+
 // ViewMode represents which view is currently active.
 type ViewMode int
 
@@ -102,7 +112,10 @@ type App struct {
 	viewMode  ViewMode
 	logViewer *LogViewer
 
-	// PRD picker
+	// PRD tab bar (always visible)
+	tabBar *TabBar
+
+	// PRD picker (for creating new PRDs)
 	picker  *PRDPicker
 	baseDir string // Base directory for .chief/prds/
 
@@ -115,7 +128,20 @@ type App struct {
 
 	// Verbose mode - show raw Claude output
 	verbose bool
+
+	// Post-exit action - what to do after TUI exits
+	PostExitAction PostExitAction
+	PostExitPRD    string // PRD name for post-exit action
 }
+
+// PostExitAction represents an action to take after the TUI exits.
+type PostExitAction int
+
+const (
+	PostExitNone PostExitAction = iota
+	PostExitInit
+	PostExitEdit
+)
 
 // NewApp creates a new App with the given PRD.
 func NewApp(prdPath string) (*App, error) {
@@ -155,7 +181,10 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 	// Register the initial PRD with the manager
 	manager.Register(prdName, prdPath)
 
-	// Create picker with manager reference
+	// Create tab bar for always-visible PRD tabs
+	tabBar := NewTabBar(baseDir, prdName, manager)
+
+	// Create picker with manager reference (for creating new PRDs)
 	picker := NewPRDPicker(baseDir, prdName, manager)
 
 	return &App{
@@ -170,6 +199,7 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		watcher:       watcher,
 		viewMode:      ViewDashboard,
 		logViewer:     NewLogViewer(),
+		tabBar:        tabBar,
 		picker:        picker,
 		baseDir:       baseDir,
 		helpOverlay:   NewHelpOverlay(),
@@ -241,12 +271,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.onCompletion != nil {
 			a.onCompletion(msg.PRDName)
 		}
-		// Refresh picker to show updated status
+		// Refresh tab bar and picker to show updated status
+		if a.tabBar != nil {
+			a.tabBar.Refresh()
+		}
 		a.picker.Refresh()
 		return a, nil
 
 	case PRDUpdateMsg:
 		return a.handlePRDUpdate(msg)
+
+	case LaunchInitMsg:
+		a.PostExitAction = PostExitInit
+		a.PostExitPRD = msg.Name
+		return a, tea.Quit
+
+	case LaunchEditMsg:
+		a.PostExitAction = PostExitEdit
+		a.PostExitPRD = msg.Name
+		return a, tea.Quit
 
 	case tea.KeyMsg:
 		// Handle help overlay first (can be opened/closed from any view)
@@ -294,12 +337,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
-		// PRD picker
-		case "l":
+		// New PRD (opens picker in input mode)
+		case "n":
 			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
 				a.picker.Refresh()
 				a.picker.SetSize(a.width, a.height)
+				a.picker.StartInputMode()
 				a.viewMode = ViewPicker
+			}
+			return a, nil
+
+		// Number keys 1-9 to switch PRDs
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+				index := int(msg.String()[0] - '1') // Convert "1" to 0, "2" to 1, etc.
+				if entry := a.tabBar.GetEntry(index); entry != nil {
+					return a.switchToPRD(entry.Name, entry.Path)
+				}
 			}
 			return a, nil
 
@@ -512,6 +566,11 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		}
 	}
 
+	// Refresh tab bar to show updated state
+	if a.tabBar != nil {
+		a.tabBar.Refresh()
+	}
+
 	// Continue listening for manager events
 	return a, a.listenForManagerEvents()
 }
@@ -581,24 +640,12 @@ func (a App) handlePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			name := a.picker.GetInputValue()
 			if name != "" {
-				// Create the new PRD directory structure
-				newPRDDir := filepath.Join(a.baseDir, ".chief", "prds", name)
-				newPRDPath := filepath.Join(newPRDDir, "prd.json")
-
-				// Create directory if it doesn't exist
-				if err := os.MkdirAll(newPRDDir, 0755); err == nil {
-					// Create a minimal prd.json
-					newPRD := &prd.PRD{
-						Project:     name,
-						Description: "New PRD - edit this description",
-						UserStories: []prd.UserStory{},
-					}
-					if err := newPRD.Save(newPRDPath); err == nil {
-						// Register with manager
-						a.manager.Register(name, newPRDPath)
-						// Switch to the new PRD
-						return a.switchToPRD(name, newPRDPath)
-					}
+				// Launch interactive Claude session to create the PRD
+				a.picker.CancelInputMode()
+				a.stopAllLoops()
+				a.stopWatcher()
+				return a, func() tea.Msg {
+					return LaunchInitMsg{Name: name}
 				}
 			}
 			a.picker.CancelInputMode()
@@ -640,6 +687,17 @@ func (a App) handlePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "n":
 		a.picker.StartInputMode()
+		return a, nil
+	case "e":
+		// Edit the selected PRD - launch interactive Claude session
+		entry := a.picker.GetSelectedEntry()
+		if entry != nil && entry.LoadError == nil {
+			a.stopAllLoops()
+			a.stopWatcher()
+			return a, func() tea.Msg {
+				return LaunchEditMsg{Name: entry.Name}
+			}
+		}
 		return a, nil
 
 	// Loop controls for the SELECTED PRD (not current)
@@ -743,6 +801,8 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	a.lastActivity = "Switched to PRD: " + name
 	a.viewMode = ViewDashboard
 	a.picker.SetCurrentPRD(name)
+	a.tabBar.SetActiveByName(name)
+	a.tabBar.Refresh()
 
 	// Clear log viewer (each PRD has its own log)
 	a.logViewer.Clear()

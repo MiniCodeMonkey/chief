@@ -66,9 +66,12 @@ func (p *PRDPicker) Refresh() {
 	// Read the prds directory
 	entries, err := os.ReadDir(prdsDir)
 	if err != nil {
-		// Directory might not exist - that's okay
-		return
+		// Directory might not exist - that's okay, but still check for current PRD
+		entries = nil
 	}
+
+	// Track names we've added to avoid duplicates
+	addedNames := make(map[string]bool)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -78,38 +81,17 @@ func (p *PRDPicker) Refresh() {
 		name := entry.Name()
 		prdPath := filepath.Join(prdsDir, name, "prd.json")
 
-		prdEntry := PRDEntry{
-			Name:      name,
-			Path:      prdPath,
-			LoopState: loop.LoopStateReady,
-		}
-
-		// Try to load the PRD
-		loadedPRD, err := prd.LoadPRD(prdPath)
-		if err != nil {
-			prdEntry.LoadError = err
-		} else {
-			prdEntry.PRD = loadedPRD
-			prdEntry.Total = len(loadedPRD.UserStories)
-			for _, story := range loadedPRD.UserStories {
-				if story.Passes {
-					prdEntry.Completed++
-				}
-				if story.InProgress {
-					prdEntry.InProgress = true
-				}
-			}
-		}
-
-		// Get loop state from manager if available
-		if p.manager != nil {
-			if state, iteration, _ := p.manager.GetState(name); state != 0 || iteration != 0 {
-				prdEntry.LoopState = state
-				prdEntry.Iteration = iteration
-			}
-		}
-
+		prdEntry := p.loadPRDEntry(name, prdPath)
 		p.entries = append(p.entries, prdEntry)
+		addedNames[name] = true
+	}
+
+	// Also check if there's a "main" PRD directly in .chief/ (legacy location)
+	mainPrdPath := filepath.Join(p.basePath, ".chief", "prd.json")
+	if _, err := os.Stat(mainPrdPath); err == nil && !addedNames["main"] {
+		prdEntry := p.loadPRDEntry("main", mainPrdPath)
+		p.entries = append(p.entries, prdEntry)
+		addedNames["main"] = true
 	}
 
 	// Ensure selected index is valid
@@ -119,6 +101,42 @@ func (p *PRDPicker) Refresh() {
 			p.selectedIndex = 0
 		}
 	}
+}
+
+// loadPRDEntry creates a PRDEntry for a given name and path.
+func (p *PRDPicker) loadPRDEntry(name, prdPath string) PRDEntry {
+	prdEntry := PRDEntry{
+		Name:      name,
+		Path:      prdPath,
+		LoopState: loop.LoopStateReady,
+	}
+
+	// Try to load the PRD
+	loadedPRD, err := prd.LoadPRD(prdPath)
+	if err != nil {
+		prdEntry.LoadError = err
+	} else {
+		prdEntry.PRD = loadedPRD
+		prdEntry.Total = len(loadedPRD.UserStories)
+		for _, story := range loadedPRD.UserStories {
+			if story.Passes {
+				prdEntry.Completed++
+			}
+			if story.InProgress {
+				prdEntry.InProgress = true
+			}
+		}
+	}
+
+	// Get loop state from manager if available
+	if p.manager != nil {
+		if state, iteration, _ := p.manager.GetState(name); state != 0 || iteration != 0 {
+			prdEntry.LoopState = state
+			prdEntry.Iteration = iteration
+		}
+	}
+
+	return prdEntry
 }
 
 // SetSize sets the modal dimensions.
@@ -424,11 +442,11 @@ func (p *PRDPicker) renderInputMode(width int) string {
 func (p *PRDPicker) buildFooterShortcuts() string {
 	entry := p.GetSelectedEntry()
 	if entry == nil {
-		return "↑/k: up  │  ↓/j: down  │  n: new  │  Esc/l: close"
+		return "↑/k ↓/j: nav  │  n: new  │  Esc/l: close"
 	}
 
 	// Base shortcuts
-	base := "↑/k ↓/j: nav  │  Enter: select  │  n: new  │  Esc/l: close"
+	base := "Enter: select  │  n: new  │  e: edit  │  Esc/l: close"
 
 	// Add state-specific controls
 	switch entry.LoopState {

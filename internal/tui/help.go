@@ -57,8 +57,15 @@ func (h *HelpOverlay) GetCategories() []ShortcutCategory {
 		Name: "Views",
 		Shortcuts: []Shortcut{
 			{Key: "t", Description: "Toggle log view"},
-			{Key: "l", Description: "PRD picker"},
 			{Key: "?", Description: "Help overlay"},
+		},
+	}
+
+	prdControl := ShortcutCategory{
+		Name: "PRD Control",
+		Shortcuts: []Shortcut{
+			{Key: "1-9", Description: "Switch to PRD"},
+			{Key: "n", Description: "Create new PRD"},
 		},
 	}
 
@@ -85,19 +92,17 @@ func (h *HelpOverlay) GetCategories() []ShortcutCategory {
 				{Key: "G", Description: "Go to bottom"},
 			},
 		}
-		return []ShortcutCategory{loopControl, views, scrolling, general}
+		return []ShortcutCategory{loopControl, prdControl, views, scrolling, general}
 
 	case ViewPicker:
 		navigation := ShortcutCategory{
 			Name: "Navigation",
 			Shortcuts: []Shortcut{
-				{Key: "j / ↓", Description: "Move down"},
-				{Key: "k / ↑", Description: "Move up"},
-				{Key: "Enter", Description: "Select PRD"},
-				{Key: "n", Description: "Create new PRD"},
+				{Key: "Enter", Description: "Create PRD"},
+				{Key: "Esc", Description: "Cancel"},
 			},
 		}
-		return []ShortcutCategory{loopControl, navigation, general}
+		return []ShortcutCategory{navigation, general}
 
 	default: // ViewDashboard
 		navigation := ShortcutCategory{
@@ -107,7 +112,7 @@ func (h *HelpOverlay) GetCategories() []ShortcutCategory {
 				{Key: "k / ↑", Description: "Previous story"},
 			},
 		}
-		return []ShortcutCategory{loopControl, views, navigation, general}
+		return []ShortcutCategory{loopControl, prdControl, views, navigation, general}
 	}
 }
 

@@ -15,8 +15,8 @@ const (
 	narrowWidthThreshold = 100 // Below this, switch to stacked layout
 	storiesPanelPct      = 35  // Stories panel takes 35% of width
 	detailsPanelPct      = 65  // Details panel takes 65% of width
-	headerHeight         = 3
-	footerHeight         = 3 // Increased to accommodate activity line
+	headerHeight         = 5   // Increased to accommodate tab bar (brand line + tab bar + border)
+	footerHeight         = 3   // Increased to accommodate activity line
 	activityHeight       = 1
 	progressBarWidth     = 20
 )
@@ -90,9 +90,6 @@ func (a *App) renderHeader() string {
 	stateStyle := GetStateStyle(a.state)
 	state := stateStyle.Render(fmt.Sprintf("[%s]", a.state.String()))
 
-	// Running PRDs indicator
-	runningIndicator := a.renderRunningIndicator()
-
 	// Iteration count
 	iteration := SubtitleStyle.Render(fmt.Sprintf("Iteration: %d", a.iteration))
 
@@ -101,17 +98,32 @@ func (a *App) renderHeader() string {
 	elapsedStr := SubtitleStyle.Render(fmt.Sprintf("Time: %s", formatDuration(elapsed)))
 
 	// Combine elements
-	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, brand, "  ", state, "  ", runningIndicator)
+	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, brand, "  ", state)
 	rightPart := lipgloss.JoinHorizontal(lipgloss.Center, iteration, "  ", elapsedStr)
 
 	// Create the full header line with proper spacing
 	spacing := strings.Repeat(" ", max(0, a.width-lipgloss.Width(leftPart)-lipgloss.Width(rightPart)-2))
 	headerLine := lipgloss.JoinHorizontal(lipgloss.Center, leftPart, spacing, rightPart)
 
+	// Tab bar
+	tabBarLine := a.renderTabBar()
+
 	// Add a border below
 	border := DividerStyle.Render(strings.Repeat("─", a.width))
 
-	return lipgloss.JoinVertical(lipgloss.Left, headerLine, border)
+	return lipgloss.JoinVertical(lipgloss.Left, headerLine, tabBarLine, border)
+}
+
+// renderTabBar renders the PRD tab bar.
+func (a *App) renderTabBar() string {
+	if a.tabBar == nil {
+		return ""
+	}
+	a.tabBar.SetSize(a.width)
+	if a.isNarrowMode() {
+		return a.tabBar.RenderCompact()
+	}
+	return a.tabBar.Render()
 }
 
 // renderNarrowHeader renders a condensed header for narrow terminals.
@@ -135,41 +147,13 @@ func (a *App) renderNarrowHeader() string {
 	spacing := strings.Repeat(" ", max(0, a.width-lipgloss.Width(leftPart)-lipgloss.Width(rightPart)-2))
 	headerLine := lipgloss.JoinHorizontal(lipgloss.Center, leftPart, spacing, rightPart)
 
+	// Tab bar (compact)
+	tabBarLine := a.renderTabBar()
+
 	// Add a border below
 	border := DividerStyle.Render(strings.Repeat("─", a.width))
 
-	return lipgloss.JoinVertical(lipgloss.Left, headerLine, border)
-}
-
-// renderRunningIndicator renders an indicator showing which PRDs are running.
-func (a *App) renderRunningIndicator() string {
-	if a.manager == nil {
-		return ""
-	}
-
-	runningPRDs := a.manager.GetRunningPRDs()
-	if len(runningPRDs) == 0 {
-		return ""
-	}
-
-	// Filter out the current PRD (it's already shown in the state)
-	var otherRunning []string
-	for _, name := range runningPRDs {
-		if name != a.prdName {
-			otherRunning = append(otherRunning, name)
-		}
-	}
-
-	if len(otherRunning) == 0 {
-		return ""
-	}
-
-	// Show indicator for other running PRDs
-	runningStyle := lipgloss.NewStyle().Foreground(PrimaryColor)
-	if len(otherRunning) == 1 {
-		return runningStyle.Render(fmt.Sprintf("▶ %s", otherRunning[0]))
-	}
-	return runningStyle.Render(fmt.Sprintf("▶ +%d PRDs", len(otherRunning)))
+	return lipgloss.JoinVertical(lipgloss.Left, headerLine, tabBarLine, border)
 }
 
 // renderFooter renders the footer with keyboard shortcuts, PRD name, and activity line.
@@ -179,18 +163,18 @@ func (a *App) renderFooter() string {
 
 	if a.viewMode == ViewLog {
 		// Log view shortcuts
-		shortcuts = []string{"t: dashboard", "l: prds", "?: help", "j/k: scroll", "Ctrl+D/U: page", "g/G: top/bottom", "q: quit"}
+		shortcuts = []string{"t: dashboard", "n: new", "1-9: switch", "?: help", "j/k: scroll", "q: quit"}
 	} else {
 		// Dashboard view shortcuts
 		switch a.state {
 		case StateReady, StatePaused:
-			shortcuts = []string{"s: start", "t: log", "l: prds", "?: help", "↑/k: up", "↓/j: down", "q: quit"}
+			shortcuts = []string{"s: start", "t: log", "n: new", "1-9: switch", "?: help", "q: quit"}
 		case StateRunning:
-			shortcuts = []string{"p: pause", "x: stop", "t: log", "l: prds", "?: help", "↑/k: up", "↓/j: down", "q: quit"}
+			shortcuts = []string{"p: pause", "x: stop", "t: log", "n: new", "1-9: switch", "?: help", "q: quit"}
 		case StateStopped, StateError:
-			shortcuts = []string{"s: retry", "t: log", "l: prds", "?: help", "↑/k: up", "↓/j: down", "q: quit"}
+			shortcuts = []string{"s: retry", "t: log", "n: new", "1-9: switch", "?: help", "q: quit"}
 		default:
-			shortcuts = []string{"t: log", "l: prds", "?: help", "↑/k: up", "↓/j: down", "q: quit"}
+			shortcuts = []string{"t: log", "n: new", "1-9: switch", "?: help", "q: quit"}
 		}
 	}
 	shortcutsStr := footerStyle.Render(strings.Join(shortcuts, "  │  "))
@@ -218,18 +202,18 @@ func (a *App) renderNarrowFooter() string {
 
 	if a.viewMode == ViewLog {
 		// Log view shortcuts - condensed
-		shortcuts = []string{"t", "l", "?", "j/k", "q"}
+		shortcuts = []string{"t", "n", "1-9", "?", "q"}
 	} else {
 		// Dashboard view shortcuts - condensed
 		switch a.state {
 		case StateReady, StatePaused:
-			shortcuts = []string{"s", "t", "l", "?", "j/k", "q"}
+			shortcuts = []string{"s", "t", "n", "1-9", "?", "q"}
 		case StateRunning:
-			shortcuts = []string{"p", "x", "t", "l", "?", "j/k", "q"}
+			shortcuts = []string{"p", "x", "t", "n", "1-9", "?", "q"}
 		case StateStopped, StateError:
-			shortcuts = []string{"s", "t", "l", "?", "j/k", "q"}
+			shortcuts = []string{"s", "t", "n", "1-9", "?", "q"}
 		default:
-			shortcuts = []string{"t", "l", "?", "j/k", "q"}
+			shortcuts = []string{"t", "n", "1-9", "?", "q"}
 		}
 	}
 	shortcutsStr := footerStyle.Render(strings.Join(shortcuts, " "))
@@ -326,7 +310,13 @@ func (a *App) renderStoriesPanel(width, height int) string {
 		line := fmt.Sprintf("%s %s %s", icon, story.ID, displayTitle)
 
 		if i == a.selectedIndex {
-			line = selectedStyle.Width(width - 2).Render(line)
+			// Pad line to full width to ensure background fills the entire row
+			lineWidth := lipgloss.Width(line)
+			targetWidth := width - 2
+			if lineWidth < targetWidth {
+				line = line + strings.Repeat(" ", targetWidth-lineWidth)
+			}
+			line = selectedStyle.Render(line)
 		}
 
 		content.WriteString(line)
@@ -475,10 +465,16 @@ func (a *App) renderEmptyPRDPanel(width, height int) string {
 
 	content.WriteString(labelStyle.Render("To add stories:"))
 	content.WriteString("\n")
-	content.WriteString("1. Edit the prd.json file directly, or\n")
-	content.WriteString("2. Use ")
-	content.WriteString(ShortcutKeyStyle.Render("chief init <name>"))
-	content.WriteString(" to create a new PRD with Claude's help\n")
+	content.WriteString("• Press ")
+	content.WriteString(ShortcutKeyStyle.Render("l"))
+	content.WriteString(" then ")
+	content.WriteString(ShortcutKeyStyle.Render("e"))
+	content.WriteString(" to edit this PRD with Claude\n")
+	content.WriteString("• Press ")
+	content.WriteString(ShortcutKeyStyle.Render("l"))
+	content.WriteString(" then ")
+	content.WriteString(ShortcutKeyStyle.Render("n"))
+	content.WriteString(" to create a new PRD with Claude\n")
 	content.WriteString("\n")
 
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-4)))
