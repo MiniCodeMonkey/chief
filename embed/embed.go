@@ -14,6 +14,9 @@ var initPromptTemplate string
 //go:embed edit_prompt.txt
 var editPromptTemplate string
 
+//go:embed convert_prompt.txt
+var convertPromptTemplate string
+
 // GetPrompt returns the agent prompt with the PRD path substituted.
 func GetPrompt(prdPath string) string {
 	return strings.ReplaceAll(promptTemplate, "{{PRD_PATH}}", prdPath)
@@ -30,4 +33,9 @@ func GetInitPrompt(context string) string {
 // GetEditPrompt returns the PRD editor prompt.
 func GetEditPrompt() string {
 	return editPromptTemplate
+}
+
+// GetConvertPrompt returns the PRD converter prompt for prd.md to prd.json conversion.
+func GetConvertPrompt() string {
+	return convertPromptTemplate
 }

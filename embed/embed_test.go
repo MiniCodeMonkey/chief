@@ -38,3 +38,51 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 		t.Error("Expected promptTemplate to be embedded and non-empty")
 	}
 }
+
+func TestGetConvertPrompt(t *testing.T) {
+	prompt := GetConvertPrompt()
+
+	// Verify the prompt is not empty
+	if prompt == "" {
+		t.Error("Expected GetConvertPrompt() to return non-empty prompt")
+	}
+
+	// Verify key instructions are present
+	if !strings.Contains(prompt, "prd.md") {
+		t.Error("Expected prompt to mention prd.md")
+	}
+
+	if !strings.Contains(prompt, "JSON") {
+		t.Error("Expected prompt to mention JSON")
+	}
+
+	if !strings.Contains(prompt, "userStories") {
+		t.Error("Expected prompt to describe userStories structure")
+	}
+
+	if !strings.Contains(prompt, `"passes": false`) {
+		t.Error("Expected prompt to specify passes: false default")
+	}
+}
+
+func TestGetInitPrompt(t *testing.T) {
+	// Test with no context
+	prompt := GetInitPrompt("")
+	if !strings.Contains(prompt, "No additional context provided") {
+		t.Error("Expected default context message")
+	}
+
+	// Test with context
+	context := "Build a todo app"
+	promptWithContext := GetInitPrompt(context)
+	if !strings.Contains(promptWithContext, context) {
+		t.Error("Expected context to be substituted in prompt")
+	}
+}
+
+func TestGetEditPrompt(t *testing.T) {
+	prompt := GetEditPrompt()
+	if prompt == "" {
+		t.Error("Expected GetEditPrompt() to return non-empty prompt")
+	}
+}

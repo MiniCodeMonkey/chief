@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/minicodemonkey/chief/internal/cmd"
+	"github.com/minicodemonkey/chief/internal/prd"
 	"github.com/minicodemonkey/chief/internal/tui"
 )
 
@@ -86,6 +88,20 @@ func runTUI() {
 			// Treat as PRD name
 			prdPath = fmt.Sprintf(".chief/prds/%s/prd.json", arg)
 		}
+	}
+
+	// Check if prd.md is newer than prd.json and run conversion if needed
+	prdDir := filepath.Dir(prdPath)
+	needsConvert, err := prd.NeedsConversion(prdDir)
+	if err != nil {
+		fmt.Printf("Warning: failed to check conversion status: %v\n", err)
+	} else if needsConvert {
+		fmt.Println("prd.md is newer than prd.json, running conversion...")
+		if err := prd.Convert(prd.ConvertOptions{PRDDir: prdDir}); err != nil {
+			fmt.Printf("Error converting PRD: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Conversion complete.")
 	}
 
 	app, err := tui.NewApp(prdPath)

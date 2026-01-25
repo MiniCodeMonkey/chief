@@ -5,9 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/minicodemonkey/chief/embed"
+	"github.com/minicodemonkey/chief/internal/prd"
 )
 
 // InitOptions contains configuration for the init command.
@@ -97,7 +97,6 @@ type ConvertOptions struct {
 }
 
 // RunConvert converts prd.md to prd.json using Claude.
-// This is a placeholder that will be fully implemented in US-018.
 func RunConvert(prdDir string) error {
 	return RunConvertWithOptions(ConvertOptions{PRDDir: prdDir})
 }
@@ -105,90 +104,11 @@ func RunConvert(prdDir string) error {
 // RunConvertWithOptions converts prd.md to prd.json using Claude with options.
 // The Merge and Force flags will be fully implemented in US-019.
 func RunConvertWithOptions(opts ConvertOptions) error {
-	prdMdPath := filepath.Join(opts.PRDDir, "prd.md")
-	prdJsonPath := filepath.Join(opts.PRDDir, "prd.json")
-
-	// Check if prd.md exists
-	if _, err := os.Stat(prdMdPath); os.IsNotExist(err) {
-		return fmt.Errorf("prd.md not found in %s", opts.PRDDir)
-	}
-
-	// Read prd.md content
-	content, err := os.ReadFile(prdMdPath)
-	if err != nil {
-		return fmt.Errorf("failed to read prd.md: %w", err)
-	}
-
-	// Create conversion prompt
-	conversionPrompt := fmt.Sprintf(`Convert the following PRD markdown to a valid JSON file.
-
-Output ONLY the JSON content, no markdown code blocks or explanations.
-
-The JSON should have this structure:
-{
-  "project": "Project Name",
-  "description": "Brief project description",
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "Story Title",
-      "description": "Full description",
-      "acceptanceCriteria": ["criterion 1", "criterion 2"],
-      "priority": 1,
-      "passes": false
-    }
-  ]
-}
-
-PRD Content:
-%s`, string(content))
-
-	// Run Claude one-shot conversion
-	cmd := exec.Command("claude",
-		"--dangerously-skip-permissions",
-		"-p", conversionPrompt,
-		"--output-format", "text",
-	)
-	cmd.Dir = opts.PRDDir
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return fmt.Errorf("conversion failed: %s", string(exitErr.Stderr))
-		}
-		return fmt.Errorf("conversion failed: %w", err)
-	}
-
-	// Clean up output (remove any markdown code blocks if present)
-	jsonContent := cleanJSONOutput(string(output))
-
-	// Write prd.json
-	if err := os.WriteFile(prdJsonPath, []byte(jsonContent), 0644); err != nil {
-		return fmt.Errorf("failed to write prd.json: %w", err)
-	}
-
-	// Verify it's valid JSON by attempting to load it
-	// This will be done by the PRD loader when the TUI starts
-
-	return nil
-}
-
-// cleanJSONOutput removes markdown code blocks and trims whitespace.
-func cleanJSONOutput(output string) string {
-	output = strings.TrimSpace(output)
-
-	// Remove markdown code blocks if present
-	if strings.HasPrefix(output, "```json") {
-		output = strings.TrimPrefix(output, "```json")
-	} else if strings.HasPrefix(output, "```") {
-		output = strings.TrimPrefix(output, "```")
-	}
-
-	if strings.HasSuffix(output, "```") {
-		output = strings.TrimSuffix(output, "```")
-	}
-
-	return strings.TrimSpace(output)
+	return prd.Convert(prd.ConvertOptions{
+		PRDDir: opts.PRDDir,
+		Merge:  opts.Merge,
+		Force:  opts.Force,
+	})
 }
 
 // isValidPRDName checks if the name contains only valid characters.

@@ -35,44 +35,6 @@ func TestIsValidPRDName(t *testing.T) {
 	}
 }
 
-func TestCleanJSONOutput(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "plain JSON",
-			input:    `{"project": "test"}`,
-			expected: `{"project": "test"}`,
-		},
-		{
-			name:     "with json code block",
-			input:    "```json\n{\"project\": \"test\"}\n```",
-			expected: `{"project": "test"}`,
-		},
-		{
-			name:     "with plain code block",
-			input:    "```\n{\"project\": \"test\"}\n```",
-			expected: `{"project": "test"}`,
-		},
-		{
-			name:     "with extra whitespace",
-			input:    "  \n{\"project\": \"test\"}\n  ",
-			expected: `{"project": "test"}`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := cleanJSONOutput(tt.input)
-			if result != tt.expected {
-				t.Errorf("cleanJSONOutput() = %q, want %q", result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestRunInitCreatesDirectory(t *testing.T) {
 	// Create a temporary directory for testing
 	tmpDir := t.TempDir()
