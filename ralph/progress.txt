@@ -11,6 +11,8 @@
 - Styling: Use centralized styles from internal/tui/styles.go, use GetStateStyle() and GetActivityStyle() for state-dependent rendering
 - Parallel execution: Use internal/loop/manager.go Manager for multi-PRD loops, each instance has own goroutine and context
 - Audio: Use internal/notify package with oto/v2, singleton pattern for oto.Context, graceful error handling for missing audio devices
+- Goreleaser: Use separate build IDs (chief-darwin, chief-linux, chief-windows) for platform-specific CGO settings
+- Build tags: Use `//go:build darwin || windows || (linux && cgo)` for platform-specific code with CGO-dependent libraries
 
 ---
 
@@ -553,5 +555,33 @@
   - Subcommand detection should happen first (before flag parsing) to avoid conflicts
   - Return nil from flag parser to indicate help/version was already handled
   - Validate numeric flags (must be >= 1 for max-iterations)
+---
+
+## 2026-01-25 - US-023
+- What was implemented:
+  - Created .goreleaser.yaml with comprehensive build configuration
+  - Build targets: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64
+  - Binary name: chief
+  - Version info embedded via ldflags (-X main.Version={{.Version}})
+  - Separate build IDs for darwin, linux, and windows for platform-specific settings
+  - Archives: .tar.gz for Unix platforms, .zip for Windows
+  - Checksums file generated for all archives
+  - Added build tags to sound.go for CGO support (darwin || windows || (linux && cgo))
+  - Created sound_nocgo.go stub for Linux builds without CGO
+  - Moved WAV generation utilities to wav.go for clean separation
+  - goreleaser release --snapshot --clean successfully produces all 5 binaries
+- Files changed:
+  - .goreleaser.yaml (new)
+  - internal/notify/sound.go (modified - added build tag, removed WAV utilities)
+  - internal/notify/sound_nocgo.go (new - stub for Linux without CGO)
+  - internal/notify/wav.go (new - WAV generation utilities)
+  - go.mod, go.sum (modified - go mod tidy)
+- **Learnings for future iterations:**
+  - oto/v2 requires CGO on Linux (ALSA via cgo) but works without CGO on macOS (purego) and Windows (syscalls)
+  - Use build tags to provide stub implementations for platforms without CGO support
+  - goreleaser overrides must specify both goos and goarch for platform-specific settings
+  - goreleaser v2 config uses 'formats' (plural) instead of deprecated 'format'
+  - Linux builds without CGO will have no audio - the code gracefully handles this with a warning message
+  - For full audio support on Linux, build natively with CGO_ENABLED=1 and libasound2-dev installed
 ---
 
