@@ -208,3 +208,31 @@
   - Keep divider/border styles centralized to ensure consistent visual separators throughout the app
 ---
 
+## 2026-01-25 - US-010
+- What was implemented:
+  - Created internal/tui/log.go with LogViewer struct and LogEntry type
+  - Added scrollable viewport with line-by-line rendering
+  - Toggle with 't' key from dashboard, returns to dashboard with 't'
+  - Assistant text rendered as regular paragraphs with word wrapping
+  - Tool calls displayed as styled cards (box with icon and tool name)
+  - Tool results shown as compact lines with arrow indicator
+  - Story markers and completion messages have special styling
+  - Vim-style scrolling: j/k (line), Ctrl+D/U (page), g/G (top/bottom)
+  - Auto-scroll enabled by default, disabled when user scrolls up manually
+  - Blinking cursor indicator shown at bottom when auto-scrolling and streaming
+  - Footer shows context-sensitive shortcuts (log view vs dashboard view)
+  - Added ViewMode type to App for switching between views
+  - Updated handleLoopEvent to add events to log viewer
+- Files changed:
+  - internal/tui/log.go (new - LogViewer, LogEntry, scrolling, rendering)
+  - internal/tui/app.go (modified - ViewMode, log viewer integration, key handlers)
+  - internal/tui/dashboard.go (modified - renderLogView, renderLogHeader, updated footer)
+- **Learnings for future iterations:**
+  - Use line-based rendering ([]string) for scrollable content instead of calculating heights dynamically
+  - Auto-scroll behavior: track with boolean, disable on scroll up, re-enable at bottom
+  - Tool cards use Unicode box drawing (╭╮╰╯│─) for clean borders
+  - Blink effect with lipgloss.Blink(true) for cursor indicators
+  - ViewMode enum pattern works well for multi-view TUI applications
+  - Key handlers should check viewMode first for view-specific behavior
+---
+
