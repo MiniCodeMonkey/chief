@@ -2,7 +2,89 @@
 
 ## Codebase Patterns
 
-*Add reusable patterns discovered during implementation here.*
+- Use `/chief` (with leading slash) in .gitignore for the root binary to avoid ignoring `cmd/chief/` directory
+- Directory structure: `cmd/chief/` for main binary, `internal/` for packages, `embed/` for embedded assets
+- Claude's stream-json format: use `--output-format stream-json --verbose` with `-p` flag
+- Use json.RawMessage for partial JSON parsing when structure varies (e.g., content blocks)
 
+---
+
+## 2026-01-25 - US-001
+- What was implemented:
+  - Initialized Go module at github.com/minicodemonkey/chief
+  - Added Bubble Tea, Lip Gloss, and Bubbles dependencies
+  - Created directory structure: cmd/chief/, internal/loop/, internal/prd/, internal/tui/, internal/notify/, embed/
+  - Created minimal main.go with Hello World Bubble Tea app
+  - Verified `go build ./cmd/chief` produces working binary
+  - Verified typecheck passes with `go vet ./...`
+- Files changed:
+  - go.mod, go.sum (new)
+  - cmd/chief/main.go (new)
+  - .gitignore (new)
+- **Learnings for future iterations:**
+  - Be careful with .gitignore patterns - `chief` would match both the binary AND `cmd/chief/` directory. Use `/chief` to only match root-level binary
+  - Go doesn't track empty directories, so internal subdirs only appear in git when files are added
+  - The Hello World app uses standard Bubble Tea pattern: Init(), Update(), View() methods
+---
+
+## 2026-01-25 - US-002
+- What was implemented:
+  - Created internal/prd/types.go with PRD and UserStory structs matching the prd.json schema
+  - Created internal/prd/loader.go with LoadPRD(path) and Save(path) methods
+  - Added PRD.AllComplete() bool method that returns true when all stories pass
+  - Added PRD.NextStory() *UserStory method that prioritizes inProgress stories, then lowest priority
+  - Comprehensive unit tests covering all edge cases (empty PRD, all complete, interrupted story, priority ordering)
+- Files changed:
+  - internal/prd/types.go (new)
+  - internal/prd/loader.go (new)
+  - internal/prd/prd_test.go (new)
+- **Learnings for future iterations:**
+  - NextStory() should always check for inProgress stories first (handles interrupted work)
+  - Use `json:"inProgress,omitempty"` to avoid outputting false values in JSON (cleaner output)
+  - Go test pattern: use t.TempDir() for test file operations - auto-cleaned up after test
+  - The PRD struct returns pointers to UserStory to allow nil checks for "no story available"
+---
+
+## 2026-01-25 - US-003
+- What was implemented:
+  - Created internal/loop/parser.go with EventType constants (IterationStart, AssistantText, ToolStart, ToolResult, StoryStarted, StoryCompleted, Complete, MaxIterationsReached, Error)
+  - Created Event struct with fields: Type, Iteration, Text, Tool, ToolInput, StoryID, Err
+  - Implemented ParseLine(line string) *Event function that parses Claude's stream-json format
+  - Added detection for <chief-complete/> tag to return Complete event
+  - Added detection for <ralph-status> tags to track story progress
+  - Extracts tool name and input from tool_use content blocks
+  - Parses tool results from user messages
+  - Comprehensive unit tests with real-world example stream-json lines
+- Files changed:
+  - internal/loop/parser.go (new)
+  - internal/loop/parser_test.go (new)
+- **Learnings for future iterations:**
+  - Claude's stream-json output requires `--verbose` flag when using `-p` (print mode)
+  - The stream-json format has three main message types: "system" (init), "assistant" (text/tool_use), "user" (tool_result)
+  - Assistant messages can have multiple content blocks - parser returns the first meaningful event
+  - Use json.RawMessage for nested structures to handle varying content block types
+  - The extractStoryID helper uses string indices rather than regex for simplicity and performance
+---
+
+## 2026-01-25 - US-004
+- What was implemented:
+  - Created internal/loop/loop.go with Loop struct containing: prdPath, prompt, maxIter, iteration, events chan, claudeCmd, logFile, mu, stopped
+  - Implemented Run(ctx context.Context) error that loops until complete or max iterations
+  - Implemented runIteration(ctx context.Context) error that spawns Claude with flags: --dangerously-skip-permissions, -p, --output-format stream-json, --verbose
+  - Streams stdout line by line, parses each line with ParseLine(), sends events to channel
+  - Logs raw output to claude.log file in PRD directory
+  - Implemented Stop() method that kills the Claude process and sets stopped flag
+  - Checks prd.json after each iteration to detect completion using PRD.AllComplete()
+  - Created comprehensive integration tests with mock data
+- Files changed:
+  - internal/loop/loop.go (new)
+  - internal/loop/loop_test.go (new)
+- **Learnings for future iterations:**
+  - Use bufio.Scanner with increased buffer size (1MB) for parsing large JSON lines from Claude
+  - The Loop struct uses a mutex to protect claudeCmd and iteration during concurrent access
+  - Use exec.CommandContext for automatic process cancellation when context is cancelled
+  - Set working directory of Claude process to PRD directory so relative paths work correctly
+  - The events channel has a buffer (100) to prevent blocking during high-frequency event emission
+  - When testing file-based logic, use t.TempDir() for automatic cleanup
 ---
 
