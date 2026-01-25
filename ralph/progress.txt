@@ -449,3 +449,30 @@
   - Pre-run conversion in main.go ensures prd.json is always up-to-date when TUI starts
 ---
 
+## 2026-01-25 - US-019
+- What was implemented:
+  - Created HasProgress() function to detect if prd.json has any passes: true or inProgress: true stories
+  - Created MergeProgress() function to preserve status for matching story IDs during conversion
+  - Added ProgressConflictChoice type with ChoiceMerge, ChoiceOverwrite, ChoiceCancel constants
+  - Created promptProgressConflict() function to show user prompt with Merge/Overwrite/Cancel options
+  - Updated Convert() function to check for progress conflicts before writing new prd.json
+  - --merge flag auto-merges without prompting (uses ChoiceMerge)
+  - --force flag auto-overwrites without prompting (uses ChoiceOverwrite)
+  - Comprehensive unit tests for HasProgress() and MergeProgress() covering:
+    - Nil and empty PRD handling
+    - Matching story IDs preserving passes/inProgress status
+    - New stories added without progress
+    - Removed stories being dropped
+    - Mixed scenarios (add, remove, keep)
+    - Reordered stories preserving progress by ID
+- Files changed:
+  - internal/prd/generator.go (modified - added progress protection logic)
+  - internal/prd/generator_test.go (modified - added comprehensive merge tests)
+- **Learnings for future iterations:**
+  - Use a map[string]struct{} pattern for efficient story ID lookups during merge
+  - Prompt functions should accept *PRD for both old and new to show progress counts
+  - bufio.Reader is needed for interactive user input during conversion
+  - Progress protection only triggers when HasProgress() returns true AND prd.json exists
+  - MergeProgress modifies newPRD in place, so re-marshal after merge for final output
+---
+
