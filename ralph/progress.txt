@@ -605,3 +605,30 @@
   - test block should use assert_match with version.to_s for version verification
 ---
 
+## 2026-01-25 - US-025
+- What was implemented:
+  - Created install.sh script for users without Homebrew
+  - OS detection: darwin/linux (Windows unsupported with friendly error)
+  - Architecture detection: amd64/arm64 via uname -m
+  - Downloads binary from GitHub releases with correct archive name
+  - Verifies SHA256 checksum from checksums.txt before installing
+  - Installs to /usr/local/bin (with sudo if needed) or ~/.local/bin fallback
+  - Script is idempotent - safe to run multiple times
+  - Supports --version flag to install specific versions
+  - Uses curl or wget (whichever is available)
+  - Uses sha256sum or shasum -a 256 (whichever is available)
+  - Provides colored output when running in terminal
+  - Shows PATH warning if install dir not in PATH
+  - CHIEF_INSTALL_DIR env var to override installation directory
+- Files changed:
+  - install.sh (new - 337 lines)
+- **Learnings for future iterations:**
+  - Use set -e for fail-fast behavior in install scripts
+  - Detect tty with `[ -t 1 ]` to conditionally enable colors
+  - Support both curl and wget for maximum compatibility
+  - Archive naming follows goreleaser pattern: name_version_os_arch.tar.gz
+  - Use mktemp -d for cross-platform temp directory creation
+  - trap 'rm -rf "$TMP_DIR"' EXIT ensures cleanup on any exit
+  - Checksum verification is critical for security - warn but don't fail if unavailable
+---
+

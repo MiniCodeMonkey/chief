@@ -406,7 +406,7 @@
         "Script is idempotent (can run multiple times safely)"
       ],
       "priority": 25,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-026",
