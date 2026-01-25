@@ -632,3 +632,49 @@
   - Checksum verification is critical for security - warn but don't fail if unavailable
 ---
 
+## 2026-01-25 - US-026
+- What was implemented:
+  - Created comprehensive README.md with all required sections:
+    - Quick Start guide with installation and first usage
+    - How It Works with ASCII data flow diagram showing the agent loop
+    - Installation section (Homebrew, install script, from source)
+    - Usage examples with commands and options tables
+    - Keyboard shortcuts table for all views (Dashboard, Log, Picker)
+    - PRD format reference with JSON schema and field descriptions
+    - Directory structure documentation
+    - Parallel execution and progress protection docs
+    - Troubleshooting section with common issues
+  - Created docs/adr/ with 6 Architecture Decision Records:
+    - ADR-0001: Use Bubble Tea for TUI (Elm architecture benefits)
+    - ADR-0002: Parse Claude's Stream-JSON Output (real-time events)
+    - ADR-0003: Support Parallel PRD Execution (Manager pattern)
+    - ADR-0004: Embed Prompts in Binary (go:embed)
+    - ADR-0005: Watch PRD File for Changes (fsnotify)
+    - ADR-0006: Audio Completion Notifications (oto/v2)
+  - Added package-level doc comments to all packages (embed, tui, loop, prd, cmd, notify)
+  - Fixed go.mod module name from 'chief' to 'github.com/minicodemonkey/chief'
+- Files changed:
+  - README.md (new)
+  - docs/adr/README.md (new)
+  - docs/adr/0001-use-bubble-tea-for-tui.md (new)
+  - docs/adr/0002-stream-json-parsing.md (new)
+  - docs/adr/0003-parallel-prd-execution.md (new)
+  - docs/adr/0004-embedded-prompts.md (new)
+  - docs/adr/0005-prd-file-watching.md (new)
+  - docs/adr/0006-audio-notifications.md (new)
+  - embed/embed.go (modified - added package doc)
+  - internal/tui/styles.go (modified - added package doc)
+  - internal/loop/loop.go (modified - added package doc)
+  - internal/prd/types.go (modified - added package doc)
+  - internal/cmd/init.go (modified - added package doc)
+  - internal/notify/sound.go (modified - added package doc)
+  - go.mod (modified - fixed module name)
+  - go.sum (modified - synced dependencies)
+- **Learnings for future iterations:**
+  - ADRs are valuable for documenting architectural decisions and their rationale
+  - ASCII diagrams work well for showing data flow in README files
+  - Package-level doc comments are placed immediately before the package declaration
+  - The go.mod module name must match the import paths used throughout the codebase
+  - Documentation should include troubleshooting for common issues users might encounter
+---
+
