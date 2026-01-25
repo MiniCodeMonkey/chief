@@ -390,3 +390,30 @@
   - Use {{PLACEHOLDER}} pattern consistently for string substitution in embedded prompts
 ---
 
+## 2026-01-25 - US-017
+- What was implemented:
+  - Created embed/edit_prompt.txt with PRD editor prompt that guides Claude to edit existing PRDs
+  - Updated embed/embed.go with GetEditPrompt() function (no placeholders needed for edit)
+  - Created internal/cmd/edit.go with RunEdit() function implementing the edit command
+  - Supports: chief edit, chief edit <name>, chief edit <name> --merge, chief edit <name> --force
+  - Validates PRD name and checks that prd.md exists (suggests chief init if not)
+  - Launches interactive Claude session with embedded edit prompt
+  - After session ends, runs conversion with progress protection options (--merge, --force)
+  - Added ConvertOptions struct and RunConvertWithOptions() function for conversion with flags
+  - Updated cmd/chief/main.go with edit subcommand handling and argument parsing
+  - Updated help text with edit command examples and options
+  - Comprehensive unit tests for edit command edge cases
+- Files changed:
+  - embed/edit_prompt.txt (new)
+  - embed/embed.go (modified - added GetEditPrompt)
+  - internal/cmd/edit.go (new)
+  - internal/cmd/edit_test.go (new)
+  - internal/cmd/init.go (modified - added ConvertOptions, RunConvertWithOptions)
+  - cmd/chief/main.go (modified - added edit subcommand)
+- **Learnings for future iterations:**
+  - Edit command structure mirrors init but checks for existing prd.md instead of refusing if it exists
+  - ConvertOptions pattern sets up for US-019 progress protection - flags are parsed but not yet implemented
+  - Edit prompt focuses on preserving story IDs and structure while making changes
+  - --merge and --force flags are separate from the name argument (non-flag parsing needed)
+---
+

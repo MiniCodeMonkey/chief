@@ -280,7 +280,7 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-018",
