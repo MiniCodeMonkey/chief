@@ -390,7 +390,7 @@
         "Formula includes description and homepage"
       ],
       "priority": 24,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-025",

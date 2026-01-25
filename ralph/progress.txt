@@ -585,3 +585,23 @@
   - For full audio support on Linux, build natively with CGO_ENABLED=1 and libasound2-dev installed
 ---
 
+## 2026-01-25 - US-024
+- What was implemented:
+  - Created Formula/chief.rb with Homebrew formula for macOS and Linux
+  - Formula supports all platforms: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64
+  - Used on_macos/on_linux and on_intel/on_arm blocks for platform-specific binary downloads
+  - Added description and homepage to formula
+  - Updated .goreleaser.yaml with brews section for automatic formula generation on release
+  - Configured goreleaser to push formula to minicodemonkey/homebrew-chief tap repository
+  - Formula includes test block that verifies --version output
+- Files changed:
+  - Formula/chief.rb (new)
+  - .goreleaser.yaml (modified - added brews section)
+- **Learnings for future iterations:**
+  - Homebrew formulas use on_macos/on_linux with nested on_intel/on_arm for platform-specific URLs
+  - goreleaser brews section auto-generates formula with correct SHA256 checksums during release
+  - Use separate tap repository (homebrew-<name>) for easier Homebrew distribution
+  - Formula template in repo can have PLACEHOLDER SHA256 values that goreleaser replaces
+  - test block should use assert_match with version.to_s for version verification
+---
+
