@@ -82,18 +82,18 @@ func (a *App) renderFooter() string {
 
 	if a.viewMode == ViewLog {
 		// Log view shortcuts
-		shortcuts = []string{"t: dashboard", "j/k: scroll", "Ctrl+D/U: page", "g/G: top/bottom", "q: quit"}
+		shortcuts = []string{"t: dashboard", "l: prds", "j/k: scroll", "Ctrl+D/U: page", "g/G: top/bottom", "q: quit"}
 	} else {
 		// Dashboard view shortcuts
 		switch a.state {
 		case StateReady, StatePaused:
-			shortcuts = []string{"s: start", "t: log", "↑/k: up", "↓/j: down", "q: quit"}
+			shortcuts = []string{"s: start", "t: log", "l: prds", "↑/k: up", "↓/j: down", "q: quit"}
 		case StateRunning:
-			shortcuts = []string{"p: pause", "x: stop", "t: log", "↑/k: up", "↓/j: down", "q: quit"}
+			shortcuts = []string{"p: pause", "x: stop", "t: log", "l: prds", "↑/k: up", "↓/j: down", "q: quit"}
 		case StateStopped, StateError:
-			shortcuts = []string{"s: retry", "t: log", "↑/k: up", "↓/j: down", "q: quit"}
+			shortcuts = []string{"s: retry", "t: log", "l: prds", "↑/k: up", "↓/j: down", "q: quit"}
 		default:
-			shortcuts = []string{"t: log", "↑/k: up", "↓/j: down", "q: quit"}
+			shortcuts = []string{"t: log", "l: prds", "↑/k: up", "↓/j: down", "q: quit"}
 		}
 	}
 	shortcutsStr := footerStyle.Render(strings.Join(shortcuts, "  │  "))

@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -63,6 +65,7 @@ type ViewMode int
 const (
 	ViewDashboard ViewMode = iota
 	ViewLog
+	ViewPicker
 )
 
 // App is the main Bubble Tea model for the Chief TUI.
@@ -93,6 +96,10 @@ type App struct {
 	// View mode
 	viewMode  ViewMode
 	logViewer *LogViewer
+
+	// PRD picker
+	picker  *PRDPicker
+	baseDir string // Base directory for .chief/prds/
 }
 
 // NewApp creates a new App with the given PRD.
@@ -119,6 +126,14 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		return nil, err
 	}
 
+	// Determine base directory for PRD picker
+	// If path contains .chief/prds/, go up to the parent
+	baseDir := filepath.Dir(filepath.Dir(filepath.Dir(prdPath)))
+	if !strings.Contains(prdPath, ".chief/prds/") {
+		// Fallback to current working directory
+		baseDir, _ = os.Getwd()
+	}
+
 	return &App{
 		prd:           p,
 		prdPath:       prdPath,
@@ -130,6 +145,8 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		watcher:       watcher,
 		viewMode:      ViewDashboard,
 		logViewer:     NewLogViewer(),
+		picker:        NewPRDPicker(baseDir, prdName),
+		baseDir:       baseDir,
 	}, nil
 }
 
@@ -169,6 +186,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handlePRDUpdate(msg)
 
 	case tea.KeyMsg:
+		// Handle picker view separately (it has its own input mode)
+		if a.viewMode == ViewPicker {
+			return a.handlePickerKeys(msg)
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			a.stopLoop()
@@ -182,6 +204,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.logViewer.SetSize(a.width, a.height-headerHeight-footerHeight-2)
 			} else {
 				a.viewMode = ViewDashboard
+			}
+			return a, nil
+
+		// PRD picker
+		case "l":
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+				a.picker.Refresh()
+				a.picker.SetSize(a.width, a.height)
+				a.viewMode = ViewPicker
 			}
 			return a, nil
 
@@ -377,9 +408,144 @@ func (a App) View() string {
 	switch a.viewMode {
 	case ViewLog:
 		return a.renderLogView()
+	case ViewPicker:
+		return a.renderPickerView()
 	default:
 		return a.renderDashboard()
 	}
+}
+
+// handlePickerKeys handles keyboard input when the picker is active.
+func (a App) handlePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle input mode (creating new PRD)
+	if a.picker.IsInputMode() {
+		switch msg.String() {
+		case "esc":
+			a.picker.CancelInputMode()
+			return a, nil
+		case "enter":
+			name := a.picker.GetInputValue()
+			if name != "" {
+				// Create the new PRD directory structure
+				newPRDDir := filepath.Join(a.baseDir, ".chief", "prds", name)
+				newPRDPath := filepath.Join(newPRDDir, "prd.json")
+
+				// Create directory if it doesn't exist
+				if err := os.MkdirAll(newPRDDir, 0755); err == nil {
+					// Create a minimal prd.json
+					newPRD := &prd.PRD{
+						Project:     name,
+						Description: "New PRD - edit this description",
+						UserStories: []prd.UserStory{},
+					}
+					if err := newPRD.Save(newPRDPath); err == nil {
+						// Switch to the new PRD
+						return a.switchToPRD(name, newPRDPath)
+					}
+				}
+			}
+			a.picker.CancelInputMode()
+			return a, nil
+		case "backspace":
+			a.picker.DeleteInputChar()
+			return a, nil
+		default:
+			// Handle character input
+			if len(msg.String()) == 1 {
+				a.picker.AddInputChar(rune(msg.String()[0]))
+			}
+			return a, nil
+		}
+	}
+
+	// Normal picker mode
+	switch msg.String() {
+	case "esc", "l":
+		a.viewMode = ViewDashboard
+		return a, nil
+	case "q", "ctrl+c":
+		a.stopLoop()
+		a.stopWatcher()
+		return a, tea.Quit
+	case "up", "k":
+		a.picker.MoveUp()
+		return a, nil
+	case "down", "j":
+		a.picker.MoveDown()
+		return a, nil
+	case "enter":
+		entry := a.picker.GetSelectedEntry()
+		if entry != nil && entry.LoadError == nil {
+			return a.switchToPRD(entry.Name, entry.Path)
+		}
+		return a, nil
+	case "n":
+		a.picker.StartInputMode()
+		return a, nil
+	}
+
+	return a, nil
+}
+
+// switchToPRD switches to a different PRD.
+func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
+	// Stop current loop if running
+	a.stopLoop()
+
+	// Stop current watcher
+	a.stopWatcher()
+
+	// Load the new PRD
+	newPRD, err := prd.LoadPRD(prdPath)
+	if err != nil {
+		a.lastActivity = "Error loading PRD: " + err.Error()
+		a.viewMode = ViewDashboard
+		return a, nil
+	}
+
+	// Create new watcher for the new PRD
+	newWatcher, err := prd.NewWatcher(prdPath)
+	if err != nil {
+		a.lastActivity = "Warning: file watcher failed"
+	} else {
+		a.watcher = newWatcher
+		if err := a.watcher.Start(); err != nil {
+			a.lastActivity = "Warning: file watcher failed to start"
+		}
+	}
+
+	// Update app state
+	a.prd = newPRD
+	a.prdPath = prdPath
+	a.prdName = name
+	a.selectedIndex = 0
+	a.state = StateReady
+	a.iteration = 0
+	a.startTime = time.Time{}
+	a.lastActivity = "Switched to PRD: " + name
+	a.viewMode = ViewDashboard
+	a.picker.SetCurrentPRD(name)
+
+	// Clear log viewer
+	a.logViewer.Clear()
+
+	// Return with new watcher listener
+	return a, a.listenForPRDChanges()
+}
+
+// renderPickerView renders the PRD picker modal overlaid on the dashboard.
+func (a *App) renderPickerView() string {
+	// Render the dashboard in the background
+	background := a.renderDashboard()
+
+	// Overlay the picker
+	a.picker.SetSize(a.width, a.height)
+	picker := a.picker.Render()
+
+	// For now, just return the picker (it handles centering)
+	// In a more sophisticated implementation, we could overlay with transparency
+	_ = background
+	return picker
 }
 
 // GetPRD returns the current PRD.
