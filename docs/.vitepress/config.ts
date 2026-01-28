@@ -1,9 +1,14 @@
 import { defineConfig } from 'vitepress'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   title: 'Chief',
   description: 'Autonomous PRD Agent',
   base: '/chief/',
+
+  vite: {
+    plugins: [tailwindcss()]
+  },
 
   themeConfig: {
     siteTitle: 'Chief',
