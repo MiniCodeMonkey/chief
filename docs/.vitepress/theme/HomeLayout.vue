@@ -3,6 +3,7 @@ import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import Hero from './components/Hero.vue'
 import HowItWorks from './components/HowItWorks.vue'
+import Features from './components/Features.vue'
 
 const { Layout } = DefaultTheme
 const { frontmatter } = useData()
@@ -13,6 +14,7 @@ const { frontmatter } = useData()
     <template #home-hero-before>
       <Hero />
       <HowItWorks />
+      <Features />
     </template>
     <!-- Hide default hero -->
     <template #home-hero-info></template>
