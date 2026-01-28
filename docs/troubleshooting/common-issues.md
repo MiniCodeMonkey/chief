@@ -18,15 +18,10 @@ Error: Claude Code CLI not found. Please install it first.
 
 **Solution:**
 
+Install Claude Code following the [official instructions](https://docs.anthropic.com/en/docs/claude-code/getting-started), then verify:
+
 ```bash
-# Install Claude Code
-npm install -g @anthropic-ai/claude-code
-
-# Verify installation
 claude --version
-
-# If using a custom node installation, ensure it's in PATH
-export PATH="$HOME/.npm-global/bin:$PATH"
 ```
 
 ## Permission Denied
@@ -107,7 +102,7 @@ chief --no-sound
 
 **Symptom:** Chief stops with "max iterations reached" message.
 
-**Cause:** Claude hasn't completed after the iteration limit (default 100).
+**Cause:** Claude hasn't completed after the iteration limit (default 10).
 
 **Solution:**
 

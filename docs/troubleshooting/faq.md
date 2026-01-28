@@ -14,15 +14,15 @@ Chief is an autonomous PRD agent. You write a Product Requirements Document with
 
 ### Why "Chief"?
 
-Chief manages the project. You write the requirements, Chief orchestrates the work.
+Named after Chief Wiggum from The Simpsons (Ralph Wiggum's dad). Chief orchestrates the [Ralph loop](https://ghuntley.com/ralph/).
 
 ### Is Chief free?
 
-Chief itself is open source and free. However, it uses Claude Code, which requires an Anthropic API subscription.
+Chief itself is open source and free. However, it uses Claude Code, which requires a Claude Pro subscription or Anthropic API access.
 
 ### What models does Chief use?
 
-Chief uses whatever model is configured in Claude Code. By default, this is Claude 3 Sonnet.
+Chief uses whatever model is configured in Claude Code.
 
 ## Usage
 
@@ -112,7 +112,7 @@ Yes. Chief doesn't know or care what language you're using. It passes your PRD t
 
 ### How does Chief handle tests?
 
-Chief instructs Claude to run quality checks (tests, lint, typecheck) before committing. The specific commands come from your PRD's settings or Claude's inference from your codebase.
+Chief instructs Claude to run quality checks (tests, lint, typecheck) before committing. Claude infers the appropriate commands from your codebase (e.g., `npm test`, `pytest`).
 
 ## Troubleshooting
 
