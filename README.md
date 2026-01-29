@@ -4,6 +4,8 @@ Build big projects with Claude. Chief breaks your work into tasks and runs Claud
 
 **[Documentation](https://minicodemonkey.github.io/chief/)** · **[Quick Start](https://minicodemonkey.github.io/chief/guide/quick-start)**
 
+![Chief TUI](https://minicodemonkey.github.io/chief/images/tui-screenshot.png)
+
 ## Install
 
 ```bash

@@ -6,6 +6,9 @@ hero:
   name: Chief
   text: Build Big Projects with Claude
   tagline: Chief breaks your work into tasks. Claude builds them one by one.
+  image:
+    src: /images/tui-screenshot.png
+    alt: Chief TUI
   actions:
     - theme: brand
       text: Get Started
