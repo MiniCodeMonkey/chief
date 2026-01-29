@@ -72,7 +72,6 @@ func RunNew(opts NewOptions) error {
 	fmt.Println("\nPRD created successfully!")
 
 	// Run conversion from prd.md to prd.json
-	fmt.Println("Converting prd.md to prd.json...")
 	if err := RunConvert(prdDir); err != nil {
 		return fmt.Errorf("conversion failed: %w", err)
 	}

@@ -13,32 +13,51 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/minicodemonkey/chief/embed"
 	"github.com/minicodemonkey/chief/internal/prd"
 )
 
+// RetryConfig configures automatic retry behavior on Claude crashes.
+type RetryConfig struct {
+	MaxRetries  int           // Maximum number of retry attempts (default: 3)
+	RetryDelays []time.Duration // Delays between retries (default: 0s, 5s, 15s)
+	Enabled     bool          // Whether retry is enabled (default: true)
+}
+
+// DefaultRetryConfig returns the default retry configuration.
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxRetries:  3,
+		RetryDelays: []time.Duration{0, 5 * time.Second, 15 * time.Second},
+		Enabled:     true,
+	}
+}
+
 // Loop manages the core agent loop that invokes Claude repeatedly until all stories are complete.
 type Loop struct {
-	prdPath   string
-	prompt    string
-	maxIter   int
-	iteration int
-	events    chan Event
-	claudeCmd *exec.Cmd
-	logFile   *os.File
-	mu        sync.Mutex
-	stopped   bool
-	paused    bool
+	prdPath     string
+	prompt      string
+	maxIter     int
+	iteration   int
+	events      chan Event
+	claudeCmd   *exec.Cmd
+	logFile     *os.File
+	mu          sync.Mutex
+	stopped     bool
+	paused      bool
+	retryConfig RetryConfig
 }
 
 // NewLoop creates a new Loop instance.
 func NewLoop(prdPath, prompt string, maxIter int) *Loop {
 	return &Loop{
-		prdPath: prdPath,
-		prompt:  prompt,
-		maxIter: maxIter,
-		events:  make(chan Event, 100),
+		prdPath:     prdPath,
+		prompt:      prompt,
+		maxIter:     maxIter,
+		events:      make(chan Event, 100),
+		retryConfig: DefaultRetryConfig(),
 	}
 }
 
@@ -102,8 +121,8 @@ func (l *Loop) Run(ctx context.Context) error {
 			Iteration: currentIter,
 		}
 
-		// Run a single iteration
-		if err := l.runIteration(ctx); err != nil {
+		// Run a single iteration with retry logic
+		if err := l.runIterationWithRetry(ctx); err != nil {
 			l.events <- Event{
 				Type: EventError,
 				Err:  err,
@@ -144,6 +163,82 @@ func (l *Loop) Run(ctx context.Context) error {
 		}
 		l.mu.Unlock()
 	}
+}
+
+// runIterationWithRetry wraps runIteration with retry logic for crash recovery.
+func (l *Loop) runIterationWithRetry(ctx context.Context) error {
+	l.mu.Lock()
+	config := l.retryConfig
+	l.mu.Unlock()
+
+	var lastErr error
+	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
+		// Check if retry is enabled (except for first attempt)
+		if attempt > 0 {
+			if !config.Enabled {
+				return lastErr
+			}
+
+			// Get delay for this retry
+			delayIdx := attempt - 1
+			if delayIdx >= len(config.RetryDelays) {
+				delayIdx = len(config.RetryDelays) - 1
+			}
+			delay := config.RetryDelays[delayIdx]
+
+			// Emit retry event
+			l.mu.Lock()
+			iter := l.iteration
+			l.mu.Unlock()
+			l.events <- Event{
+				Type:       EventRetrying,
+				Iteration:  iter,
+				RetryCount: attempt,
+				RetryMax:   config.MaxRetries,
+				Text:       fmt.Sprintf("Claude crashed, retrying (%d/%d)...", attempt, config.MaxRetries),
+			}
+
+			// Wait before retry
+			if delay > 0 {
+				select {
+				case <-time.After(delay):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		}
+
+		// Check if stopped during delay
+		l.mu.Lock()
+		if l.stopped {
+			l.mu.Unlock()
+			return nil
+		}
+		l.mu.Unlock()
+
+		// Run the iteration
+		err := l.runIteration(ctx)
+		if err == nil {
+			return nil // Success
+		}
+
+		// Check if this is a context cancellation (don't retry)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		// Check if stopped intentionally
+		l.mu.Lock()
+		stopped := l.stopped
+		l.mu.Unlock()
+		if stopped {
+			return nil
+		}
+
+		lastErr = err
+	}
+
+	return fmt.Errorf("max retries (%d) exceeded: %w", config.MaxRetries, lastErr)
 }
 
 // runIteration spawns Claude and processes its output.
@@ -301,4 +396,32 @@ func (l *Loop) IsRunning() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.claudeCmd != nil && l.claudeCmd.Process != nil
+}
+
+// SetMaxIterations updates the maximum iterations limit.
+func (l *Loop) SetMaxIterations(maxIter int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.maxIter = maxIter
+}
+
+// MaxIterations returns the current max iterations limit.
+func (l *Loop) MaxIterations() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.maxIter
+}
+
+// SetRetryConfig updates the retry configuration.
+func (l *Loop) SetRetryConfig(config RetryConfig) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.retryConfig = config
+}
+
+// DisableRetry disables automatic retry on crash.
+func (l *Loop) DisableRetry() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.retryConfig.Enabled = false
 }

@@ -50,6 +50,7 @@ func (h *HelpOverlay) GetCategories() []ShortcutCategory {
 			{Key: "s", Description: "Start loop"},
 			{Key: "p", Description: "Pause (after iteration)"},
 			{Key: "x", Description: "Stop immediately"},
+			{Key: "+/-", Description: "Adjust max iterations"},
 		},
 	}
 

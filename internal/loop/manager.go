@@ -63,21 +63,37 @@ type ManagerEvent struct {
 
 // Manager manages multiple Loop instances for parallel PRD execution.
 type Manager struct {
-	instances  map[string]*LoopInstance
-	events     chan ManagerEvent
-	maxIter    int
-	mu         sync.RWMutex
-	wg         sync.WaitGroup
-	onComplete func(prdName string) // Callback when a PRD completes
+	instances   map[string]*LoopInstance
+	events      chan ManagerEvent
+	maxIter     int
+	retryConfig RetryConfig
+	mu          sync.RWMutex
+	wg          sync.WaitGroup
+	onComplete  func(prdName string) // Callback when a PRD completes
 }
 
 // NewManager creates a new loop manager.
 func NewManager(maxIter int) *Manager {
 	return &Manager{
-		instances: make(map[string]*LoopInstance),
-		events:    make(chan ManagerEvent, 100),
-		maxIter:   maxIter,
+		instances:   make(map[string]*LoopInstance),
+		events:      make(chan ManagerEvent, 100),
+		maxIter:     maxIter,
+		retryConfig: DefaultRetryConfig(),
 	}
+}
+
+// SetRetryConfig sets the retry configuration for new loops.
+func (m *Manager) SetRetryConfig(config RetryConfig) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.retryConfig = config
+}
+
+// DisableRetry disables automatic retry for new loops.
+func (m *Manager) DisableRetry() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.retryConfig.Enabled = false
 }
 
 // SetCompletionCallback sets a callback that is called when any PRD completes.
@@ -151,6 +167,9 @@ func (m *Manager) Start(name string) error {
 
 	// Create a new loop instance
 	instance.Loop = NewLoopWithEmbeddedPrompt(instance.PRDPath, m.maxIter)
+	m.mu.RLock()
+	instance.Loop.SetRetryConfig(m.retryConfig)
+	m.mu.RUnlock()
 	instance.ctx, instance.cancel = context.WithCancel(context.Background())
 	instance.State = LoopStateRunning
 	instance.StartTime = time.Now()
@@ -394,4 +413,38 @@ func (m *Manager) StopAll() {
 // IsAnyRunning returns true if any loop is currently running.
 func (m *Manager) IsAnyRunning() bool {
 	return m.GetRunningCount() > 0
+}
+
+// SetMaxIterations updates the default max iterations for new loops.
+func (m *Manager) SetMaxIterations(maxIter int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.maxIter = maxIter
+}
+
+// MaxIterations returns the current default max iterations.
+func (m *Manager) MaxIterations() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.maxIter
+}
+
+// SetMaxIterationsForInstance updates max iterations for a specific running loop.
+func (m *Manager) SetMaxIterationsForInstance(name string, maxIter int) error {
+	m.mu.RLock()
+	instance, exists := m.instances[name]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("PRD %s not found", name)
+	}
+
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
+	if instance.Loop != nil {
+		instance.Loop.SetMaxIterations(maxIter)
+	}
+
+	return nil
 }

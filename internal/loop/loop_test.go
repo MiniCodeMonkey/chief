@@ -316,3 +316,61 @@ func TestLoop_ChiefCompleteEvent(t *testing.T) {
 		t.Error("Expected Complete event for <chief-complete/>")
 	}
 }
+
+// TestLoop_SetMaxIterations tests setting max iterations at runtime.
+func TestLoop_SetMaxIterations(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+
+	if l.MaxIterations() != 5 {
+		t.Errorf("Expected initial maxIter 5, got %d", l.MaxIterations())
+	}
+
+	l.SetMaxIterations(10)
+
+	if l.MaxIterations() != 10 {
+		t.Errorf("Expected maxIter 10 after set, got %d", l.MaxIterations())
+	}
+}
+
+// TestDefaultRetryConfig tests the default retry configuration.
+func TestDefaultRetryConfig(t *testing.T) {
+	config := DefaultRetryConfig()
+
+	if config.MaxRetries != 3 {
+		t.Errorf("Expected MaxRetries 3, got %d", config.MaxRetries)
+	}
+	if !config.Enabled {
+		t.Error("Expected Enabled to be true")
+	}
+	if len(config.RetryDelays) != 3 {
+		t.Errorf("Expected 3 retry delays, got %d", len(config.RetryDelays))
+	}
+}
+
+// TestLoop_SetRetryConfig tests setting retry config.
+func TestLoop_SetRetryConfig(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+
+	// Check default
+	if !l.retryConfig.Enabled {
+		t.Error("Expected default retry to be enabled")
+	}
+
+	// Disable retry
+	l.DisableRetry()
+	if l.retryConfig.Enabled {
+		t.Error("Expected retry to be disabled after DisableRetry()")
+	}
+
+	// Set custom config
+	customConfig := RetryConfig{
+		MaxRetries:  5,
+		RetryDelays: []time.Duration{time.Second},
+		Enabled:     true,
+	}
+	l.SetRetryConfig(customConfig)
+
+	if l.retryConfig.MaxRetries != 5 {
+		t.Errorf("Expected MaxRetries 5, got %d", l.retryConfig.MaxRetries)
+	}
+}

@@ -59,7 +59,6 @@ func RunEdit(opts EditOptions) error {
 	fmt.Println("\nPRD editing complete!")
 
 	// Run conversion from prd.md to prd.json with progress protection
-	fmt.Println("Converting prd.md to prd.json...")
 	convertOpts := ConvertOptions{
 		PRDDir: prdDir,
 		Merge:  opts.Merge,

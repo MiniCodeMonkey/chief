@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/minicodemonkey/chief/internal/git"
 	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/prd"
 )
@@ -83,6 +85,7 @@ const (
 	ViewLog
 	ViewPicker
 	ViewHelp
+	ViewBranchWarning
 )
 
 // App is the main Bubble Tea model for the Chief TUI.
@@ -123,6 +126,10 @@ type App struct {
 	helpOverlay      *HelpOverlay
 	previousViewMode ViewMode // View to return to when closing help
 
+	// Branch warning dialog
+	branchWarning   *BranchWarning
+	pendingStartPRD string // PRD name waiting to start after branch decision
+
 	// Completion notification callback
 	onCompletion func(prdName string)
 
@@ -149,10 +156,25 @@ func NewApp(prdPath string) (*App, error) {
 }
 
 // NewAppWithOptions creates a new App with the given PRD and options.
+// If maxIter <= 0, it will be calculated dynamically based on remaining stories.
 func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 	p, err := prd.LoadPRD(prdPath)
 	if err != nil {
 		return nil, err
+	}
+
+	// Calculate dynamic default if maxIter <= 0
+	if maxIter <= 0 {
+		remaining := 0
+		for _, story := range p.UserStories {
+			if !story.Passes {
+				remaining++
+			}
+		}
+		maxIter = remaining + 5
+		if maxIter < 5 {
+			maxIter = 5
+		}
 	}
 
 	// Extract PRD name from path (directory name or filename without extension)
@@ -204,6 +226,7 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		picker:        picker,
 		baseDir:       baseDir,
 		helpOverlay:   NewHelpOverlay(),
+		branchWarning: NewBranchWarning(),
 	}, nil
 }
 
@@ -218,6 +241,13 @@ func (a *App) SetCompletionCallback(fn func(prdName string)) {
 // SetVerbose enables or disables verbose mode (raw Claude output in log).
 func (a *App) SetVerbose(v bool) {
 	a.verbose = v
+}
+
+// DisableRetry disables automatic retry on Claude crashes.
+func (a *App) DisableRetry() {
+	if a.manager != nil {
+		a.manager.DisableRetry()
+	}
 }
 
 // Init initializes the App.
@@ -322,6 +352,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.handlePickerKeys(msg)
 		}
 
+		// Handle branch warning view
+		if a.viewMode == ViewBranchWarning {
+			return a.handleBranchWarningKeys(msg)
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			a.stopAllLoops()
@@ -407,6 +442,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.viewMode == ViewLog {
 				a.logViewer.ScrollToBottom()
 			}
+
+		// Max iterations control
+		case "+", "=":
+			a.adjustMaxIterations(5)
+		case "-", "_":
+			a.adjustMaxIterations(-5)
 		}
 	}
 
@@ -420,10 +461,32 @@ func (a App) startLoop() (tea.Model, tea.Cmd) {
 
 // startLoopForPRD starts the agent loop for a specific PRD.
 func (a App) startLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
+	// Get the PRD directory
+	prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
+
+	// Check if on a protected branch
+	if git.IsGitRepo(a.baseDir) {
+		branch, err := git.GetCurrentBranch(a.baseDir)
+		if err == nil && git.IsProtectedBranch(branch) {
+			// Show branch warning dialog
+			a.branchWarning.SetSize(a.width, a.height)
+			a.branchWarning.SetContext(branch, prdName)
+			a.branchWarning.Reset()
+			a.pendingStartPRD = prdName
+			a.viewMode = ViewBranchWarning
+			return a, nil
+		}
+	}
+
+	return a.doStartLoop(prdName, prdDir)
+}
+
+// doStartLoop actually starts the loop (after branch check).
+func (a App) doStartLoop(prdName, prdDir string) (tea.Model, tea.Cmd) {
 	// Check if this PRD is registered, if not register it
 	if instance := a.manager.GetInstance(prdName); instance == nil {
 		// Find the PRD path
-		prdPath := filepath.Join(a.baseDir, ".chief", "prds", prdName, "prd.json")
+		prdPath := filepath.Join(prdDir, "prd.json")
 		a.manager.Register(prdName, prdPath)
 	}
 
@@ -558,6 +621,10 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 				a.lastActivity = "Error: " + event.Err.Error()
 			}
 		}
+	case loop.EventRetrying:
+		if isCurrentPRD {
+			a.lastActivity = event.Text
+		}
 	}
 
 	// Reload PRD if this is the current one to reflect any changes made by Claude
@@ -619,9 +686,65 @@ func (a App) View() string {
 		return a.renderPickerView()
 	case ViewHelp:
 		return a.renderHelpView()
+	case ViewBranchWarning:
+		return a.renderBranchWarningView()
 	default:
 		return a.renderDashboard()
 	}
+}
+
+// renderBranchWarningView renders the branch warning dialog.
+func (a *App) renderBranchWarningView() string {
+	a.branchWarning.SetSize(a.width, a.height)
+	return a.branchWarning.Render()
+}
+
+// handleBranchWarningKeys handles keyboard input for the branch warning dialog.
+func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.viewMode = ViewDashboard
+		a.pendingStartPRD = ""
+		a.lastActivity = "Cancelled"
+		return a, nil
+
+	case "up", "k":
+		a.branchWarning.MoveUp()
+		return a, nil
+
+	case "down", "j":
+		a.branchWarning.MoveDown()
+		return a, nil
+
+	case "enter":
+		prdName := a.pendingStartPRD
+		prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
+		a.pendingStartPRD = ""
+		a.viewMode = ViewDashboard
+
+		switch a.branchWarning.GetSelectedOption() {
+		case BranchOptionCreateBranch:
+			// Create the suggested branch
+			branchName := a.branchWarning.GetSuggestedBranch()
+			if err := git.CreateBranch(a.baseDir, branchName); err != nil {
+				a.lastActivity = "Error creating branch: " + err.Error()
+				return a, nil
+			}
+			a.lastActivity = "Created branch: " + branchName
+			// Now start the loop
+			return a.doStartLoop(prdName, prdDir)
+
+		case BranchOptionContinue:
+			// Continue on current branch
+			return a.doStartLoop(prdName, prdDir)
+
+		case BranchOptionCancel:
+			a.lastActivity = "Cancelled"
+			return a, nil
+		}
+	}
+
+	return a, nil
 }
 
 // renderHelpView renders the help overlay.
@@ -875,6 +998,24 @@ func (a *App) GetCompletionPercentage() float64 {
 // GetLastActivity returns the last activity message.
 func (a *App) GetLastActivity() string {
 	return a.lastActivity
+}
+
+// adjustMaxIterations adjusts the max iterations by delta.
+func (a *App) adjustMaxIterations(delta int) {
+	newMax := a.maxIter + delta
+	if newMax < 1 {
+		newMax = 1
+	}
+	a.maxIter = newMax
+
+	// Update the manager's default
+	if a.manager != nil {
+		a.manager.SetMaxIterations(newMax)
+		// Also update any running loop for the current PRD
+		a.manager.SetMaxIterationsForInstance(a.prdName, newMax)
+	}
+
+	a.lastActivity = fmt.Sprintf("Max iterations: %d", newMax)
 }
 
 // listenForPRDChanges listens for PRD file changes and returns them as messages.

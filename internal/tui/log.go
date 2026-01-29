@@ -10,10 +10,11 @@ import (
 
 // LogEntry represents a single entry in the log viewer.
 type LogEntry struct {
-	Type    loop.EventType
-	Text    string
-	Tool    string
-	StoryID string
+	Type      loop.EventType
+	Text      string
+	Tool      string
+	ToolInput map[string]interface{}
+	StoryID   string
 }
 
 // LogViewer manages the log viewport state.
@@ -37,16 +38,17 @@ func NewLogViewer() *LogViewer {
 // AddEvent adds a loop event to the log.
 func (l *LogViewer) AddEvent(event loop.Event) {
 	entry := LogEntry{
-		Type:    event.Type,
-		Text:    event.Text,
-		Tool:    event.Tool,
-		StoryID: event.StoryID,
+		Type:      event.Type,
+		Text:      event.Text,
+		Tool:      event.Tool,
+		ToolInput: event.ToolInput,
+		StoryID:   event.StoryID,
 	}
 
 	// Filter out events we don't want to display
 	switch event.Type {
 	case loop.EventAssistantText, loop.EventToolStart, loop.EventToolResult,
-		loop.EventStoryStarted, loop.EventComplete, loop.EventError:
+		loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventRetrying:
 		l.entries = append(l.entries, entry)
 	default:
 		// Skip iteration start, unknown events, etc.
@@ -159,8 +161,8 @@ func (l *LogViewer) totalLines() int {
 func (l *LogViewer) entryHeight(entry LogEntry) int {
 	switch entry.Type {
 	case loop.EventToolStart:
-		// Tool card takes 3 lines (top border, content, bottom border)
-		return 3
+		// Tool display is now a single line
+		return 1
 	case loop.EventToolResult:
 		// Tool result is typically compact
 		return 1
@@ -172,6 +174,75 @@ func (l *LogViewer) entryHeight(entry LogEntry) int {
 		wrapped := wrapText(entry.Text, l.width-4)
 		return strings.Count(wrapped, "\n") + 1
 	}
+}
+
+// getToolIcon returns an emoji icon for a tool name.
+func getToolIcon(toolName string) string {
+	switch toolName {
+	case "Read":
+		return "📖"
+	case "Edit":
+		return "✏️"
+	case "Write":
+		return "📝"
+	case "Bash":
+		return "🔨"
+	case "Glob":
+		return "🔍"
+	case "Grep":
+		return "🔎"
+	case "Task":
+		return "🤖"
+	case "WebFetch":
+		return "🌐"
+	case "WebSearch":
+		return "🌐"
+	default:
+		return "⚙️"
+	}
+}
+
+// getToolArgument extracts the main argument from tool input for display.
+func getToolArgument(toolName string, input map[string]interface{}) string {
+	if input == nil {
+		return ""
+	}
+
+	switch toolName {
+	case "Read", "Edit", "Write":
+		if path, ok := input["file_path"].(string); ok {
+			return path
+		}
+	case "Bash":
+		if cmd, ok := input["command"].(string); ok {
+			// Truncate long commands
+			if len(cmd) > 60 {
+				return cmd[:57] + "..."
+			}
+			return cmd
+		}
+	case "Glob":
+		if pattern, ok := input["pattern"].(string); ok {
+			return pattern
+		}
+	case "Grep":
+		if pattern, ok := input["pattern"].(string); ok {
+			return pattern
+		}
+	case "WebFetch", "WebSearch":
+		if url, ok := input["url"].(string); ok {
+			return url
+		}
+		if query, ok := input["query"].(string); ok {
+			return query
+		}
+	case "Task":
+		if desc, ok := input["description"].(string); ok {
+			return desc
+		}
+	}
+
+	return ""
 }
 
 // IsAutoScrolling returns whether auto-scroll is enabled.
@@ -247,6 +318,8 @@ func (l *LogViewer) renderEntry(entry LogEntry) []string {
 		return l.renderComplete(entry)
 	case loop.EventError:
 		return l.renderError(entry)
+	case loop.EventRetrying:
+		return l.renderRetrying(entry)
 	default:
 		return l.renderText(entry)
 	}
@@ -269,42 +342,35 @@ func (l *LogViewer) renderText(entry LogEntry) []string {
 	return result
 }
 
-// renderToolCard renders a tool call as a styled card.
+// renderToolCard renders a tool call as a single styled line with icon and argument.
 func (l *LogViewer) renderToolCard(entry LogEntry) []string {
-	// Tool icon and name
-	icon := "⚙"
 	toolName := entry.Tool
 	if toolName == "" {
 		toolName = "unknown"
 	}
 
-	// Card styles
-	cardBorderStyle := lipgloss.NewStyle().Foreground(BorderColor)
-	toolIconStyle := lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
-	toolNameStyle := lipgloss.NewStyle().Foreground(TextColor).Bold(true)
+	// Get icon and argument
+	icon := getToolIcon(toolName)
+	arg := getToolArgument(toolName, entry.ToolInput)
 
-	// Calculate card width (min 20, max width-4)
-	cardWidth := len(toolName) + 6 // icon + padding + borders
-	if cardWidth < 20 {
-		cardWidth = 20
+	// Style the output
+	toolNameStyle := lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
+	argStyle := lipgloss.NewStyle().Foreground(TextColor)
+
+	// Build the line: icon + tool name + argument
+	var line string
+	if arg != "" {
+		// Truncate argument if too long
+		maxArgLen := l.width - len(toolName) - 8
+		if maxArgLen > 0 && len(arg) > maxArgLen {
+			arg = arg[:maxArgLen-3] + "..."
+		}
+		line = fmt.Sprintf("%s %s %s", icon, toolNameStyle.Render(toolName), argStyle.Render(arg))
+	} else {
+		line = fmt.Sprintf("%s %s", icon, toolNameStyle.Render(toolName))
 	}
-	if cardWidth > l.width-4 {
-		cardWidth = l.width - 4
-	}
 
-	// Build the card
-	topBorder := cardBorderStyle.Render("╭" + strings.Repeat("─", cardWidth-2) + "╮")
-	bottomBorder := cardBorderStyle.Render("╰" + strings.Repeat("─", cardWidth-2) + "╯")
-
-	// Content line with proper padding
-	content := fmt.Sprintf(" %s %s", toolIconStyle.Render(icon), toolNameStyle.Render(toolName))
-	contentPadding := cardWidth - lipgloss.Width(content) - 2 // -2 for borders
-	if contentPadding < 0 {
-		contentPadding = 0
-	}
-	middleLine := cardBorderStyle.Render("│") + content + strings.Repeat(" ", contentPadding) + cardBorderStyle.Render("│")
-
-	return []string{topBorder, middleLine, bottomBorder}
+	return []string{line}
 }
 
 // renderToolResult renders a tool result.
@@ -312,10 +378,14 @@ func (l *LogViewer) renderToolResult(entry LogEntry) []string {
 	resultStyle := lipgloss.NewStyle().Foreground(MutedColor)
 	checkStyle := lipgloss.NewStyle().Foreground(SuccessColor)
 
-	// Show a compact result indicator
+	// Show a compact result indicator, truncate to available width
 	text := entry.Text
-	if len(text) > 60 {
-		text = text[:57] + "..."
+	maxLen := l.width - 8 // Account for "  ↳ " prefix and padding
+	if maxLen < 20 {
+		maxLen = 20
+	}
+	if len(text) > maxLen {
+		text = text[:maxLen-3] + "..."
 	}
 	if text == "" {
 		text = "(no output)"
@@ -373,4 +443,18 @@ func (l *LogViewer) renderError(entry LogEntry) []string {
 	}
 
 	return []string{errorStyle.Render("✗ Error: " + text)}
+}
+
+// renderRetrying renders a retry message.
+func (l *LogViewer) renderRetrying(entry LogEntry) []string {
+	retryStyle := lipgloss.NewStyle().
+		Foreground(WarningColor).
+		Bold(true)
+
+	text := entry.Text
+	if text == "" {
+		text = "Retrying..."
+	}
+
+	return []string{retryStyle.Render("🔄 " + text)}
 }

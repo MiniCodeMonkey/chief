@@ -29,6 +29,8 @@ const (
 	EventMaxIterationsReached
 	// EventError is emitted when an error occurs.
 	EventError
+	// EventRetrying is emitted when retrying after a crash.
+	EventRetrying
 )
 
 // String returns the string representation of an EventType.
@@ -52,6 +54,8 @@ func (e EventType) String() string {
 		return "MaxIterationsReached"
 	case EventError:
 		return "Error"
+	case EventRetrying:
+		return "Retrying"
 	default:
 		return "Unknown"
 	}
@@ -59,13 +63,15 @@ func (e EventType) String() string {
 
 // Event represents a parsed event from Claude's stream-json output.
 type Event struct {
-	Type      EventType
-	Iteration int
-	Text      string
-	Tool      string
-	ToolInput map[string]interface{}
-	StoryID   string
-	Err       error
+	Type       EventType
+	Iteration  int
+	Text       string
+	Tool       string
+	ToolInput  map[string]interface{}
+	StoryID    string
+	Err        error
+	RetryCount int // Current retry attempt (1-based)
+	RetryMax   int // Maximum retries allowed
 }
 
 // streamMessage represents the top-level structure of a stream-json line.

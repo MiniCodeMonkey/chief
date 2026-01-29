@@ -90,8 +90,8 @@ func (a *App) renderHeader() string {
 	stateStyle := GetStateStyle(a.state)
 	state := stateStyle.Render(fmt.Sprintf("[%s]", a.state.String()))
 
-	// Iteration count
-	iteration := SubtitleStyle.Render(fmt.Sprintf("Iteration: %d", a.iteration))
+	// Iteration count (current/max)
+	iteration := SubtitleStyle.Render(fmt.Sprintf("Iteration: %d/%d", a.iteration, a.maxIter))
 
 	// Elapsed time
 	elapsed := a.GetElapsedTime()
@@ -686,8 +686,8 @@ func (a *App) renderLogHeader() string {
 	stateStyle := GetStateStyle(a.state)
 	state := stateStyle.Render(fmt.Sprintf("[%s]", a.state.String()))
 
-	// Iteration count
-	iteration := SubtitleStyle.Render(fmt.Sprintf("Iteration: %d", a.iteration))
+	// Iteration count (current/max)
+	iteration := SubtitleStyle.Render(fmt.Sprintf("Iteration: %d/%d", a.iteration, a.maxIter))
 
 	// Auto-scroll indicator
 	var scrollIndicator string

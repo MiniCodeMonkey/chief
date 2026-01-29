@@ -26,6 +26,7 @@ type TUIOptions struct {
 	Verbose       bool
 	Merge         bool
 	Force         bool
+	NoRetry       bool
 }
 
 func main() {
@@ -113,11 +114,12 @@ func listAvailablePRDs() []string {
 func parseTUIFlags() *TUIOptions {
 	opts := &TUIOptions{
 		PRDPath:       "", // Will be resolved later
-		MaxIterations: 10,
+		MaxIterations: 0,  // 0 signals dynamic calculation (remaining stories + 5)
 		NoSound:       false,
 		Verbose:       false,
 		Merge:         false,
 		Force:         false,
+		NoRetry:       false,
 	}
 
 	for i := 1; i < len(os.Args); i++ {
@@ -138,6 +140,8 @@ func parseTUIFlags() *TUIOptions {
 			opts.Merge = true
 		case arg == "--force":
 			opts.Force = true
+		case arg == "--no-retry":
+			opts.NoRetry = true
 		case arg == "--max-iterations" || arg == "-n":
 			// Next argument should be the number
 			if i+1 < len(os.Args) {
@@ -345,6 +349,11 @@ func runTUIWithOptions(opts *TUIOptions) {
 		app.SetVerbose(true)
 	}
 
+	// Disable retry if requested
+	if opts.NoRetry {
+		app.DisableRetry()
+	}
+
 	// Initialize sound notifier (unless disabled)
 	if !opts.NoSound {
 		notifier, err := notify.GetNotifier()
@@ -415,8 +424,9 @@ Commands:
   help                      Show this help message
 
 Global Options:
-  --max-iterations N, -n N  Set maximum iterations (default: 10)
+  --max-iterations N, -n N  Set maximum iterations (default: dynamic)
   --no-sound                Disable completion sound notifications
+  --no-retry                Disable auto-retry on Claude crashes
   --verbose                 Show raw Claude output in log
   --merge                   Auto-merge progress on conversion conflicts
   --force                   Auto-overwrite on conversion conflicts

@@ -314,3 +314,42 @@ func TestManagerStopAll(t *testing.T) {
 		t.Error("StopAll did not complete in time")
 	}
 }
+
+func TestManagerSetMaxIterations(t *testing.T) {
+	m := NewManager(10)
+
+	if m.MaxIterations() != 10 {
+		t.Errorf("expected initial maxIter 10, got %d", m.MaxIterations())
+	}
+
+	m.SetMaxIterations(20)
+
+	if m.MaxIterations() != 20 {
+		t.Errorf("expected maxIter 20, got %d", m.MaxIterations())
+	}
+}
+
+func TestManagerRetryConfig(t *testing.T) {
+	m := NewManager(10)
+
+	// Check default retry config
+	if !m.retryConfig.Enabled {
+		t.Error("expected default retry to be enabled")
+	}
+
+	// Disable retry
+	m.DisableRetry()
+	if m.retryConfig.Enabled {
+		t.Error("expected retry to be disabled")
+	}
+
+	// Set custom retry config
+	m.SetRetryConfig(RetryConfig{
+		MaxRetries: 5,
+		Enabled:    true,
+	})
+
+	if m.retryConfig.MaxRetries != 5 {
+		t.Errorf("expected MaxRetries 5, got %d", m.retryConfig.MaxRetries)
+	}
+}
