@@ -4,11 +4,11 @@ You are helping edit an existing Product Requirements Document (PRD).
 
 ## Your Task
 
-Edit the existing `prd.md` file in the current directory based on the user's requested changes.
+Edit the existing `prd.md` file at `{{PRD_DIR}}/prd.md` based on the user's requested changes.
 
 ## Current PRD
 
-The current PRD is located at `prd.md` in the working directory. Read it first to understand the existing structure and content.
+The current PRD is located at `{{PRD_DIR}}/prd.md`. Read it first to understand the existing structure and content.
 
 ## PRD Format
 
@@ -47,10 +47,10 @@ The PRD should follow this structure:
 
 ## Instructions
 
-1. Read the existing `prd.md` file first
+1. Read the existing PRD file at `{{PRD_DIR}}/prd.md` first
 2. Ask clarifying questions about the desired changes
 3. Make the requested edits while preserving the overall structure
-4. Save the updated `prd.md` file
+4. Save the updated PRD file
 
 Note: Some stories may have already been completed. Changes will be merged with progress when the PRD is converted.
 

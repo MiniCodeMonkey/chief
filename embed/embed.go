@@ -33,9 +33,9 @@ func GetInitPrompt(prdDir, context string) string {
 	return strings.ReplaceAll(result, "{{CONTEXT}}", context)
 }
 
-// GetEditPrompt returns the PRD editor prompt.
-func GetEditPrompt() string {
-	return editPromptTemplate
+// GetEditPrompt returns the PRD editor prompt with the PRD directory substituted.
+func GetEditPrompt(prdDir string) string {
+	return strings.ReplaceAll(editPromptTemplate, "{{PRD_DIR}}", prdDir)
 }
 
 // GetConvertPrompt returns the PRD converter prompt for prd.md to prd.json conversion.

@@ -44,15 +44,15 @@ func RunEdit(opts EditOptions) error {
 		return fmt.Errorf("PRD not found at %s. Use 'chief new %s' to create it first", prdMdPath, opts.Name)
 	}
 
-	// Get the edit prompt
-	prompt := embed.GetEditPrompt()
+	// Get the edit prompt with the PRD directory path
+	prompt := embed.GetEditPrompt(prdDir)
 
 	// Launch interactive Claude session
 	fmt.Printf("Editing PRD at %s...\n", prdDir)
 	fmt.Println("Launching Claude to help you edit your PRD...")
 	fmt.Println()
 
-	if err := runInteractiveClaude(prdDir, prompt); err != nil {
+	if err := runInteractiveClaude(opts.BaseDir, prompt); err != nil {
 		return fmt.Errorf("Claude session failed: %w", err)
 	}
 

@@ -91,8 +91,11 @@ func TestGetInitPrompt(t *testing.T) {
 }
 
 func TestGetEditPrompt(t *testing.T) {
-	prompt := GetEditPrompt()
+	prompt := GetEditPrompt("/test/path/prds/main")
 	if prompt == "" {
 		t.Error("Expected GetEditPrompt() to return non-empty prompt")
+	}
+	if !strings.Contains(prompt, "/test/path/prds/main") {
+		t.Error("Expected prompt to contain the PRD directory path")
 	}
 }

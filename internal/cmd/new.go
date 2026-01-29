@@ -59,7 +59,7 @@ func RunNew(opts NewOptions) error {
 	fmt.Println("Launching Claude to help you create your PRD...")
 	fmt.Println()
 
-	if err := runInteractiveClaude(prdDir, prompt); err != nil {
+	if err := runInteractiveClaude(opts.BaseDir, prompt); err != nil {
 		return fmt.Errorf("Claude session failed: %w", err)
 	}
 
