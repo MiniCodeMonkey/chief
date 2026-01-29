@@ -151,139 +151,292 @@ services:
       - REDIS_URL=redis://localhost:6479
 ```
 
-### Decision 3: Worktree Lifecycle Management
+### Decision 3: TUI-First Worktree Management
 
-**New Commands:**
+**Design Philosophy**: Chief is a TUI-first application. Rather than adding CLI subcommands
+(`chief worktree new/list/switch`), all worktree operations are integrated directly into
+the existing TUI flows.
 
-```bash
-# Create a new worktree with PRD
-chief worktree new feature-c --prd "Add payment processing"
+**Key Integration Points:**
 
-# List all worktrees and their PRD status
-chief worktree list
+1. **PRD Creation Flow** - When creating a new PRD, offer worktree creation inline
+2. **Dashboard View** - Shows all worktrees with their PRD status at a glance
+3. **Picker Enhancement** - The existing PRD picker becomes a worktree-aware picker
+4. **Hotkeys** - Quick actions for environment control without leaving dashboard
 
-# Switch to a worktree (opens new shell or changes directory)
-chief worktree switch feature-a
-
-# Remove a worktree (with confirmation)
-chief worktree remove feature-b
-
-# Start dev environment for current worktree
-chief env start
-
-# Stop dev environment
-chief env stop
-
-# Show allocated ports
-chief env ports
-```
-
-**Automatic Worktree Creation Flow:**
-
-```
-User: chief new "Add dark mode"
-
-Chief: Creating PRD "add-dark-mode"...
-
-       Would you like to create a dedicated worktree for this PRD?
-       This allows parallel development with isolated environments.
-
-       [Y] Yes, create worktree  [N] No, use current directory
-
-User: Y
-
-Chief: Creating worktree at ../project-add-dark-mode...
-       Creating branch: feature/add-dark-mode
-       Initializing environment profile (port offset: +200)
-
-       Ready! To start working:
-         cd ../project-add-dark-mode && chief start
-```
+**No New CLI Commands** - Everything happens in the TUI:
+- Creating worktrees: Part of new PRD flow or via `[N]` from dashboard
+- Listing worktrees: The dashboard IS the list
+- Switching: Select from picker, Chief spawns new terminal in that worktree
+- Environment control: Inline in dashboard with `[E]` hotkey
 
 ---
 
 ## UX/UI Design
 
-### TUI Changes
+### Design Philosophy: TUI-Native Worktree Management
 
-#### 1. Worktree Indicator in Status Bar
+Chief is fundamentally a TUI application. Rather than bolting on CLI subcommands, worktree
+management is woven into the existing TUI patterns:
 
-```
-┌─ Chief ─────────────────────────────────────────────────────────────┐
-│  ◉ feature-a [Running]  ○ feature-b [Paused]  ○ main [Ready]       │
-│  ↳ Worktree: ~/project-feature-a  Ports: 3100, 5532, 6479          │
-├─────────────────────────────────────────────────────────────────────┤
-```
+- **Dashboard IS the worktree list** - No separate "worktree list" command needed
+- **PRD creation includes worktree creation** - Natural flow, not a separate step
+- **Picker is worktree-aware** - Shows worktrees, not just PRDs
+- **Environment control via hotkeys** - No context switching to terminal
 
-#### 2. Dashboard Multi-Worktree View
+### TUI Flow Diagrams
+
+#### Flow 1: New PRD with Worktree (from Dashboard)
 
 ```
 ┌─ Dashboard ─────────────────────────────────────────────────────────┐
 │                                                                     │
-│  ACTIVE WORKTREES                                                   │
-│  ───────────────                                                    │
+│  PRDs                                                               │
+│  ────                                                               │
+│  ● feature-a          ███████████░░░░  73% (8/11)     Running      │
 │                                                                     │
-│  ● feature-a          ███████████░░░░  73% (8/11 stories)          │
-│    ~/project-feature-a                                              │
-│    Env: Running (ports 3100, 5532)    Iteration: 12                │
 │                                                                     │
-│  ◐ feature-b          █████░░░░░░░░░░  36% (4/11 stories)          │
-│    ~/project-feature-b                                              │
-│    Env: Running (ports 3200, 5632)    Iteration: 5 [Paused]        │
 │                                                                     │
-│  ○ main               ░░░░░░░░░░░░░░░  Ready                       │
-│    ~/project                                                        │
-│    Env: Stopped                                                     │
 │                                                                     │
 ├─────────────────────────────────────────────────────────────────────┤
-│  [W] Switch Worktree  [E] Env Control  [N] New Worktree  [?] Help  │
+│  [N] New PRD    [S] Start/Stop    [L] Logs    [E] Env    [?] Help  │
+└─────────────────────────────────────────────────────────────────────┘
+
+User presses [N]
+        ↓
+
+┌─ New PRD ───────────────────────────────────────────────────────────┐
+│                                                                     │
+│  What would you like to build?                                      │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Add user authentication with OAuth support                   │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  Create in dedicated worktree?                                      │
+│                                                                     │
+│    ● Yes - Isolated branch & environment (recommended)              │
+│    ○ No  - Use current directory                                    │
+│                                                                     │
+│  Worktree location:                                                 │
+│    ../my-project-add-user-auth                                      │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  Enter: Create    Tab: Toggle worktree    Esc: Cancel              │
+└─────────────────────────────────────────────────────────────────────┘
+
+User presses Enter
+        ↓
+
+┌─ Creating... ───────────────────────────────────────────────────────┐
+│                                                                     │
+│  ✓ Generated PRD from description                                   │
+│  ✓ Created branch: feature/add-user-auth                           │
+│  ✓ Created worktree: ../my-project-add-user-auth                   │
+│  ● Detecting environment...                                         │
+│    Found: docker-compose.yml                                        │
+│  ✓ Allocated ports (offset +100): app:3100, db:5532, redis:6479    │
+│  ✓ Generated docker-compose.override.yml                           │
+│                                                                     │
+│  Ready! Opening in new terminal...                                  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+        ↓ (spawns new terminal in worktree, runs `chief`)
+
+┌─ Dashboard ─────────────────────────────────────────────────────────┐
+│  ~/my-project-add-user-auth                    Ports: 3100 5532    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  PRDs                                                               │
+│  ────                                                               │
+│  ● add-user-auth      ░░░░░░░░░░░░░░░   0% (0/7)        Ready      │
+│                                                                     │
+│  Environment: Stopped                                               │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  [S] Start    [E] Start Env    [L] Logs    [?] Help                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 3. Environment Control Panel (New View)
+#### Flow 2: Multi-Worktree Dashboard (Coordinator Mode)
+
+When running `chief --all` or pressing `[A]` for "All Worktrees":
 
 ```
-┌─ Environment: feature-a ────────────────────────────────────────────┐
+┌─ All Worktrees ─────────────────────────────────────────────────────┐
 │                                                                     │
-│  STATUS: Running                        UPTIME: 2h 34m             │
+│  WORKTREES (3)                                              [A]ll  │
+│  ─────────────                                                      │
+│                                                                     │
+│  ┌─ main ─────────────────────────────────────────────────────────┐│
+│  │  ~/projects/my-project                                Stopped  ││
+│  │  No active PRD                                                 ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│  ┌─ feature-a ◉ ──────────────────────────────────────────────────┐│
+│  │  ~/projects/my-project-feature-a              Ports: 3100 5532 ││
+│  │  add-auth         ███████████░░░░  73% (8/11)   Iter 12  ▶ RUN ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│  ┌─ feature-b ◐ ──────────────────────────────────────────────────┐│
+│  │  ~/projects/my-project-feature-b              Ports: 3200 5632 ││
+│  │  fix-payments     █████░░░░░░░░░░  36% (4/11)   Iter 5   ⏸ PAU ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  ↑/↓ Select   Enter: Focus   [N] New   [E] Env All   [?] Help     │
+└─────────────────────────────────────────────────────────────────────┘
+
+User selects feature-a and presses Enter
+        ↓
+(Spawns terminal in that worktree OR shows focused view below)
+
+┌─ feature-a ─────────────────────────────────────────────────────────┐
+│  ~/my-project-feature-a                        Ports: 3100 5532    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  add-user-auth       ███████████░░░░  73% (8/11 stories)           │
+│                                                                     │
+│  Current: US-004 "Password reset flow"                              │
+│  Iteration: 12                                                      │
+│                                                                     │
+│  ┌─ Log ──────────────────────────────────────────────────────────┐│
+│  │ [12:34:56] Testing password reset email...                     ││
+│  │ [12:35:02] ✓ Email sent successfully                           ││
+│  │ [12:35:03] Testing reset token validation...                   ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  [S] Stop   [P] Pause   [L] Full Log   [A] All Worktrees   [?]    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Flow 3: Inline Environment Control
+
+No separate "environment panel" - environment status and controls are integrated
+directly into the dashboard:
+
+```
+┌─ Dashboard ─────────────────────────────────────────────────────────┐
+│  ~/my-project-feature-a                                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  add-user-auth       ███████████░░░░  73% (8/11)      ▶ Running    │
+│                                                                     │
+│  ┌─ Environment ──────────────────────────────────────────────────┐│
+│  │  ● app        localhost:3100  ✓ healthy                        ││
+│  │  ● postgres   localhost:5532  ✓ healthy                        ││
+│  │  ● redis      localhost:6479  ✓ healthy                        ││
+│  │                                                    [E] Control ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│  ┌─ Current Story ────────────────────────────────────────────────┐│
+│  │  US-004: Password reset flow                                   ││
+│  │  Iteration 12 • Started 2m ago                                 ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  [S] Stop   [P] Pause   [E] Env   [L] Logs   [A] All   [?] Help   │
+└─────────────────────────────────────────────────────────────────────┘
+
+User presses [E]
+        ↓
+
+┌─ Environment Control ───────────────────────────────────────────────┐
+│                                                                     │
+│  Environment: Running (2h 34m)                     Offset: +100    │
 │                                                                     │
 │  SERVICES                                                           │
 │  ────────                                                           │
-│  ● postgres    5532:5432    healthy     postgres:15-alpine         │
-│  ● redis       6479:6379    healthy     redis:7-alpine             │
-│  ● app         3100:3000    healthy     node:20                    │
-│  ● worker      -            running     node:20                    │
+│  [1] ● app        3100:3000    ✓ healthy     node:20              │
+│  [2] ● postgres   5532:5432    ✓ healthy     postgres:15-alpine   │
+│  [3] ● redis      6479:6379    ✓ healthy     redis:7-alpine       │
+│  [4] ● worker     -            ✓ running     node:20              │
 │                                                                     │
-│  PORT MAPPINGS                                                      │
+│  QUICK ACTIONS                                                      │
 │  ─────────────                                                      │
-│  Base offset: +100                                                  │
-│  App URL: http://localhost:3100                                     │
+│  [R] Restart All    [D] Down (stop & remove)    [U] Up (start)    │
+│  [L] Logs (all)     [1-4] Logs (service)        [O] Open in browser│
+│                                                                     │
+│  URLs                                                               │
+│  ────                                                               │
+│  App:      http://localhost:3100                                   │
 │  Database: postgres://localhost:5532/app                           │
 │                                                                     │
-│  LOGS (app)                                                         │
-│  ──────────                                                         │
-│  [2024-01-15 10:23:45] Server listening on port 3000               │
-│  [2024-01-15 10:23:46] Connected to database                       │
-│  [2024-01-15 10:24:12] GET /api/users 200 45ms                     │
-│                                                                     │
 ├─────────────────────────────────────────────────────────────────────┤
-│  [S] Start  [P] Stop  [R] Restart  [L] Logs  [←] Back              │
+│  Esc: Back    R: Restart    D: Down    L: Logs                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 4. Worktree Picker
+#### Flow 4: Worktree Picker (Enhanced PRD Picker)
+
+The existing PRD picker becomes worktree-aware. Accessed via Tab or when
+multiple worktrees exist:
 
 ```
 ┌─ Select Worktree ───────────────────────────────────────────────────┐
 │                                                                     │
-│  > ● feature-a     Running    8/11 stories    ~/project-feature-a  │
-│    ◐ feature-b     Paused     4/11 stories    ~/project-feature-b  │
-│    ○ main          Ready      -               ~/project             │
-│    + Create new worktree...                                         │
+│  > ┌──────────────────────────────────────────────────────────────┐│
+│    │ ● feature-a        ▶ Running                                 ││
+│    │   add-user-auth    ███████████░░░  73%        Ports: 3100   ││
+│    └──────────────────────────────────────────────────────────────┘│
 │                                                                     │
-│  ↑/↓ Navigate  Enter Select  N New  D Delete  Esc Cancel           │
+│    ┌──────────────────────────────────────────────────────────────┐│
+│    │ ◐ feature-b        ⏸ Paused                                  ││
+│    │   fix-payments     █████░░░░░░░░░  36%        Ports: 3200   ││
+│    └──────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│    ┌──────────────────────────────────────────────────────────────┐│
+│    │ ○ main             Stopped                                   ││
+│    │   (no active PRD)                                            ││
+│    └──────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│    ┌──────────────────────────────────────────────────────────────┐│
+│    │ + Create new worktree...                                     ││
+│    └──────────────────────────────────────────────────────────────┘│
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  ↑/↓ Navigate   Enter: Open in terminal   Del: Remove   Esc: Back │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+### Hotkey Reference
+
+| Key | Context | Action |
+|-----|---------|--------|
+| `N` | Dashboard | New PRD (with worktree option) |
+| `A` | Dashboard | Show all worktrees (coordinator mode) |
+| `E` | Dashboard | Environment control panel |
+| `Tab` | Dashboard | Worktree picker |
+| `S` | Dashboard | Start/Stop Ralph loop |
+| `P` | Dashboard | Pause Ralph loop |
+| `L` | Dashboard | View full log |
+| `O` | Env Panel | Open app in browser |
+| `R` | Env Panel | Restart all services |
+| `D` | Env Panel | Down (stop & remove containers) |
+| `U` | Env Panel | Up (start containers) |
+| `1-9` | Env Panel | View logs for specific service |
+
+### Terminal Spawning Behavior
+
+When selecting a different worktree, Chief needs to open it. Options:
+
+**Option A: Spawn New Terminal (Recommended)**
+- Uses `$TERMINAL` env var or detects (iTerm2, Terminal.app, gnome-terminal, etc.)
+- Spawns: `$TERMINAL -e "cd /path/to/worktree && chief"`
+- Current Chief instance stays open
+- User has multiple terminals, one per worktree
+
+**Option B: Print Instructions**
+- Shows: "Run `cd ../my-project-feature-a && chief` in another terminal"
+- Less magical, more explicit
+- Good fallback when terminal detection fails
+
+**Option C: tmux/Screen Integration**
+- If running in tmux, create new window: `tmux new-window -c /path/to/worktree chief`
+- Best UX for tmux users
+- Detect via `$TMUX` env var
 
 ---
 
@@ -494,10 +647,10 @@ Do NOT use hardcoded default ports (3000, 5432, 6379) as they may conflict with 
 **Problem**: Running many worktrees could exhaust available ports.
 
 **Mitigation**:
-- Track allocated offsets in `.chief/config.json`
-- Release offsets when worktrees are deleted
-- Warn when approaching limit (40+ worktrees)
-- Allow manual offset override: `chief worktree new --port-offset 5000`
+- Track allocated offsets in `.chief/config.json` (in main worktree)
+- Release offsets when worktrees are deleted via TUI
+- Show warning in environment panel when approaching limit (40+ worktrees)
+- Advanced: Allow manual offset override in new PRD dialog (hidden behind "Advanced" toggle)
 
 ### 2. Orphaned Environments
 
@@ -505,8 +658,9 @@ Do NOT use hardcoded default ports (3000, 5432, 6379) as they may conflict with 
 
 **Mitigation**:
 - Use unique container names: `chief-{worktree-id}-{service}`
-- Periodic cleanup check: detect orphaned containers
-- `chief env cleanup` command to stop all Chief-managed containers
+- In coordinator view (`[A]`), detect and show orphaned containers
+- "Clean up orphaned environments" option in coordinator view
+- On startup, check for orphaned Chief containers and offer to stop them
 
 ```go
 // Container naming convention
@@ -520,17 +674,17 @@ containerName := fmt.Sprintf("chief-%s-%s", worktreeID[:8], serviceName)
 **Mitigation**:
 - Each worktree gets its own database volume
 - Volume naming: `chief-{worktree-id}-{service}-data`
-- Option to seed from main: `chief env start --seed-from main`
+- In environment panel: "Seed from..." option to copy data from another worktree's volume
 
 ### 4. Resource Limits
 
 **Problem**: Running 5+ full dev environments simultaneously could exhaust RAM/CPU.
 
 **Mitigation**:
-- Display resource usage in TUI
-- Warn when starting environments: "4 environments already running (8GB RAM used)"
-- `chief env pause` to stop containers without removing state
-- Auto-pause inactive worktrees after configurable timeout
+- Display resource usage in coordinator view footer
+- Warn in environment panel when starting: "4 environments already running (~8GB RAM)"
+- "Pause" option in environment panel to stop containers without removing volumes
+- Auto-pause inactive worktrees after configurable timeout (shown in settings/config)
 
 ### 5. Network Conflicts
 
@@ -649,27 +803,36 @@ type EnvironmentManager interface {
 ## Migration Path
 
 ### Phase 1: Foundation (Non-Breaking)
-1. Add worktree detection (`git worktree list`)
+1. Add worktree detection (`git worktree list` parsing)
 2. Add `.chief/config.json` support
-3. TUI shows current worktree info (read-only)
+3. Show worktree path in dashboard header (read-only awareness)
+4. Store port offset in PRD metadata
 
-### Phase 2: Environment Isolation
-1. Implement port allocation
-2. Docker compose override generation
-3. `chief env start/stop/status` commands
-4. Environment panel in TUI
+### Phase 2: Environment Integration
+1. Auto-detect docker-compose/compose.yml
+2. Implement port allocation algorithm
+3. Generate docker-compose.override.yml
+4. Add environment status widget to dashboard
+5. Add `[E]` hotkey for environment control panel
+6. Inject environment context into Ralph prompts
 
-### Phase 3: Worktree Management
-1. `chief worktree new/list/remove` commands
-2. PRD-worktree binding
-3. Worktree picker in TUI
-4. Cross-worktree dashboard view
+### Phase 3: Worktree Creation Flow
+1. Enhance `[N]` new PRD flow with worktree toggle
+2. Implement `git worktree add` integration
+3. Terminal spawning for new worktree (iTerm2, gnome-terminal, tmux)
+4. Enhance PRD picker to show worktrees
 
-### Phase 4: Polish
-1. Auto-pause inactive environments
-2. Resource usage monitoring
-3. Environment seeding
-4. Windows testing & fixes
+### Phase 4: Coordinator Mode
+1. Add `[A]` all-worktrees view
+2. Cross-worktree status aggregation (read from sibling `.chief/` dirs)
+3. Quick-switch between worktrees
+4. Global environment controls (stop all, resource usage)
+
+### Phase 5: Polish
+1. Auto-pause inactive environments (configurable timeout)
+2. Orphaned container cleanup
+3. Environment seeding from main worktree
+4. Windows/WSL2 testing & edge cases
 
 ---
 
@@ -706,79 +869,164 @@ type EnvironmentManager interface {
 
 ## Appendix: User Journeys
 
-### Journey 1: First-Time Worktree User
+### Journey 1: First-Time Worktree User (All in TUI)
 
 ```
-$ cd my-project
-$ chief new "Add user authentication"
+User runs: chief
 
-Creating PRD "add-user-authentication"...
+┌─ Dashboard ─────────────────────────────────────────────────────────┐
+│  ~/my-project                                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  No PRDs yet. Press [N] to create one.                             │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 
-💡 Tip: You can work on multiple PRDs simultaneously using worktrees.
-   Each worktree gets isolated ports so you can run parallel dev environments.
+User presses [N]
 
-Would you like to create a dedicated worktree? [Y/n] y
+┌─ New PRD ───────────────────────────────────────────────────────────┐
+│                                                                     │
+│  What would you like to build?                                      │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ Add user authentication with OAuth support_                  │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ ● Create in dedicated worktree (isolated branch & env)      │   │
+│  │ ○ Use current directory                                     │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  Location: ../my-project-add-user-auth                             │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 
-Where should the worktree be created?
-  [1] ../my-project-add-user-authentication (recommended)
-  [2] ./worktrees/add-user-authentication
-  [3] Custom path...
+User presses Enter
 
-> 1
+┌─ Creating ──────────────────────────────────────────────────────────┐
+│                                                                     │
+│  ✓ Generated PRD: 7 user stories                                   │
+│  ✓ Created branch: feature/add-user-auth                           │
+│  ✓ Created worktree: ../my-project-add-user-auth                   │
+│  ✓ Detected: docker-compose.yml                                    │
+│  ✓ Allocated ports: app→3100, postgres→5532, redis→6479           │
+│                                                                     │
+│  Opening new terminal...                                            │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 
-Creating worktree...
-✓ Created branch: feature/add-user-authentication
-✓ Created worktree: ../my-project-add-user-authentication
-✓ Allocated ports: app:3100, postgres:5532, redis:6479
-✓ Generated docker-compose.override.yml
+(New terminal opens in worktree with Chief running)
 
-Ready! To start working:
-
-  cd ../my-project-add-user-authentication
-  chief start
-
-Or continue here and Chief will prompt you to switch.
+┌─ Dashboard ─────────────────────────────────────────────────────────┐
+│  ~/my-project-add-user-auth                    Ports: 3100 5532    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  add-user-auth       ░░░░░░░░░░░░░░░   0% (0/7)          Ready     │
+│                                                                     │
+│  Environment: Stopped                                               │
+│  Press [E] to start, or [S] to start loop (will auto-start env)   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Journey 2: Checking Status Across Worktrees
+### Journey 2: Checking All Worktrees (Coordinator View)
 
 ```
-$ chief worktree list
+User runs: chief (in any worktree)
+User presses [A] for "All Worktrees"
 
-WORKTREES
-─────────
-
-● main (current)
-  Path: ~/projects/my-project
-  PRD: (none active)
-  Env: stopped
-
-● add-user-authentication
-  Path: ~/projects/my-project-add-user-authentication
-  PRD: add-user-authentication (4/11 stories, 36%)
-  Env: running (ports 3100, 5532, 6479)
-  Loop: paused at iteration 7
-
-● fix-payment-bug
-  Path: ~/projects/my-project-fix-payment-bug
-  PRD: fix-payment-bug (9/10 stories, 90%)
-  Env: running (ports 3200, 5632, 6579)
-  Loop: running, iteration 15
-
-Total: 3 worktrees, 2 environments running
+┌─ All Worktrees ─────────────────────────────────────────────────────┐
+│                                                                     │
+│  ┌─ main ───────────────────────────────────────────── Stopped ───┐│
+│  │  ~/projects/my-project                                         ││
+│  │  (no active PRD)                                               ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│  ┌─ feature-a ─────────────────────────────── Ports: 3100 5532 ───┐│
+│  │  ~/projects/my-project-add-user-auth                           ││
+│  │  add-user-auth    ███████░░░░░░░░  55% (4/7)    ▶ Running i12  ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│> ┌─ feature-b ─────────────────────────────── Ports: 3200 5632 ───┐│
+│  │  ~/projects/my-project-fix-payments                            ││
+│  │  fix-payments     ████████████░░░  90% (9/10)   ⏸ Paused  i15  ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│  Resources: 2 envs running • ~4.2 GB RAM • 12% CPU                 │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  ↑↓ Select    Enter: Open terminal    [N] New    [E] Stop all env │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Journey 3: Switching Context
+### Journey 3: Quick Context Switch
 
 ```
-$ chief worktree switch fix-payment-bug
+User is in feature-a worktree, presses Tab
 
-Switching to worktree: fix-payment-bug
-Path: ~/projects/my-project-fix-payment-bug
+┌─ Switch Worktree ───────────────────────────────────────────────────┐
+│                                                                     │
+│    main              (no PRD)                         Stopped      │
+│  > feature-a ●       add-user-auth      55%          Running       │
+│    feature-b ◐       fix-payments       90%          Paused        │
+│    + New worktree...                                               │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 
-Environment is already running (ports 3200, 5632, 6579)
-PRD: fix-payment-bug (90% complete)
-Loop: running at iteration 15
+User selects feature-b, presses Enter
 
-Opening TUI...
+(New terminal spawns OR existing terminal is focused)
+
+┌─ Dashboard ─────────────────────────────────────────────────────────┐
+│  ~/my-project-fix-payments                     Ports: 3200 5632    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  fix-payments        ████████████░░░  90% (9/10)      ⏸ Paused     │
+│                                                                     │
+│  ┌─ Environment ────────────────────────────────────── Running ───┐│
+│  │  ● app       :3200   ● postgres  :5632   ● redis   :6579      ││
+│  └────────────────────────────────────────────────────────────────┘│
+│                                                                     │
+│  Last: US-009 "Refund processing" - Testing refund edge cases...  │
+│  Press [S] to resume                                               │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Journey 4: Environment Troubleshooting
+
+```
+User notices tests failing, suspects database issue
+User presses [E] for environment control
+
+┌─ Environment ───────────────────────────────────────────────────────┐
+│  Status: Running (45m)                            Port offset: +100│
+│                                                                     │
+│  SERVICES                                                           │
+│  ────────                                                           │
+│  [1] ● app         3100:3000    healthy      2m ago               │
+│  [2] ● postgres    5532:5432    healthy      45m ago              │
+│  [3] ● redis       6479:6379    unhealthy    Connection refused   │
+│  [4]   worker      -            stopped      Exited (1)           │
+│                                                                     │
+│  ⚠ redis is unhealthy - this may cause test failures              │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  [3] View redis logs    [R] Restart all    [D] Down    Esc: Back  │
+└─────────────────────────────────────────────────────────────────────┘
+
+User presses [3]
+
+┌─ Logs: redis ───────────────────────────────────────────────────────┐
+│                                                                     │
+│  # oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo                   │
+│  * Running mode=standalone, port=6379                              │
+│  # Warning: Could not create server TCP listening socket           │
+│  # *:6379: bind: Address already in use                            │
+│  # Redis will now exit                                             │
+│                                                                     │
+│  (Port conflict detected - likely another redis on 6379)           │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  [R] Restart service    [K] Kill port 6379    Esc: Back           │
+└─────────────────────────────────────────────────────────────────────┘
 ```
