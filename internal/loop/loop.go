@@ -91,6 +91,7 @@ func (l *Loop) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
 	defer l.logFile.Close()
+	defer close(l.events)
 
 	for {
 		l.mu.Lock()
