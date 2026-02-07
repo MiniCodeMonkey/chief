@@ -105,6 +105,13 @@ type worktreeStepResultMsg struct {
 // worktreeSpinnerTickMsg is sent to animate the worktree setup spinner.
 type worktreeSpinnerTickMsg struct{}
 
+// settingsGHCheckResultMsg is sent when GH CLI validation completes in settings.
+type settingsGHCheckResultMsg struct {
+	installed     bool
+	authenticated bool
+	err           error
+}
+
 // LaunchInitMsg signals the TUI should exit to launch the init flow.
 type LaunchInitMsg struct {
 	Name string
@@ -126,6 +133,7 @@ const (
 	ViewBranchWarning
 	ViewWorktreeSpinner
 	ViewCompletion
+	ViewSettings
 )
 
 // App is the main Bubble Tea model for the Chief TUI.
@@ -179,6 +187,9 @@ type App struct {
 
 	// Completion screen
 	completionScreen *CompletionScreen
+
+	// Settings overlay
+	settingsOverlay *SettingsOverlay
 
 	// Completion notification callback
 	onCompletion func(prdName string)
@@ -287,6 +298,7 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		branchWarning:    NewBranchWarning(),
 		worktreeSpinner:  NewWorktreeSpinner(),
 		completionScreen: NewCompletionScreen(),
+		settingsOverlay:  NewSettingsOverlay(),
 	}, nil
 }
 
@@ -395,6 +407,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case settingsGHCheckResultMsg:
+		return a.handleSettingsGHCheck(msg)
+
 	case PRDUpdateMsg:
 		return a.handlePRDUpdate(msg)
 
@@ -424,6 +439,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// Handle settings overlay (can be opened/closed from dashboard/log views)
+		if msg.String() == "," {
+			if a.viewMode == ViewSettings {
+				// Close settings
+				a.viewMode = a.previousViewMode
+				return a, nil
+			}
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+				a.previousViewMode = a.viewMode
+				a.settingsOverlay.SetSize(a.width, a.height)
+				a.settingsOverlay.LoadFromConfig(a.config)
+				a.viewMode = ViewSettings
+				return a, nil
+			}
+		}
+
 		// Handle help view (only Esc closes it besides ?)
 		if a.viewMode == ViewHelp {
 			if msg.String() == "esc" {
@@ -431,6 +462,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Ignore other keys in help view
 			return a, nil
+		}
+
+		// Handle settings view
+		if a.viewMode == ViewSettings {
+			return a.handleSettingsKeys(msg)
 		}
 
 		// Handle picker view separately (it has its own input mode)
@@ -835,6 +871,8 @@ func (a App) View() string {
 		return a.renderWorktreeSpinnerView()
 	case ViewCompletion:
 		return a.renderCompletionView()
+	case ViewSettings:
+		return a.renderSettingsView()
 	default:
 		return a.renderDashboard()
 	}
@@ -1101,6 +1139,109 @@ func (a *App) runAutoCreatePR() tea.Cmd {
 func (a *App) renderCompletionView() string {
 	a.completionScreen.SetSize(a.width, a.height)
 	return a.completionScreen.Render()
+}
+
+// renderSettingsView renders the settings overlay.
+func (a *App) renderSettingsView() string {
+	a.settingsOverlay.SetSize(a.width, a.height)
+	return a.settingsOverlay.Render()
+}
+
+// handleSettingsKeys handles keyboard input for the settings overlay.
+func (a App) handleSettingsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Dismiss GH error on any key
+	if a.settingsOverlay.HasGHError() {
+		a.settingsOverlay.DismissGHError()
+		return a, nil
+	}
+
+	// Handle inline text editing
+	if a.settingsOverlay.IsEditing() {
+		switch msg.String() {
+		case "enter":
+			a.settingsOverlay.ConfirmEdit()
+			a.settingsOverlay.ApplyToConfig(a.config)
+			_ = config.Save(a.baseDir, a.config)
+			return a, nil
+		case "esc":
+			a.settingsOverlay.CancelEdit()
+			return a, nil
+		case "backspace":
+			a.settingsOverlay.DeleteEditChar()
+			return a, nil
+		default:
+			if len(msg.String()) == 1 {
+				a.settingsOverlay.AddEditChar(rune(msg.String()[0]))
+			}
+			return a, nil
+		}
+	}
+
+	switch msg.String() {
+	case "esc":
+		a.viewMode = a.previousViewMode
+		return a, nil
+	case "q", "ctrl+c":
+		a.stopAllLoops()
+		a.stopWatcher()
+		return a, tea.Quit
+	case "up", "k":
+		a.settingsOverlay.MoveUp()
+		return a, nil
+	case "down", "j":
+		a.settingsOverlay.MoveDown()
+		return a, nil
+	case "enter":
+		item := a.settingsOverlay.GetSelectedItem()
+		if item == nil {
+			return a, nil
+		}
+		switch item.Type {
+		case SettingsItemBool:
+			key, newVal := a.settingsOverlay.ToggleBool()
+			if key == "onComplete.createPR" && newVal {
+				// Validate GH CLI asynchronously
+				return a, func() tea.Msg {
+					installed, authenticated, err := git.CheckGHCLI()
+					return settingsGHCheckResultMsg{installed: installed, authenticated: authenticated, err: err}
+				}
+			}
+			a.settingsOverlay.ApplyToConfig(a.config)
+			_ = config.Save(a.baseDir, a.config)
+			return a, nil
+		case SettingsItemString:
+			a.settingsOverlay.StartEditing()
+			return a, nil
+		}
+	}
+
+	return a, nil
+}
+
+// handleSettingsGHCheck handles the GH CLI check result from settings.
+func (a App) handleSettingsGHCheck(msg settingsGHCheckResultMsg) (tea.Model, tea.Cmd) {
+	if a.viewMode != ViewSettings {
+		return a, nil
+	}
+
+	if msg.err != nil || !msg.installed || !msg.authenticated {
+		// Validation failed - revert toggle and show error
+		a.settingsOverlay.RevertToggle()
+		errMsg := "GitHub CLI (gh) is not installed"
+		if msg.installed && !msg.authenticated {
+			errMsg = "GitHub CLI (gh) is not authenticated. Run: gh auth login"
+		}
+		if msg.err != nil {
+			errMsg = msg.err.Error()
+		}
+		a.settingsOverlay.SetGHError(errMsg)
+		return a, nil
+	}
+
+	// Validation passed - save the config
+	a.settingsOverlay.ApplyToConfig(a.config)
+	_ = config.Save(a.baseDir, a.config)
+	return a, nil
 }
 
 // handleCompletionKeys handles keyboard input for the completion screen.
