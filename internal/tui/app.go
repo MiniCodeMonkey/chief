@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/git"
 	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/prd"
@@ -122,6 +123,9 @@ type App struct {
 	picker  *PRDPicker
 	baseDir string // Base directory for .chief/prds/
 
+	// Project config
+	config *config.Config
+
 	// Help overlay
 	helpOverlay      *HelpOverlay
 	previousViewMode ViewMode // View to return to when closing help
@@ -198,6 +202,12 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		baseDir, _ = os.Getwd()
 	}
 
+	// Load project config
+	cfg, err := config.Load(baseDir)
+	if err != nil {
+		cfg = config.Default()
+	}
+
 	// Create loop manager for parallel PRD execution
 	manager := loop.NewManager(maxIter)
 
@@ -225,6 +235,7 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		tabBar:        tabBar,
 		picker:        picker,
 		baseDir:       baseDir,
+		config:        cfg,
 		helpOverlay:   NewHelpOverlay(),
 		branchWarning: NewBranchWarning(),
 	}, nil
