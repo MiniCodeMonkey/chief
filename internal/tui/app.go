@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -68,6 +69,15 @@ type PRDCompletedMsg struct {
 	PRDName string
 }
 
+// worktreeStepResultMsg is sent when a worktree setup step completes.
+type worktreeStepResultMsg struct {
+	step WorktreeSpinnerStep
+	err  error
+}
+
+// worktreeSpinnerTickMsg is sent to animate the worktree setup spinner.
+type worktreeSpinnerTickMsg struct{}
+
 // LaunchInitMsg signals the TUI should exit to launch the init flow.
 type LaunchInitMsg struct {
 	Name string
@@ -87,6 +97,7 @@ const (
 	ViewPicker
 	ViewHelp
 	ViewBranchWarning
+	ViewWorktreeSpinner
 )
 
 // App is the main Bubble Tea model for the Chief TUI.
@@ -134,6 +145,9 @@ type App struct {
 	branchWarning      *BranchWarning
 	pendingStartPRD    string // PRD name waiting to start after branch decision
 	pendingWorktreePath string // Absolute worktree path for pending PRD
+
+	// Worktree setup spinner
+	worktreeSpinner *WorktreeSpinner
 
 	// Completion notification callback
 	onCompletion func(prdName string)
@@ -238,8 +252,9 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		picker:        picker,
 		baseDir:       baseDir,
 		config:        cfg,
-		helpOverlay:   NewHelpOverlay(),
-		branchWarning: NewBranchWarning(),
+		helpOverlay:     NewHelpOverlay(),
+		branchWarning:   NewBranchWarning(),
+		worktreeSpinner: NewWorktreeSpinner(),
 	}, nil
 }
 
@@ -322,6 +337,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.picker.Refresh()
 		return a, nil
 
+	case worktreeStepResultMsg:
+		return a.handleWorktreeStepResult(msg)
+
+	case worktreeSpinnerTickMsg:
+		if a.viewMode == ViewWorktreeSpinner {
+			a.worktreeSpinner.Tick()
+			return a, tickWorktreeSpinner()
+		}
+		return a, nil
+
 	case PRDUpdateMsg:
 		return a.handlePRDUpdate(msg)
 
@@ -368,6 +393,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle branch warning view
 		if a.viewMode == ViewBranchWarning {
 			return a.handleBranchWarningKeys(msg)
+		}
+
+		// Handle worktree spinner view - only Esc is active
+		if a.viewMode == ViewWorktreeSpinner {
+			return a.handleWorktreeSpinnerKeys(msg)
 		}
 
 		switch msg.String() {
@@ -742,6 +772,8 @@ func (a App) View() string {
 		return a.renderHelpView()
 	case ViewBranchWarning:
 		return a.renderBranchWarningView()
+	case ViewWorktreeSpinner:
+		return a.renderWorktreeSpinnerView()
 	default:
 		return a.renderDashboard()
 	}
@@ -811,22 +843,28 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		switch a.branchWarning.GetSelectedOption() {
 		case BranchOptionCreateWorktree:
-			// Create worktree + branch - will be handled by US-009/US-018
-			// For now, store the choice so app.go knows the user chose worktree
 			branchName := a.branchWarning.GetSuggestedBranch()
 			worktreePath := git.WorktreePathForPRD(a.baseDir, prdName)
-			if err := git.CreateWorktree(a.baseDir, worktreePath, branchName); err != nil {
-				a.lastActivity = "Error creating worktree: " + err.Error()
-				return a, nil
-			}
-			a.lastActivity = fmt.Sprintf("Created worktree at %s on branch %s", worktreePath, branchName)
+			relWorktreePath := fmt.Sprintf(".chief/worktrees/%s/", prdName)
 
-			// Register with worktree info and start
-			prdPath := filepath.Join(prdDir, "prd.json")
-			if instance := a.manager.GetInstance(prdName); instance == nil {
-				a.manager.RegisterWithWorktree(prdName, prdPath, worktreePath, branchName)
+			// Detect default branch for display
+			defaultBranch := "main"
+			if db, err := git.GetDefaultBranch(a.baseDir); err == nil {
+				defaultBranch = db
 			}
-			return a.doStartLoop(prdName, prdDir)
+
+			// Configure and show the spinner
+			a.worktreeSpinner.Configure(prdName, branchName, defaultBranch, relWorktreePath, a.config.Worktree.Setup)
+			a.worktreeSpinner.SetSize(a.width, a.height)
+			a.pendingStartPRD = prdName
+			a.pendingWorktreePath = worktreePath
+			a.viewMode = ViewWorktreeSpinner
+
+			// Start the first async step (create worktree which includes branch creation)
+			return a, tea.Batch(
+				tickWorktreeSpinner(),
+				a.runWorktreeStep(SpinnerStepCreateBranch, a.baseDir, worktreePath, branchName),
+			)
 
 		case BranchOptionCreateBranch:
 			// Create the branch with (possibly edited) name
@@ -850,6 +888,131 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return a, nil
+}
+
+// renderWorktreeSpinnerView renders the worktree setup spinner.
+func (a *App) renderWorktreeSpinnerView() string {
+	a.worktreeSpinner.SetSize(a.width, a.height)
+	return a.worktreeSpinner.Render()
+}
+
+// handleWorktreeSpinnerKeys handles keyboard input for the worktree spinner.
+func (a App) handleWorktreeSpinnerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Cancel setup and clean up
+		a.worktreeSpinner.Cancel()
+		a.cleanupWorktreeSetup()
+		a.viewMode = ViewDashboard
+		a.lastActivity = "Worktree setup cancelled"
+		a.pendingStartPRD = ""
+		a.pendingWorktreePath = ""
+		return a, nil
+	}
+	// Ignore all other keys during spinner
+	return a, nil
+}
+
+// cleanupWorktreeSetup cleans up a partially created worktree and branch.
+func (a *App) cleanupWorktreeSetup() {
+	if a.pendingWorktreePath != "" {
+		// Try to remove the worktree if it was created
+		if git.IsWorktree(a.pendingWorktreePath) {
+			_ = git.RemoveWorktree(a.baseDir, a.pendingWorktreePath)
+		}
+	}
+}
+
+// tickWorktreeSpinner returns a tea.Cmd that ticks the spinner animation.
+func tickWorktreeSpinner() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return worktreeSpinnerTickMsg{}
+	})
+}
+
+// runWorktreeStep runs a worktree setup step asynchronously.
+func (a *App) runWorktreeStep(step WorktreeSpinnerStep, baseDir, worktreePath, branchName string) tea.Cmd {
+	switch step {
+	case SpinnerStepCreateBranch:
+		return func() tea.Msg {
+			// CreateWorktree handles both branch creation and worktree addition
+			if err := git.CreateWorktree(baseDir, worktreePath, branchName); err != nil {
+				return worktreeStepResultMsg{step: SpinnerStepCreateBranch, err: err}
+			}
+			return worktreeStepResultMsg{step: SpinnerStepCreateBranch}
+		}
+
+	case SpinnerStepRunSetup:
+		setupCmd := a.config.Worktree.Setup
+		return func() tea.Msg {
+			cmd := exec.Command("sh", "-c", setupCmd)
+			cmd.Dir = worktreePath
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return worktreeStepResultMsg{
+					step: SpinnerStepRunSetup,
+					err:  fmt.Errorf("%s\n%s", err.Error(), strings.TrimSpace(string(out))),
+				}
+			}
+			return worktreeStepResultMsg{step: SpinnerStepRunSetup}
+		}
+	}
+	return nil
+}
+
+// handleWorktreeStepResult handles the result of a worktree setup step.
+func (a App) handleWorktreeStepResult(msg worktreeStepResultMsg) (tea.Model, tea.Cmd) {
+	// Ignore results if we've already cancelled or left the spinner view
+	if a.viewMode != ViewWorktreeSpinner || a.worktreeSpinner.IsCancelled() {
+		return a, nil
+	}
+
+	if msg.err != nil {
+		a.worktreeSpinner.SetError(msg.err.Error())
+		return a, nil
+	}
+
+	switch msg.step {
+	case SpinnerStepCreateBranch:
+		// Branch creation completed - advance through both branch and worktree steps
+		// (CreateWorktree does both in one call)
+		a.worktreeSpinner.AdvanceStep() // Complete "Creating branch"
+		a.worktreeSpinner.AdvanceStep() // Complete "Creating worktree"
+
+		// Check if we need to run setup
+		if a.worktreeSpinner.HasSetupCommand() {
+			return a, a.runWorktreeStep(SpinnerStepRunSetup, a.baseDir, a.pendingWorktreePath, "")
+		}
+
+		// No setup - we're done, transition to loop
+		return a.finishWorktreeSetup()
+
+	case SpinnerStepRunSetup:
+		a.worktreeSpinner.AdvanceStep() // Complete "Running setup"
+		return a.finishWorktreeSetup()
+	}
+
+	return a, nil
+}
+
+// finishWorktreeSetup completes the worktree setup and starts the loop.
+func (a App) finishWorktreeSetup() (tea.Model, tea.Cmd) {
+	prdName := a.pendingStartPRD
+	worktreePath := a.pendingWorktreePath
+	branchName := a.worktreeSpinner.branchName
+	prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
+
+	// Register with worktree info
+	prdPath := filepath.Join(prdDir, "prd.json")
+	if instance := a.manager.GetInstance(prdName); instance == nil {
+		a.manager.RegisterWithWorktree(prdName, prdPath, worktreePath, branchName)
+	}
+
+	a.lastActivity = fmt.Sprintf("Created worktree at %s on branch %s", worktreePath, branchName)
+	a.viewMode = ViewDashboard
+	a.pendingStartPRD = ""
+	a.pendingWorktreePath = ""
+
+	return a.doStartLoop(prdName, prdDir)
 }
 
 // renderHelpView renders the help overlay.
