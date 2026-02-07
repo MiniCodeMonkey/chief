@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/minicodemonkey/chief/internal/loop"
 )
 
 func TestIsNarrowMode(t *testing.T) {
@@ -201,5 +204,129 @@ func TestMinMaxHelpers(t *testing.T) {
 	}
 	if max(5, 5) != 5 {
 		t.Error("max(5, 5) should return 5")
+	}
+}
+
+func TestGetWorktreeInfo_NoBranch(t *testing.T) {
+	// No manager - should return empty
+	app := &App{prdName: "auth"}
+	branch, dir := app.getWorktreeInfo()
+	if branch != "" || dir != "" {
+		t.Errorf("expected empty worktree info without manager, got branch=%q dir=%q", branch, dir)
+	}
+}
+
+func TestGetWorktreeInfo_WithBranch(t *testing.T) {
+	mgr := loop.NewManager(10)
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+
+	app := &App{prdName: "auth", manager: mgr}
+	branch, dir := app.getWorktreeInfo()
+	if branch != "chief/auth" {
+		t.Errorf("branch = %q, want %q", branch, "chief/auth")
+	}
+	if dir != ".chief/worktrees/auth/" {
+		t.Errorf("dir = %q, want %q", dir, ".chief/worktrees/auth/")
+	}
+}
+
+func TestGetWorktreeInfo_WithBranchNoWorktree(t *testing.T) {
+	// Branch set but no worktree dir (branch-only mode)
+	mgr := loop.NewManager(10)
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
+
+	app := &App{prdName: "auth", manager: mgr}
+	branch, dir := app.getWorktreeInfo()
+	if branch != "chief/auth" {
+		t.Errorf("branch = %q, want %q", branch, "chief/auth")
+	}
+	if dir != "./ (current directory)" {
+		t.Errorf("dir = %q, want %q", dir, "./ (current directory)")
+	}
+}
+
+func TestGetWorktreeInfo_RegisteredNoBranch(t *testing.T) {
+	// Registered without worktree - should return empty (backward compatible)
+	mgr := loop.NewManager(10)
+	mgr.Register("auth", "/tmp/prd.json")
+
+	app := &App{prdName: "auth", manager: mgr}
+	branch, dir := app.getWorktreeInfo()
+	if branch != "" || dir != "" {
+		t.Errorf("expected empty worktree info for no-branch PRD, got branch=%q dir=%q", branch, dir)
+	}
+}
+
+func TestHasWorktreeInfo(t *testing.T) {
+	// No manager
+	app := &App{prdName: "auth"}
+	if app.hasWorktreeInfo() {
+		t.Error("expected hasWorktreeInfo=false without manager")
+	}
+
+	// With branch
+	mgr := loop.NewManager(10)
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	app.manager = mgr
+	if !app.hasWorktreeInfo() {
+		t.Error("expected hasWorktreeInfo=true with branch set")
+	}
+}
+
+func TestEffectiveHeaderHeight_NoBranch(t *testing.T) {
+	app := &App{prdName: "auth"}
+	if got := app.effectiveHeaderHeight(); got != headerHeight {
+		t.Errorf("effectiveHeaderHeight() = %d, want %d (no branch)", got, headerHeight)
+	}
+}
+
+func TestEffectiveHeaderHeight_WithBranch(t *testing.T) {
+	mgr := loop.NewManager(10)
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+
+	app := &App{prdName: "auth", manager: mgr}
+	if got := app.effectiveHeaderHeight(); got != headerHeight+1 {
+		t.Errorf("effectiveHeaderHeight() = %d, want %d (with branch)", got, headerHeight+1)
+	}
+}
+
+func TestRenderWorktreeInfoLine_NoBranch(t *testing.T) {
+	app := &App{prdName: "auth"}
+	if got := app.renderWorktreeInfoLine(); got != "" {
+		t.Errorf("renderWorktreeInfoLine() should be empty for no-branch, got %q", got)
+	}
+}
+
+func TestRenderWorktreeInfoLine_WithBranch(t *testing.T) {
+	mgr := loop.NewManager(10)
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+
+	app := &App{prdName: "auth", manager: mgr}
+	got := app.renderWorktreeInfoLine()
+	if got == "" {
+		t.Error("renderWorktreeInfoLine() should not be empty with branch set")
+	}
+	if !strings.Contains(got, "branch:") {
+		t.Errorf("renderWorktreeInfoLine() should contain 'branch:', got %q", got)
+	}
+	if !strings.Contains(got, "chief/auth") {
+		t.Errorf("renderWorktreeInfoLine() should contain branch name 'chief/auth', got %q", got)
+	}
+	if !strings.Contains(got, "dir:") {
+		t.Errorf("renderWorktreeInfoLine() should contain 'dir:', got %q", got)
+	}
+	if !strings.Contains(got, ".chief/worktrees/auth/") {
+		t.Errorf("renderWorktreeInfoLine() should contain worktree path, got %q", got)
+	}
+}
+
+func TestRenderWorktreeInfoLine_BranchNoWorktree(t *testing.T) {
+	mgr := loop.NewManager(10)
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
+
+	app := &App{prdName: "auth", manager: mgr}
+	got := app.renderWorktreeInfoLine()
+	if !strings.Contains(got, "current directory") {
+		t.Errorf("renderWorktreeInfoLine() should contain 'current directory' for branch-only mode, got %q", got)
 	}
 }

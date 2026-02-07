@@ -316,7 +316,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		// Update log viewer size
-		a.logViewer.SetSize(a.width, a.height-headerHeight-footerHeight-2)
+		a.logViewer.SetSize(a.width, a.height-a.effectiveHeaderHeight()-footerHeight-2)
 		return a, nil
 
 	case LoopEventMsg:
@@ -410,7 +410,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			if a.viewMode == ViewDashboard {
 				a.viewMode = ViewLog
-				a.logViewer.SetSize(a.width, a.height-headerHeight-footerHeight-2)
+				a.logViewer.SetSize(a.width, a.height-a.effectiveHeaderHeight()-footerHeight-2)
 			} else {
 				a.viewMode = ViewDashboard
 			}

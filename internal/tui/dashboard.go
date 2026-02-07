@@ -41,7 +41,7 @@ func (a *App) renderDashboard() string {
 	footer := a.renderFooter()
 
 	// Calculate content area height
-	contentHeight := a.height - headerHeight - footerHeight - 2 // -2 for panel borders
+	contentHeight := a.height - a.effectiveHeaderHeight() - footerHeight - 2 // -2 for panel borders
 
 	// Render panels
 	storiesWidth := (a.width * storiesPanelPct / 100) - 2
@@ -63,7 +63,7 @@ func (a *App) renderStackedDashboard() string {
 	footer := a.renderNarrowFooter()
 
 	// Calculate content area height
-	contentHeight := a.height - headerHeight - footerHeight - 2 // -2 for panel borders
+	contentHeight := a.height - a.effectiveHeaderHeight() - footerHeight - 2 // -2 for panel borders
 
 	// Split height between stories (40%) and details (60%)
 	storiesHeight := max((contentHeight*40)/100, 5)
@@ -79,6 +79,55 @@ func (a *App) renderStackedDashboard() string {
 
 	// Stack header, content, and footer
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+}
+
+// getWorktreeInfo returns the branch and directory info for the current PRD.
+// Returns empty strings if no branch is set (backward compatible).
+func (a *App) getWorktreeInfo() (branch, dir string) {
+	if a.manager == nil {
+		return "", ""
+	}
+	instance := a.manager.GetInstance(a.prdName)
+	if instance == nil || instance.Branch == "" {
+		return "", ""
+	}
+	branch = instance.Branch
+	if instance.WorktreeDir != "" {
+		// Convert absolute worktree path to relative for display
+		dir = fmt.Sprintf(".chief/worktrees/%s/", a.prdName)
+	} else {
+		dir = "./ (current directory)"
+	}
+	return branch, dir
+}
+
+// hasWorktreeInfo returns true if the current PRD has branch info to display.
+func (a *App) hasWorktreeInfo() bool {
+	branch, _ := a.getWorktreeInfo()
+	return branch != ""
+}
+
+// effectiveHeaderHeight returns the header height accounting for worktree info line.
+func (a *App) effectiveHeaderHeight() int {
+	if a.hasWorktreeInfo() {
+		return headerHeight + 1
+	}
+	return headerHeight
+}
+
+// renderWorktreeInfoLine renders the branch and directory info line for the header.
+func (a *App) renderWorktreeInfoLine() string {
+	branch, dir := a.getWorktreeInfo()
+	if branch == "" {
+		return ""
+	}
+
+	branchLabel := SubtitleStyle.Render("branch:")
+	branchValue := lipgloss.NewStyle().Foreground(PrimaryColor).Render(" " + branch)
+	dirLabel := SubtitleStyle.Render("  dir:")
+	dirValue := lipgloss.NewStyle().Foreground(TextColor).Render(" " + dir)
+
+	return lipgloss.JoinHorizontal(lipgloss.Center, "  ", branchLabel, branchValue, dirLabel, dirValue)
 }
 
 // renderHeader renders the header with branding, state, iteration, and elapsed time.
@@ -108,9 +157,15 @@ func (a *App) renderHeader() string {
 	// Tab bar
 	tabBarLine := a.renderTabBar()
 
+	// Worktree info line (only shown when branch is set)
+	worktreeInfoLine := a.renderWorktreeInfoLine()
+
 	// Add a border below
 	border := DividerStyle.Render(strings.Repeat("─", a.width))
 
+	if worktreeInfoLine != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, headerLine, tabBarLine, worktreeInfoLine, border)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, headerLine, tabBarLine, border)
 }
 
@@ -150,9 +205,15 @@ func (a *App) renderNarrowHeader() string {
 	// Tab bar (compact)
 	tabBarLine := a.renderTabBar()
 
+	// Worktree info line (only shown when branch is set)
+	worktreeInfoLine := a.renderWorktreeInfoLine()
+
 	// Add a border below
 	border := DividerStyle.Render(strings.Repeat("─", a.width))
 
+	if worktreeInfoLine != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, headerLine, tabBarLine, worktreeInfoLine, border)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, headerLine, tabBarLine, border)
 }
 
