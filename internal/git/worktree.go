@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -192,6 +193,27 @@ func PruneWorktrees(repoDir string) error {
 		return fmt.Errorf("failed to prune worktrees: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// DetectOrphanedWorktrees scans .chief/worktrees/ and returns a map of PRD name -> absolute worktree path
+// for worktrees that exist on disk. The caller is responsible for determining which are orphaned
+// (i.e., have no corresponding registered/running PRD).
+func DetectOrphanedWorktrees(baseDir string) map[string]string {
+	worktreesDir := filepath.Join(baseDir, ".chief", "worktrees")
+	entries, err := os.ReadDir(worktreesDir)
+	if err != nil {
+		return nil
+	}
+
+	result := make(map[string]string)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		absPath := filepath.Join(worktreesDir, entry.Name())
+		result[entry.Name()] = absPath
+	}
+	return result
 }
 
 // MergeBranch merges a branch into the current branch, returning conflicting file list on failure.

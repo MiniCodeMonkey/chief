@@ -389,3 +389,82 @@ func TestMergeBranch(t *testing.T) {
 		}
 	})
 }
+
+func TestDetectOrphanedWorktrees(t *testing.T) {
+	t.Run("returns nil when worktrees directory does not exist", func(t *testing.T) {
+		dir := t.TempDir()
+		result := DetectOrphanedWorktrees(dir)
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+
+	t.Run("returns empty map when worktrees directory is empty", func(t *testing.T) {
+		dir := t.TempDir()
+		worktreesDir := filepath.Join(dir, ".chief", "worktrees")
+		if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+			t.Fatalf("failed to create worktrees dir: %v", err)
+		}
+		result := DetectOrphanedWorktrees(dir)
+		if len(result) != 0 {
+			t.Errorf("expected empty map, got %v", result)
+		}
+	})
+
+	t.Run("detects worktree directories on disk", func(t *testing.T) {
+		dir := t.TempDir()
+		worktreesDir := filepath.Join(dir, ".chief", "worktrees")
+
+		// Create some worktree directories
+		for _, name := range []string{"auth", "payments"} {
+			if err := os.MkdirAll(filepath.Join(worktreesDir, name), 0755); err != nil {
+				t.Fatalf("failed to create dir: %v", err)
+			}
+		}
+
+		result := DetectOrphanedWorktrees(dir)
+		if len(result) != 2 {
+			t.Fatalf("expected 2 entries, got %d: %v", len(result), result)
+		}
+
+		authPath, ok := result["auth"]
+		if !ok {
+			t.Error("expected 'auth' in result")
+		}
+		if authPath != filepath.Join(worktreesDir, "auth") {
+			t.Errorf("expected auth path %q, got %q", filepath.Join(worktreesDir, "auth"), authPath)
+		}
+
+		paymentsPath, ok := result["payments"]
+		if !ok {
+			t.Error("expected 'payments' in result")
+		}
+		if paymentsPath != filepath.Join(worktreesDir, "payments") {
+			t.Errorf("expected payments path %q, got %q", filepath.Join(worktreesDir, "payments"), paymentsPath)
+		}
+	})
+
+	t.Run("ignores files in worktrees directory", func(t *testing.T) {
+		dir := t.TempDir()
+		worktreesDir := filepath.Join(dir, ".chief", "worktrees")
+		if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+			t.Fatalf("failed to create worktrees dir: %v", err)
+		}
+
+		// Create a directory and a file
+		if err := os.MkdirAll(filepath.Join(worktreesDir, "auth"), 0755); err != nil {
+			t.Fatalf("failed to create dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(worktreesDir, "stale-file.txt"), []byte("junk"), 0644); err != nil {
+			t.Fatalf("failed to create file: %v", err)
+		}
+
+		result := DetectOrphanedWorktrees(dir)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 entry (only dirs), got %d: %v", len(result), result)
+		}
+		if _, ok := result["auth"]; !ok {
+			t.Error("expected 'auth' in result")
+		}
+	})
+}

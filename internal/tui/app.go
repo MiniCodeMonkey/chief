@@ -265,6 +265,11 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		cfg = config.Default()
 	}
 
+	// Prune stale worktrees on startup (clean git's internal tracking)
+	if git.IsGitRepo(baseDir) {
+		_ = git.PruneWorktrees(baseDir)
+	}
+
 	// Create loop manager for parallel PRD execution
 	manager := loop.NewManager(maxIter)
 	manager.SetConfig(cfg)

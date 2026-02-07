@@ -779,6 +779,93 @@ func TestFooterHidesCleanHintForPRDWithoutWorktree(t *testing.T) {
 	}
 }
 
+// --- Orphaned Worktree Tests ---
+
+func TestRenderEntryOrphanedWithPRD(t *testing.T) {
+	p := &PRDPicker{
+		basePath:   "/project",
+		currentPRD: "",
+		entries: []PRDEntry{
+			{
+				Name:        "auth",
+				Completed:   8,
+				Total:       8,
+				LoopState:   loop.LoopStateComplete,
+				Branch:      "chief/auth",
+				WorktreeDir: "/project/.chief/worktrees/auth",
+				Orphaned:    true,
+			},
+		},
+	}
+
+	result := p.renderEntry(p.entries[0], false, 80)
+	if !containsText(result, "[orphaned]") {
+		t.Errorf("expected '[orphaned]' indicator for orphaned entry with PRD, got: %s", stripAnsi(result))
+	}
+	// Should still show progress since PRD is loaded
+	if !containsText(result, "8/8") {
+		t.Errorf("expected progress '8/8' for orphaned entry with PRD, got: %s", stripAnsi(result))
+	}
+}
+
+func TestRenderEntryOrphanedWithoutPRD(t *testing.T) {
+	p := &PRDPicker{
+		basePath:   "/project",
+		currentPRD: "",
+		entries: []PRDEntry{
+			{
+				Name:        "stale-project",
+				WorktreeDir: "/project/.chief/worktrees/stale-project",
+				Orphaned:    true,
+				LoadError:   fmt.Errorf("orphaned worktree (no prd.json)"),
+			},
+		},
+	}
+
+	result := p.renderEntry(p.entries[0], false, 80)
+	if !containsText(result, "[orphaned worktree]") {
+		t.Errorf("expected '[orphaned worktree]' for orphaned entry without PRD, got: %s", stripAnsi(result))
+	}
+}
+
+func TestCanCleanOrphanedWorktree(t *testing.T) {
+	p := &PRDPicker{
+		basePath: "/project",
+		entries: []PRDEntry{
+			{
+				Name:        "auth",
+				WorktreeDir: "/project/.chief/worktrees/auth",
+				Orphaned:    true,
+				LoopState:   loop.LoopStateReady,
+			},
+		},
+		selectedIndex: 0,
+	}
+	if !p.CanClean() {
+		t.Error("expected CanClean() to return true for orphaned worktree")
+	}
+}
+
+func TestOrphanedWorktreeNotTracked(t *testing.T) {
+	// An orphaned entry with no PRD loaded should still be cleanable
+	p := &PRDPicker{
+		basePath: "/project",
+		entries: []PRDEntry{
+			{
+				Name:        "stale",
+				WorktreeDir: "/project/.chief/worktrees/stale",
+				Orphaned:    true,
+				LoopState:   loop.LoopStateReady,
+				LoadError:   fmt.Errorf("orphaned worktree (no prd.json)"),
+			},
+		},
+		selectedIndex: 0,
+	}
+	if !p.CanClean() {
+		t.Error("expected CanClean() to return true for orphaned worktree without PRD")
+	}
+}
+
 // containsText checks if rendered output contains a substring (ignoring ANSI codes).
 func containsText(rendered, substr string) bool {
 	// Strip ANSI escape sequences for comparison

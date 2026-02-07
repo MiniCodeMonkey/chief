@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/minicodemonkey/chief/internal/git"
 	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/prd"
 )
@@ -24,6 +25,7 @@ type PRDEntry struct {
 	Iteration   int            // Current iteration if running
 	Branch      string         // Git branch for this PRD (empty = no branch)
 	WorktreeDir string         // Worktree directory (empty = current directory)
+	Orphaned    bool           // True if worktree exists on disk but no running PRD tracks it
 }
 
 // MergeResult holds the result of a merge operation for display.
@@ -128,6 +130,51 @@ func (p *PRDPicker) Refresh() {
 		prdEntry := p.loadPRDEntry("main", mainPrdPath)
 		p.entries = append(p.entries, prdEntry)
 		addedNames["main"] = true
+	}
+
+	// Detect orphaned worktrees - worktrees on disk not tracked by any manager instance
+	diskWorktrees := git.DetectOrphanedWorktrees(p.basePath)
+	if len(diskWorktrees) > 0 {
+		// Build set of tracked worktree dirs from manager
+		trackedDirs := make(map[string]bool)
+		if p.manager != nil {
+			for _, inst := range p.manager.GetAllInstances() {
+				if inst.WorktreeDir != "" {
+					trackedDirs[inst.WorktreeDir] = true
+				}
+			}
+		}
+
+		for prdName, absPath := range diskWorktrees {
+			if trackedDirs[absPath] {
+				continue // This worktree is tracked by a running/registered PRD
+			}
+			// Mark the matching entry as orphaned, or note it on existing entries
+			found := false
+			for i := range p.entries {
+				if p.entries[i].Name == prdName {
+					p.entries[i].Orphaned = true
+					// Also set WorktreeDir if not already set (so CanClean works)
+					if p.entries[i].WorktreeDir == "" {
+						p.entries[i].WorktreeDir = absPath
+					}
+					found = true
+					break
+				}
+			}
+			// If no matching PRD entry exists, the worktree is truly orphaned
+			// (no prd.json at all). Still show it so the user knows it exists.
+			if !found {
+				p.entries = append(p.entries, PRDEntry{
+					Name:        prdName,
+					Path:        filepath.Join(p.basePath, ".chief", "prds", prdName, "prd.json"),
+					LoopState:   loop.LoopStateReady,
+					WorktreeDir: absPath,
+					Orphaned:    true,
+					LoadError:   fmt.Errorf("orphaned worktree (no prd.json)"),
+				})
+			}
+		}
 	}
 
 	// Ensure selected index is valid
@@ -499,7 +546,18 @@ func (p *PRDPicker) renderEntry(entry PRDEntry, selected bool, width int) string
 	line.WriteString(nameStyle.Render(fmt.Sprintf("%-12s", name)))
 	line.WriteString(" ")
 
-	if entry.LoadError != nil {
+	if entry.Orphaned && entry.LoadError != nil {
+		// Orphaned worktree with no PRD - show orphaned indicator
+		orphanedStyle := lipgloss.NewStyle().Foreground(WarningColor)
+		line.WriteString(orphanedStyle.Render("[orphaned worktree]"))
+		// Show worktree path if space allows
+		remaining := width - 32 - 18 // account for indicator + name + orphaned label
+		if remaining > 10 && entry.WorktreeDir != "" {
+			pathStyle := lipgloss.NewStyle().Foreground(MutedColor)
+			displayPath := p.worktreeDisplayPath(entry)
+			line.WriteString(pathStyle.Render("  " + displayPath))
+		}
+	} else if entry.LoadError != nil {
 		// Show error indicator
 		errorStyle := lipgloss.NewStyle().Foreground(ErrorColor)
 		line.WriteString(errorStyle.Render("[error]"))
@@ -525,6 +583,13 @@ func (p *PRDPicker) renderEntry(entry PRDEntry, selected bool, width int) string
 		// Loop state indicator
 		line.WriteString(" ")
 		line.WriteString(p.renderLoopStateIndicator(entry))
+
+		// Orphaned worktree indicator (for entries with PRD but orphaned worktree)
+		if entry.Orphaned {
+			orphanedStyle := lipgloss.NewStyle().Foreground(WarningColor)
+			line.WriteString(" ")
+			line.WriteString(orphanedStyle.Render("[orphaned]"))
+		}
 
 		// Branch and worktree path (only if branch is set)
 		if entry.Branch != "" {
