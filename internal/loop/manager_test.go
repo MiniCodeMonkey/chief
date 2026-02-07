@@ -533,6 +533,62 @@ func TestManagerClearWorktreeInfoNotFound(t *testing.T) {
 	}
 }
 
+func TestManagerUpdateWorktreeInfo(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")
+
+	m := NewManager(10)
+	m.Register("test-prd", prdPath)
+
+	// Initially no worktree info
+	inst := m.GetInstance("test-prd")
+	if inst.WorktreeDir != "" || inst.Branch != "" {
+		t.Error("expected empty worktree info initially")
+	}
+
+	// Update worktree info
+	if err := m.UpdateWorktreeInfo("test-prd", "/tmp/wt/test", "chief/test"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	inst = m.GetInstance("test-prd")
+	if inst.WorktreeDir != "/tmp/wt/test" {
+		t.Errorf("expected WorktreeDir /tmp/wt/test, got %s", inst.WorktreeDir)
+	}
+	if inst.Branch != "chief/test" {
+		t.Errorf("expected Branch chief/test, got %s", inst.Branch)
+	}
+}
+
+func TestManagerUpdateWorktreeInfoNotFound(t *testing.T) {
+	m := NewManager(10)
+	err := m.UpdateWorktreeInfo("nonexistent", "/tmp", "branch")
+	if err == nil {
+		t.Error("expected error for nonexistent PRD")
+	}
+}
+
+func TestManagerUpdateWorktreeInfoOverwrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")
+
+	m := NewManager(10)
+	m.RegisterWithWorktree("test-prd", prdPath, "/old/path", "old-branch")
+
+	// Update with new values
+	if err := m.UpdateWorktreeInfo("test-prd", "/new/path", "new-branch"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	inst := m.GetInstance("test-prd")
+	if inst.WorktreeDir != "/new/path" {
+		t.Errorf("expected WorktreeDir /new/path, got %s", inst.WorktreeDir)
+	}
+	if inst.Branch != "new-branch" {
+		t.Errorf("expected Branch new-branch, got %s", inst.Branch)
+	}
+}
+
 func TestManagerConcurrentAccessWithWorktreeFields(t *testing.T) {
 	tmpDir := t.TempDir()
 	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")
