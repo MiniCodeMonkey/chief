@@ -3,6 +3,7 @@ package git
 
 import (
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -46,4 +47,24 @@ func IsGitRepo(dir string) bool {
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
 	cmd.Dir = dir
 	return cmd.Run() == nil
+}
+
+// CommitCount returns the number of commits on branch that are not on the default branch.
+// Returns 0 if the count cannot be determined.
+func CommitCount(repoDir, branch string) int {
+	defaultBranch, err := GetDefaultBranch(repoDir)
+	if err != nil {
+		return 0
+	}
+	cmd := exec.Command("git", "rev-list", "--count", defaultBranch+".."+branch)
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0
+	}
+	return count
 }

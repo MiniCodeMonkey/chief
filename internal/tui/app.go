@@ -114,6 +114,7 @@ const (
 	ViewHelp
 	ViewBranchWarning
 	ViewWorktreeSpinner
+	ViewCompletion
 )
 
 // App is the main Bubble Tea model for the Chief TUI.
@@ -164,6 +165,9 @@ type App struct {
 
 	// Worktree setup spinner
 	worktreeSpinner *WorktreeSpinner
+
+	// Completion screen
+	completionScreen *CompletionScreen
 
 	// Completion notification callback
 	onCompletion func(prdName string)
@@ -268,9 +272,10 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		picker:        picker,
 		baseDir:       baseDir,
 		config:        cfg,
-		helpOverlay:     NewHelpOverlay(),
-		branchWarning:   NewBranchWarning(),
-		worktreeSpinner: NewWorktreeSpinner(),
+		helpOverlay:      NewHelpOverlay(),
+		branchWarning:    NewBranchWarning(),
+		worktreeSpinner:  NewWorktreeSpinner(),
+		completionScreen: NewCompletionScreen(),
 	}, nil
 }
 
@@ -420,6 +425,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle worktree spinner view - only Esc is active
 		if a.viewMode == ViewWorktreeSpinner {
 			return a.handleWorktreeSpinnerKeys(msg)
+		}
+
+		// Handle completion screen view
+		if a.viewMode == ViewCompletion {
+			return a.handleCompletionKeys(msg)
 		}
 
 		switch msg.String() {
@@ -709,6 +719,7 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		if isCurrentPRD {
 			a.state = StateComplete
 			a.lastActivity = "All stories complete!"
+			a.showCompletionScreen(prdName)
 		}
 		// Trigger completion callback for any PRD
 		if a.onCompletion != nil {
@@ -796,6 +807,8 @@ func (a App) View() string {
 		return a.renderBranchWarningView()
 	case ViewWorktreeSpinner:
 		return a.renderWorktreeSpinnerView()
+	case ViewCompletion:
+		return a.renderCompletionView()
 	default:
 		return a.renderDashboard()
 	}
@@ -945,6 +958,103 @@ func (a *App) cleanupWorktreeSetup() {
 	}
 }
 
+// showCompletionScreen configures and shows the completion screen for a PRD.
+func (a *App) showCompletionScreen(prdName string) {
+	// Count completed stories
+	completed := 0
+	total := len(a.prd.UserStories)
+	for _, story := range a.prd.UserStories {
+		if story.Passes {
+			completed++
+		}
+	}
+
+	// Get branch from manager
+	branch := ""
+	if instance := a.manager.GetInstance(prdName); instance != nil {
+		branch = instance.Branch
+	}
+
+	// Count commits on the branch
+	commitCount := 0
+	if branch != "" {
+		commitCount = git.CommitCount(a.baseDir, branch)
+	}
+
+	// Check if auto-actions are configured
+	hasAutoActions := a.config != nil && (a.config.OnComplete.Push || a.config.OnComplete.CreatePR)
+
+	a.completionScreen.Configure(prdName, completed, total, branch, commitCount, hasAutoActions)
+	a.completionScreen.SetSize(a.width, a.height)
+	a.viewMode = ViewCompletion
+}
+
+// renderCompletionView renders the completion screen.
+func (a *App) renderCompletionView() string {
+	a.completionScreen.SetSize(a.width, a.height)
+	return a.completionScreen.Render()
+}
+
+// handleCompletionKeys handles keyboard input for the completion screen.
+func (a App) handleCompletionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		a.stopAllLoops()
+		a.stopWatcher()
+		return a, tea.Quit
+
+	case "l":
+		// Switch to the picker
+		a.picker.Refresh()
+		a.picker.SetSize(a.width, a.height)
+		a.viewMode = ViewPicker
+		return a, nil
+
+	case "m":
+		// Merge the completed PRD's branch
+		if a.completionScreen.HasBranch() {
+			branch := a.completionScreen.Branch()
+			baseDir := a.baseDir
+			a.viewMode = ViewDashboard
+			return a, func() tea.Msg {
+				conflicts, err := git.MergeBranch(baseDir, branch)
+				if err != nil {
+					return mergeResultMsg{branch: branch, conflicts: conflicts, err: err}
+				}
+				output := parseMergeSuccessMessage(baseDir, branch)
+				return mergeResultMsg{branch: branch, output: output}
+			}
+		}
+		return a, nil
+
+	case "c":
+		// Clean the PRD's worktree - switch to picker with clean dialog
+		if a.completionScreen.HasBranch() {
+			prdName := a.completionScreen.PRDName()
+			a.picker.Refresh()
+			a.picker.SetSize(a.width, a.height)
+			// Select the completed PRD in the picker
+			for i, entry := range a.picker.entries {
+				if entry.Name == prdName {
+					a.picker.selectedIndex = i
+					break
+				}
+			}
+			if a.picker.CanClean() {
+				a.picker.StartCleanConfirmation()
+			}
+			a.viewMode = ViewPicker
+		}
+		return a, nil
+
+	case "esc":
+		a.viewMode = ViewDashboard
+		return a, nil
+	}
+
+	return a, nil
+}
+
 // tickWorktreeSpinner returns a tea.Cmd that ticks the spinner animation.
 func tickWorktreeSpinner() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
@@ -1053,6 +1163,12 @@ func (a App) handleMergeResult(msg mergeResultMsg) (tea.Model, tea.Cmd) {
 			Branch:  msg.branch,
 		})
 		a.lastActivity = fmt.Sprintf("Merged %s", msg.branch)
+	}
+	// Switch to picker to show the merge result if not already there
+	if a.viewMode != ViewPicker {
+		a.picker.Refresh()
+		a.picker.SetSize(a.width, a.height)
+		a.viewMode = ViewPicker
 	}
 	return a, nil
 }
