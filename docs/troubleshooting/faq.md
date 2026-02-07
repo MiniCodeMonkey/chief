@@ -74,6 +74,30 @@ Mark it as passed manually:
 
 Or remove it from the PRD entirely.
 
+### What are worktrees?
+
+Git worktrees let you have multiple checkouts of a repository at the same time, each on a different branch. Chief uses worktrees to isolate parallel PRDs so they don't interfere with each other's files or commits. Each worktree lives at `.chief/worktrees/<prd-name>/`.
+
+### Do I have to use worktrees?
+
+No. When you start a PRD, Chief offers worktree creation as an option. You can choose "Run in current directory" to skip it. Worktrees are most useful when running multiple PRDs simultaneously.
+
+### How do I merge a completed branch?
+
+Press `n` to open the PRD picker, select the completed PRD, and press `m` to merge. If there are conflicts, Chief shows the conflicting files and instructions for manual resolution.
+
+### How do I clean up a worktree?
+
+Press `n` to open the PRD picker, select the PRD, and press `c`. You can choose to remove just the worktree or remove the worktree and delete the branch.
+
+### What happens if Chief crashes mid-worktree?
+
+Chief detects orphaned worktrees on startup and marks them in the picker. You can clean them up with `c`. Your work on the branch is preserved — git worktrees are just directories with a separate checkout.
+
+### Can I automatically push and create PRs?
+
+Yes. During first-time setup, Chief asks if you want to enable auto-push and auto-PR creation. You can also toggle these in the Settings TUI (`,`). Auto-PR requires the `gh` CLI to be installed and authenticated.
+
 ## Technical
 
 ### Why stream-json?

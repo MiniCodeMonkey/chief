@@ -31,6 +31,23 @@ npx @anthropic-ai/claude-code login
 Run `claude --version` to confirm Claude Code is installed. Chief will not work without it.
 :::
 
+### Optional: GitHub CLI (`gh`)
+
+If you want Chief to automatically create pull requests when a PRD completes, install the [GitHub CLI](https://cli.github.com/):
+
+```bash
+# macOS
+brew install gh
+
+# Linux
+# See https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+
+# Authenticate
+gh auth login
+```
+
+The `gh` CLI is only required for automatic PR creation. All other features work without it.
+
 ## Homebrew (Recommended)
 
 The easiest way to install Chief on **macOS** or **Linux**:

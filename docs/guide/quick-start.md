@@ -78,11 +78,16 @@ Launch Chief's Terminal User Interface:
 chief
 ```
 
-This opens the TUI dashboard in **Ready** state. The loop doesn't start automatically—you control when it begins.
+On first launch, Chief prompts you to configure a few settings:
+
+1. **Post-completion automation** — Whether to automatically push branches and create PRs when a PRD completes (recommended: Yes for both)
+2. **Worktree setup command** — A command to run in new worktrees (e.g., `npm install`). You can let Claude detect it automatically, enter it manually, or skip
+
+These settings are saved to `.chief/config.yaml` and can be changed anytime via the Settings TUI (press `,`).
 
 ## Step 4: Start the Loop
 
-Press `s` to start the Ralph Loop. Chief will begin working through your stories automatically.
+Press `s` to start the Ralph Loop. Chief will offer to create a worktree for isolated development, then begin working through your stories automatically.
 
 The TUI shows:
 
@@ -103,6 +108,9 @@ The TUI shows:
 | `1-9` | **Quick switch** to PRD tabs 1-9 |
 | `j/↓` | Navigate down (stories or scroll log) |
 | `k/↑` | Navigate up (stories or scroll log) |
+| `m` | **Merge** completed branch (in picker) |
+| `c` | **Clean** worktree (in picker) |
+| `,` | Open **Settings** |
 | `?` | Show **help** overlay |
 | `q` | **Quit** Chief |
 

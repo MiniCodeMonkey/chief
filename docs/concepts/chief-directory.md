@@ -15,15 +15,21 @@ your-project/
 ├── src/
 ├── package.json
 └── .chief/
-    └── prds/
-        └── my-feature/
-            ├── prd.md          # Human-readable PRD (you write this)
-            ├── prd.json        # Machine-readable PRD (Chief reads/writes)
-            ├── progress.md     # Progress log (Chief appends after each story)
-            └── claude.log      # Raw Claude output (for debugging)
+    ├── config.yaml             # Project settings (worktree, auto-push, PR)
+    ├── prds/
+    │   └── my-feature/
+    │       ├── prd.md          # Human-readable PRD (you write this)
+    │       ├── prd.json        # Machine-readable PRD (Chief reads/writes)
+    │       ├── progress.md     # Progress log (Chief appends after each story)
+    │       └── claude.log      # Raw Claude output (for debugging)
+    └── worktrees/              # Isolated checkouts for parallel PRDs
+        └── my-feature/         # Git worktree (full project checkout)
 ```
 
-The root `.chief/` directory contains a single `prds/` subdirectory. Each PRD gets its own folder inside `prds/`, named after the feature or initiative.
+The root `.chief/` directory contains:
+- `config.yaml` — Project-level settings (see [Configuration](/reference/configuration))
+- `prds/` — One subdirectory per PRD with requirements, state, and logs
+- `worktrees/` — Git worktrees for parallel PRD isolation (created on demand)
 
 ## The `prds/` Subdirectory
 
@@ -106,6 +112,39 @@ Raw output from Claude Code during execution. This file captures everything Clau
 
 This file can get large (multiple megabytes per run) and is regenerated on each execution. You typically don't need to read it unless you're investigating an issue.
 
+## The `worktrees/` Subdirectory
+
+When you run multiple PRDs in parallel, each PRD can get its own isolated git worktree under `.chief/worktrees/`. A worktree is a full checkout of your project on a separate branch, so parallel Claude instances never conflict over files or git state.
+
+```
+.chief/worktrees/
+├── auth-system/         # Full checkout on branch chief/auth-system
+└── payment-integration/ # Full checkout on branch chief/payment-integration
+```
+
+Worktrees are created when you choose "Create worktree + branch" from the start dialog. Each worktree:
+- Has its own branch (named `chief/<prd-name>`)
+- Is a complete copy of your project
+- Runs the configured setup command (e.g., `npm install`) automatically
+
+You can merge completed branches via `m` in the picker, and clean up worktrees via `c`.
+
+For more details, see [ADR-0007: Git Worktree Isolation](/adr/0007-git-worktree-isolation).
+
+## The `config.yaml` File
+
+Project-level settings are stored in `.chief/config.yaml`. This file is created during first-time setup or when you change settings via the Settings TUI (`,`).
+
+```yaml
+worktree:
+  setup: "npm install"
+onComplete:
+  push: true
+  createPR: true
+```
+
+See [Configuration](/reference/configuration) for all available settings.
+
 ## Self-Contained by Design
 
 Chief has no global configuration. There is no `~/.chiefrc`, no `~/.config/chief/`, no environment variables required. Every piece of state Chief needs is inside `.chief/`.
@@ -143,19 +182,23 @@ A single project can have multiple PRDs, each tracking a separate feature or ini
 
 ```
 .chief/
-└── prds/
+├── config.yaml
+├── prds/
+│   ├── auth-system/
+│   │   ├── prd.md
+│   │   ├── prd.json
+│   │   └── progress.md
+│   ├── payment-integration/
+│   │   ├── prd.md
+│   │   ├── prd.json
+│   │   └── progress.md
+│   └── admin-dashboard/
+│       ├── prd.md
+│       ├── prd.json
+│       └── progress.md
+└── worktrees/
     ├── auth-system/
-    │   ├── prd.md
-    │   ├── prd.json
-    │   └── progress.md
-    ├── payment-integration/
-    │   ├── prd.md
-    │   ├── prd.json
-    │   └── progress.md
-    └── admin-dashboard/
-        ├── prd.md
-        ├── prd.json
-        └── progress.md
+    └── payment-integration/
 ```
 
 Run a specific PRD by name:
@@ -165,7 +208,7 @@ chief auth-system
 chief payment-integration
 ```
 
-Each PRD tracks its own stories, progress, and logs independently. You can run them sequentially or work on different PRDs over time as your project evolves.
+Each PRD tracks its own stories, progress, and logs independently. When running multiple PRDs in parallel, each gets its own git worktree and branch for full isolation. You can run them simultaneously without worrying about file conflicts or interleaved commits.
 
 ## Git Considerations
 
