@@ -15,6 +15,7 @@ import (
 type TabEntry struct {
 	Name      string         // Directory name (e.g., "main", "feature-x")
 	Path      string         // Full path to prd.json
+	Branch    string         // Git branch name (e.g., "chief/auth"), empty if none
 	LoopState loop.LoopState // Current loop state from manager
 	Completed int            // Number of completed stories
 	Total     int            // Total number of stories
@@ -108,11 +109,14 @@ func (t *TabBar) loadTabEntry(name, prdPath string) TabEntry {
 		}
 	}
 
-	// Get loop state from manager if available
+	// Get loop state and branch from manager if available
 	if t.manager != nil {
 		if state, iteration, _ := t.manager.GetState(name); state != 0 || iteration != 0 {
 			tabEntry.LoopState = state
 			tabEntry.Iteration = iteration
+		}
+		if inst := t.manager.GetInstance(name); inst != nil {
+			tabEntry.Branch = inst.Branch
 		}
 	}
 
@@ -212,6 +216,16 @@ func (t *TabBar) renderTab(entry TabEntry, number int) string {
 
 	content.WriteString(activeIndicator)
 	content.WriteString(name)
+	if entry.Branch != "" {
+		branch := entry.Branch
+		maxBranchLen := 20
+		if len(branch) > maxBranchLen {
+			branch = branch[:maxBranchLen-1] + "…"
+		}
+		content.WriteString(" [")
+		content.WriteString(branch)
+		content.WriteString("]")
+	}
 	content.WriteString(stateIndicator)
 
 	tabContent := content.String()
