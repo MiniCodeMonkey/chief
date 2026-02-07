@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/minicodemonkey/chief/internal/cmd"
+	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/git"
 	"github.com/minicodemonkey/chief/internal/notify"
 	"github.com/minicodemonkey/chief/internal/prd"
@@ -300,6 +301,14 @@ func runTUIWithOptions(opts *TUIOptions) {
 
 			if result.Cancelled {
 				return
+			}
+
+			// Save post-completion config
+			cfg := config.Default()
+			cfg.OnComplete.Push = result.PushOnComplete
+			cfg.OnComplete.CreatePR = result.CreatePROnComplete
+			if err := config.Save(cwd, cfg); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to save config: %v\n", err)
 			}
 
 			// Create the PRD
