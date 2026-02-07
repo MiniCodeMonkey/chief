@@ -131,8 +131,9 @@ type App struct {
 	previousViewMode ViewMode // View to return to when closing help
 
 	// Branch warning dialog
-	branchWarning   *BranchWarning
-	pendingStartPRD string // PRD name waiting to start after branch decision
+	branchWarning      *BranchWarning
+	pendingStartPRD    string // PRD name waiting to start after branch decision
+	pendingWorktreePath string // Absolute worktree path for pending PRD
 
 	// Completion notification callback
 	onCompletion func(prdName string)
@@ -485,21 +486,53 @@ func (a App) startLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
 	// Get the PRD directory
 	prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
 
-	// Check if on a protected branch
-	if git.IsGitRepo(a.baseDir) {
-		branch, err := git.GetCurrentBranch(a.baseDir)
-		if err == nil && git.IsProtectedBranch(branch) {
-			// Show branch warning dialog
-			a.branchWarning.SetSize(a.width, a.height)
-			a.branchWarning.SetContext(branch, prdName)
-			a.branchWarning.Reset()
-			a.pendingStartPRD = prdName
-			a.viewMode = ViewBranchWarning
-			return a, nil
-		}
+	if !git.IsGitRepo(a.baseDir) {
+		return a.doStartLoop(prdName, prdDir)
 	}
 
-	return a.doStartLoop(prdName, prdDir)
+	branch, err := git.GetCurrentBranch(a.baseDir)
+	if err != nil {
+		return a.doStartLoop(prdName, prdDir)
+	}
+
+	worktreePath := git.WorktreePathForPRD(a.baseDir, prdName)
+	relWorktreePath := fmt.Sprintf(".chief/worktrees/%s/", prdName)
+
+	// Determine dialog context
+	isProtected := git.IsProtectedBranch(branch)
+	anotherRunningInSameDir := a.isAnotherPRDRunningInSameDir(prdName)
+
+	var dialogCtx DialogContext
+	if isProtected {
+		dialogCtx = DialogProtectedBranch
+	} else if anotherRunningInSameDir {
+		dialogCtx = DialogAnotherPRDRunning
+	} else {
+		dialogCtx = DialogNoConflicts
+	}
+
+	// Show the enhanced dialog
+	a.branchWarning.SetSize(a.width, a.height)
+	a.branchWarning.SetContext(branch, prdName, relWorktreePath)
+	a.branchWarning.SetDialogContext(dialogCtx)
+	a.branchWarning.Reset()
+	a.pendingStartPRD = prdName
+	a.pendingWorktreePath = worktreePath
+	a.viewMode = ViewBranchWarning
+	return a, nil
+}
+
+// isAnotherPRDRunningInSameDir checks if another PRD is running in the project root (no worktree).
+func (a *App) isAnotherPRDRunningInSameDir(prdName string) bool {
+	if a.manager == nil {
+		return false
+	}
+	for _, inst := range a.manager.GetAllInstances() {
+		if inst.Name != prdName && inst.State == loop.LoopStateRunning && inst.WorktreeDir == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // doStartLoop actually starts the loop (after branch check).
@@ -749,6 +782,7 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		a.viewMode = ViewDashboard
 		a.pendingStartPRD = ""
+		a.pendingWorktreePath = ""
 		a.lastActivity = "Cancelled"
 		return a, nil
 
@@ -761,8 +795,9 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case "e":
-		// Start editing branch name if on the create branch option
-		if a.branchWarning.GetSelectedOption() == BranchOptionCreateBranch {
+		// Start editing branch name if on an option that involves a branch
+		opt := a.branchWarning.GetSelectedOption()
+		if opt == BranchOptionCreateWorktree || opt == BranchOptionCreateBranch {
 			a.branchWarning.StartEditMode()
 		}
 		return a, nil
@@ -771,9 +806,28 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		prdName := a.pendingStartPRD
 		prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
 		a.pendingStartPRD = ""
+		a.pendingWorktreePath = ""
 		a.viewMode = ViewDashboard
 
 		switch a.branchWarning.GetSelectedOption() {
+		case BranchOptionCreateWorktree:
+			// Create worktree + branch - will be handled by US-009/US-018
+			// For now, store the choice so app.go knows the user chose worktree
+			branchName := a.branchWarning.GetSuggestedBranch()
+			worktreePath := git.WorktreePathForPRD(a.baseDir, prdName)
+			if err := git.CreateWorktree(a.baseDir, worktreePath, branchName); err != nil {
+				a.lastActivity = "Error creating worktree: " + err.Error()
+				return a, nil
+			}
+			a.lastActivity = fmt.Sprintf("Created worktree at %s on branch %s", worktreePath, branchName)
+
+			// Register with worktree info and start
+			prdPath := filepath.Join(prdDir, "prd.json")
+			if instance := a.manager.GetInstance(prdName); instance == nil {
+				a.manager.RegisterWithWorktree(prdName, prdPath, worktreePath, branchName)
+			}
+			return a.doStartLoop(prdName, prdDir)
+
 		case BranchOptionCreateBranch:
 			// Create the branch with (possibly edited) name
 			branchName := a.branchWarning.GetSuggestedBranch()
@@ -786,7 +840,7 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a.doStartLoop(prdName, prdDir)
 
 		case BranchOptionContinue:
-			// Continue on current branch
+			// Continue on current branch / run in same directory
 			return a.doStartLoop(prdName, prdDir)
 
 		case BranchOptionCancel:
