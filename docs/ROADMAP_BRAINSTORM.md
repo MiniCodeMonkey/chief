@@ -4,6 +4,19 @@ Where chief goes from here. Ideas are grouped by theme, roughly ordered by poten
 
 ---
 
+## Architectural Principle: Claude Code CLI Only
+
+Chief's core identity is as an orchestrator of the **Claude Code CLI**. It does not call the Anthropic API directly — everything goes through `claude`. This is intentional and should remain a hard constraint:
+
+- **Simplicity**: Chief doesn't manage API keys, token counting, model routing, or streaming. Claude Code handles all of that.
+- **Feature leverage**: Every improvement to Claude Code (new tools, better context management, sub-agents, prompt caching) benefits chief for free.
+- **Auth delegation**: Users authenticate with Claude Code once. Chief never touches credentials.
+- **Permission model**: Claude Code's permission system (and `--dangerously-skip-permissions`) is the trust boundary. Chief doesn't add its own.
+
+This constraint has real implications for features like the web app and cloud execution — see those sections for how to work within it.
+
+---
+
 ## Community Requests (GitHub Issues)
 
 Two open issues from the community that should inform priorities:
@@ -28,36 +41,50 @@ Chief's power comes from orchestrating Claude Code, but the entry point today is
 
 ### Web companion app
 
-A lightweight web UI for PRD authoring only. Not a full chief replacement — just the "describe what you want" part.
+A web UI for PRD authoring and progress monitoring. The key constraint: **chief only uses Claude Code CLI, never the Anthropic API directly.** This shapes the architecture significantly.
 
-- **PRD editor with live preview**: Markdown editor on the left, rendered preview on the right. Syntax-aware for the US-XXX format so it can validate structure, flag missing acceptance criteria, warn about overly large stories.
-- **AI-assisted PRD writing**: Embed Claude directly in the web editor. User describes what they want conversationally, Claude generates the structured PRD. Same `init_prompt.txt` logic but via API instead of CLI.
-- **Template gallery**: Curated starting points — "SaaS app", "CLI tool", "API service", "mobile app", "Chrome extension". Each comes with sensible default story structures that users customize. Lowers the blank-page problem.
+**Tier 1: No AI needed (pure editor + dashboard)**
+
+The simplest version doesn't need AI at all:
+
+- **PRD markdown editor with live preview**: Markdown editor on the left, rendered preview on the right. Syntax-aware for the US-XXX format — validates structure, flags missing acceptance criteria, warns about overly large stories. This is just a specialized markdown editor. No Claude needed.
+- **Template gallery**: Curated starting points — "SaaS app", "CLI tool", "API service", "mobile app". Pre-written PRD skeletons that users fill in. No AI, just good defaults.
 - **Export to `.chief/`**: Download as a zip or push to a connected git repo. The result is a `.chief/prds/<name>/` directory ready for `chief` to run.
-- **Team collaboration**: Multiple people can view/edit the same PRD. Think Google Docs for PRDs. Comments on stories, suggested edits, approval workflows.
-- **Dashboard view**: Read-only view that shows progress of running chief instances. Polls a running chief process or reads `prd.json` from a remote repo to show story completion status, current iteration, etc.
+- **Progress dashboard**: Read-only view showing progress of running chief instances. Reads `prd.json` from a git repo or shared filesystem. Shows story completion, current iteration, elapsed time. No Claude needed — just reads JSON.
+- **Team collaboration**: Multiple people view/edit the same PRD. Comments on stories, suggested edits. Google Docs for PRDs.
 
-**Implementation thought**: This could be a simple Next.js or Vite app. The PRD format is just markdown + JSON — no complex backend needed for the editor. The AI features would need an Anthropic API key. The progress dashboard could just poll git or read from a shared filesystem.
+This tier is a pure web app. No API keys, no backend AI calls. A PM or designer could use it to write PRDs that a developer then runs with `chief`.
+
+**Tier 2: AI-assisted PRD writing (needs Claude Code access)**
+
+To get the interactive `chief new` experience in the browser, we need Claude Code somewhere. Options:
+
+- **Option A: Claude OAuth / connect to Claude Code on the web.** Claude Code is available in the browser (claude.ai/code). If Claude offers an OAuth flow or embed mechanism, the web app could initiate a Claude Code session with the `init_prompt.txt` pre-loaded. The user's own Claude account handles auth and billing. Chief's web app is just the launcher.
+- **Option B: Local bridge.** Run a lightweight `chief serve` process locally that exposes a WebSocket API. The web app connects to `localhost:PORT`. When the user asks for AI-assisted PRD writing, the bridge spawns `claude -p "..." --output-format stream-json` and streams results back to the browser. Claude Code CLI handles auth. This is the cleanest fit with the "CLI only" principle — the web app is just a pretty frontend for the same CLI.
+- **Option C: Bring your own API key (escape hatch).** Users provide an Anthropic API key in the web app. The backend calls Claude's API directly for PRD generation only. This breaks the "CLI only" principle but might be the pragmatic choice for a hosted web app where there's no local CLI to shell out to. Should be a last resort.
+
+**Recommendation**: Start with Tier 1 (no AI, pure editor + dashboard). It's useful immediately and doesn't require solving the auth problem. Add Tier 2 via the local bridge (`chief serve`) since it preserves the CLI-only architecture. Explore Claude OAuth as it becomes available.
 
 ### Mobile app (iOS/Android or PWA)
 
-For PRD drafting on the go. You're on a train and have an idea — open the app, describe it, Claude helps structure it into stories. When you get to your desk, the PRD is waiting.
+For PRD drafting on the go. You're on a train and have an idea — open the app, describe it, structure it into stories. When you get to your desk, the PRD is waiting.
 
-- Could be a progressive web app (PWA) to avoid app store complexity
-- Voice-to-PRD: dictate your idea, Claude transcribes and structures it
+- Best as a progressive web app (PWA) wrapping the Tier 1 web editor — avoids app store complexity
+- AI features would require the bridge or OAuth approaches from above
 - Push notifications when chief completes a PRD back on your server
 
-**Consideration**: This only makes sense if the web companion exists. Mobile would be a thin wrapper. Start with the web app and make it responsive.
+**Consideration**: This only makes sense if the web companion exists. Mobile would be a thin responsive wrapper. Start with the web app.
 
-### Desktop app (Electron/Tauri)
+### Desktop app (Tauri)
 
-- Wraps the web UI + a local chief process
+- Wraps the web UI + runs `chief serve` locally for the bridge
 - One-click install for non-technical users
 - Could bundle Claude Code CLI installation
 - System tray icon showing chief status
 - Native notifications on completion
+- **Key advantage over web-only**: Has direct access to the local filesystem and Claude Code CLI, so the bridge is built in
 
-**Consideration**: Tauri would keep it lightweight (vs Electron). But the real question is whether this adds enough over "web app + terminal" to justify the maintenance. Probably lower priority than web.
+**Consideration**: Tauri keeps it lightweight. The real question is whether this adds enough over "web app + terminal" to justify the maintenance. But it's the cleanest path to AI-assisted PRD writing since the local CLI is right there.
 
 ---
 
@@ -93,9 +120,11 @@ A hosted version of chief where users don't need to install anything locally.
 
 - Upload or connect a git repo
 - Write/edit PRD in the web UI
-- Chief runs in the cloud (managed Docker containers)
+- Chief runs in the cloud (managed Docker containers with Claude Code CLI installed)
 - Watch progress in the web dashboard
 - Results pushed to a branch in your repo
+
+**Auth challenge**: Claude Code CLI needs to be authenticated in the cloud containers. Options: (a) Claude OAuth flow where users authorize the service to act on their behalf, (b) users provide their own API key that gets passed to the container's Claude Code config, (c) a service-level Anthropic API key with usage-based billing. All options keep chief using the CLI — the key just configures Claude Code's auth, not chief's.
 
 **Consideration**: This is a big leap — it's essentially a product, not a tool. Could be a future monetization path but is a significant investment. The Docker + headless work unlocks this incrementally.
 
@@ -174,9 +203,11 @@ Claude Code supports sub-agents (the Task tool). Chief could leverage this.
 
 ### Model selection
 
-- **Use cheaper models for simple tasks**: PRD conversion (`convert_prompt.txt`) doesn't need a frontier model. Use Haiku or a smaller model for conversion, JSON fixing, and other mechanical tasks.
-- **Configurable model per stage**: `--prd-model haiku --loop-model sonnet` or similar.
-- **Auto-escalation**: Start with a cheaper model. If a story fails, retry with a more capable one.
+Claude Code CLI supports `--model`, so chief can control this without touching the API directly.
+
+- **Use cheaper models for simple tasks**: PRD conversion (`convert_prompt.txt`) doesn't need a frontier model. Pass `--model claude-haiku-4-5-20251001` for conversion, JSON fixing, and other mechanical tasks. Easy change in `generator.go`.
+- **Configurable model per stage**: `--prd-model haiku --loop-model sonnet` or similar. Chief maps these to `claude --model <id>` flags.
+- **Auto-escalation**: Start with a cheaper model. If a story fails, retry with `--model` set to a more capable one. Chief already has retry logic in `loop.go` — extend it to escalate the model on retry.
 
 ### Caching and checkpointing
 
@@ -361,7 +392,7 @@ Mapping these ideas by impact vs. effort. Community requests ([GH #3], [GH #4]) 
 
 3. **What's the right model for configuration?** Zero-config is a strength. But Docker, quality gates, model selection, and webhooks need config. A `chief.yaml` in the project root? CLI flags only? Both?
 
-4. **Should chief support non-Claude models?** The architecture could work with any coding agent that accepts a prompt and outputs to stdout. Is there value in model-agnostic execution, or does tight Claude integration matter more?
+4. **What's the best auth model for the web app?** The CLI-only principle means the web app can't just call the Anthropic API. The local bridge (`chief serve`) works for local use. For hosted/cloud use, Claude OAuth would be ideal if available. Is "bring your own API key" an acceptable escape hatch for a hosted version, or does it violate the principle too much?
 
 5. **What's the monetization path?** Chief is MIT-licensed. Cloud-hosted execution, premium PRD templates, team collaboration, and enterprise features (SSO, audit logs, managed execution) are all options. Does the project want to stay fully open source, or is a commercial layer planned?
 
