@@ -4,21 +4,19 @@ Where chief goes from here. Ideas are grouped by theme, roughly ordered by poten
 
 ---
 
-## Architectural Principle: Claude Code Runtime Only
+## Architectural Principle: Claude Code CLI Only
 
-Chief uses the **Claude Code runtime** — never raw Anthropic API calls. For the CLI tool, that means shelling out to `claude`. For a web backend, that means the **Claude Agent SDK** (the same agent loop, tools, and capabilities as the CLI, packaged as a Python/TypeScript library).
+Chief shells out to the **Claude Code CLI** for all AI operations. Always. No Anthropic API calls, no Agent SDK, no API keys managed by chief.
 
-The point isn't "must invoke a binary called `claude`" — it's "always use the Claude Code agent runtime, never hand-roll prompt/tool loops against the raw messages API." This keeps chief simple and lets it ride every improvement Anthropic ships to the agent runtime for free.
+Why this is a hard constraint:
 
-- **Simplicity**: Chief doesn't manage token counting, model routing, tool execution, or streaming. The Claude Code runtime handles all of that.
-- **Feature leverage**: Every improvement to Claude Code (new tools, better context management, sub-agents, prompt caching) benefits chief for free — whether via CLI or SDK.
-- **Auth delegation**: Users authenticate with Claude Code (CLI) or provide an API key (SDK). Chief itself never implements auth flows.
-- **Permission model**: Claude Code's permission system is the trust boundary. Chief doesn't add its own.
+- **Claude Max compatibility**: Users on Claude Max ($100-200/mo) get unlimited Claude Code CLI usage. The Agent SDK and Anthropic API require separate pay-as-you-go billing. Using the CLI means chief works with Max plans at zero marginal cost.
+- **Simplicity**: Chief doesn't manage API keys, token counting, model routing, or streaming. Claude Code handles all of that.
+- **Feature leverage**: Every improvement to Claude Code (new tools, better context management, sub-agents, prompt caching) benefits chief for free.
+- **Auth delegation**: Users authenticate with Claude Code once. Chief never touches credentials.
+- **Permission model**: Claude Code's permission system (and `--dangerously-skip-permissions`) is the trust boundary. Chief doesn't add its own.
 
-What this means in practice:
-- **`chief` CLI tool** (Go, runs in terminal): Continues to shell out to `claude` CLI. No change.
-- **Web app backend** (TypeScript/Python): Uses the Claude Agent SDK. Same runtime, library form. This is Claude Code, not a raw API wrapper.
-- **Never**: Direct `anthropic.messages.create()` calls with hand-rolled system prompts and tool loops.
+This means the web app can't run its own AI backend — it must remote-control a running chief instance that has Claude Code CLI available. See the web companion section for how this works.
 
 ---
 
@@ -46,61 +44,73 @@ Chief's power comes from orchestrating Claude Code, but the entry point today is
 
 ### Web companion app
 
-A web UI for PRD authoring and progress monitoring. The core experience is **AI-generated PRDs** — the user describes what they want, Claude structures it into stories. PRDs shouldn't be hand-edited; the whole point is that Claude does the structuring. A manual markdown editor without AI would miss the entire value proposition.
+A web UI for PRD authoring and progress monitoring. The core experience is **AI-generated PRDs** — the user describes what they want, Claude structures it into stories. PRDs shouldn't be hand-edited; the whole point is that Claude does the structuring.
 
-**Architecture: Claude Agent SDK on the backend**
+**Architecture: Self-hosted chief server + thin hosted web UI**
 
-The backend uses the [Claude Agent SDK](https://docs.anthropic.com/en/docs/agents-and-tools/claude-agent-sdk) (TypeScript or Python) — the same agent runtime that powers the Claude Code CLI, but as a library. This isn't "calling the Anthropic API directly" — it's using the Claude Code agent loop with its full tool set. The `init_prompt.txt` logic runs server-side through the SDK.
+The web UI does not run AI. It remote-controls a chief instance that runs on the user's own machine (or a VPS). Chief has the Claude Code CLI — the web UI is just a pretty frontend talking to it.
 
 ```
-Browser (React/Next.js)
-    ↕ WebSocket (streaming)
-Backend (Node.js / Python)
-    ↕ Claude Agent SDK
-Anthropic API (via SDK, not directly)
+chief.dev (hosted web UI — static, free, no AI)
+    ↕ WebSocket (outbound from server, no port forwarding)
+chief serve (user's machine or VPS)
+    ↕ shells out to
+Claude Code CLI (user's Max plan or API key)
 ```
 
-**Auth model: Bring Your Own API Key (BYOK)**
+The critical detail: **the chief server initiates the connection outbound** to the web UI relay (like Plex, Tailscale, or ngrok). The user never opens ports, configures firewalls, or sets up dynamic DNS. It just works:
 
-Users provide their own Anthropic API key. The backend passes it to the Agent SDK per-session. This means:
+1. User runs `chief serve` on their machine (or VPS)
+2. Chief prints: "Connected. Open https://chief.dev/s/abc123 to access your instance"
+3. User opens that URL in any browser — phone, tablet, work laptop
+4. Web UI is now connected to their chief instance
+5. All Claude calls happen on the server via the CLI, using the user's own auth
 
-- **No billing infrastructure needed**: Users pay Anthropic directly for their own usage. Chief's web app is free to run.
-- **No API key management burden**: Keys are used per-request, not stored long-term (or stored encrypted per-user if persistence is needed).
-- **Aligned incentives**: Users control their own spend. No surprise bills from chief.
-- **Low barrier**: Anyone with an Anthropic API key can use it. Same key they'd use for the CLI.
+**Why this architecture:**
 
-A future **paid/SaaS tier** could provide a managed API key (users pay chief, chief pays Anthropic) for those who don't want to manage keys. But BYOK is the right starting point — it's simple, free to operate, and matches how the CLI works (users auth with their own Claude account).
+- **Works with Claude Max**: All AI runs through the CLI on the user's machine. $200/mo unlimited. No per-token API costs.
+- **No API keys in the web app**: Chief.dev never sees credentials. The server has Claude Code authenticated locally.
+- **No billing infrastructure**: Chief.dev is a free static relay. Users pay Anthropic directly through their existing Claude subscription.
+- **Works from anywhere**: Phone on a train, iPad on a couch, colleague's laptop. Anything with a browser.
+- **Self-hosted**: Users own their data. The web UI relay is just passing messages — it doesn't store PRDs or code.
+
+**Chief.dev relay implementation:**
+
+The hosted relay at chief.dev is intentionally thin:
+- Static React/Next.js frontend
+- WebSocket relay server (match browser clients to chief servers by session ID)
+- No database, no auth, no AI, no storage
+- Could be a single Cloudflare Worker or a tiny Node.js process
+- Session IDs are random, unguessable tokens — possession of the URL = access
 
 **Core features:**
 
-- **Conversational PRD creation**: Same `chief new` experience but in the browser. User describes what they want, Claude asks clarifying questions, generates structured PRD with user stories. Powered by the Agent SDK running `init_prompt.txt` on the backend.
-- **PRD refinement chat**: After generation, users can iterate — "split US-003 into two stories", "add error handling to US-005", "make this work with PostgreSQL instead of SQLite". Conversational refinement, not manual editing.
-- **Live PRD preview**: Rendered view of the PRD updating in real-time as Claude generates/refines it. Users see the US-XXX structure forming.
-- **Template gallery**: Curated starting points — "SaaS app", "CLI tool", "API service", "mobile app". Pre-loaded context that biases Claude's generation toward sensible defaults for each type.
-- **Export to `.chief/`**: Download as a zip or push to a connected git repo. The result is a `.chief/prds/<name>/` directory ready for `chief` to run.
-- **Progress dashboard**: Read-only view showing progress of running chief instances. Reads `prd.json` from a git repo or shared filesystem. No AI needed for this part — just reads JSON.
-- **Team collaboration**: Multiple people view/comment on the same PRD. One person drives the Claude conversation, others observe and leave comments.
+- **Conversational PRD creation**: Same `chief new` experience but in the browser. User types what they want, chief server spawns `claude -p "..." --output-format stream-json` with `init_prompt.txt`, streams responses back through the relay to the browser.
+- **PRD refinement chat**: After generation, users iterate conversationally — "split US-003 into two stories", "add error handling to US-005". Each message triggers another CLI call on the server.
+- **Live PRD preview**: Rendered view of the PRD updating in real-time as Claude generates it.
+- **Run control**: Start/stop/pause `chief run` from the browser. Monitor progress, see which story is executing, view diffs.
+- **Progress dashboard**: Live view of story completion, current iteration, token usage — all streamed from the server.
+- **Template gallery**: Curated starting points that get passed as context to the `chief new` CLI call.
+- **Team sharing**: Share the session URL with a colleague. Multiple browsers can connect to the same chief server. One person drives, others observe.
 
-**What about a manual editor?** Include a markdown editor as a secondary view for minor tweaks (fix a typo, reword an acceptance criterion), but it should feel like "edit source" — the primary interaction is always conversational with Claude.
+**What about a manual editor?** Include a markdown editor as a secondary "edit source" view for minor tweaks. But the primary interaction is always conversational with Claude.
 
-### Mobile app (PWA)
+### One-click cloud deployment
 
-For PRD drafting on the go. You're on a train and have an idea — open the app, describe what you want, Claude structures it. When you get to your desk, the PRD is waiting.
+For users who don't want to run chief locally or want a persistent server:
 
-- Progressive web app — the web companion made responsive. No app store needed.
-- Same BYOK auth model. Same Agent SDK backend.
-- Push notifications when chief completes a PRD back on your server.
+- **"Deploy to Hetzner" button** on chief.dev: Creates a small VPS (~$5/mo), installs chief + Claude Code CLI via cloud-init, auto-connects to the relay.
+- **Also support**: DigitalOcean, AWS Lightsail, Fly.io — anywhere cheap VPS hosting exists.
+- **Setup flow**: Click deploy → pick region → VPS spins up → user authenticates Claude Code on the VPS (one-time SSH or provide an API key during setup) → server appears in web UI.
+- **Persistent**: Server runs 24/7. Start a PRD from your phone, chief works overnight, check results in the morning.
 
-**Consideration**: This is just the web app with a responsive layout. Not a separate project — just a design requirement for the web companion.
+**Implementation thought**: The deploy button uses the provider's API (Hetzner Cloud API, DigitalOcean API) with a cloud-init script. The script installs Go, chief, Claude Code CLI, runs `chief serve --connect chief.dev --token <setup-token>`. The trickiest part is Claude Code auth on the VPS — probably needs the user to SSH in once to run `claude` and authenticate, or accept an API key as a setup parameter.
 
-### Desktop app (Tauri)
+### Mobile / PWA
 
-- Wraps the web UI + could optionally bundle `chief` CLI for local execution
-- One-click install for non-technical users
-- System tray icon showing chief status
-- Native notifications on completion
+Not a separate app. The web companion at chief.dev should be responsive from day one. Same architecture — browser connects to the relay, relay connects to the user's chief server.
 
-**Consideration**: Tauri keeps it lightweight. Probably not worth building separately — if the web app is good, it's sufficient. Only makes sense if there's a compelling reason to bundle the CLI (one-click "create PRD and run it locally" flow).
+Push notifications via service worker when chief completes a PRD.
 
 ---
 
@@ -120,29 +130,36 @@ Run each Claude iteration inside a disposable container. Chief becomes the orche
 
 **Implementation thought**: The main change is in `loop.go` — instead of `exec.Command("claude", ...)`, you'd do `exec.Command("docker", "run", ..., "claude", ...)`. The rest of the architecture stays the same. The tricky part is making the Claude CLI authentication work inside the container (mount the auth token).
 
+### `chief serve` — the headless server mode
+
+This is the foundational building block that enables the web UI, remote execution, and cloud deployment. Without it, chief is a local TUI only.
+
+- **JSON event protocol**: `chief serve` emits structured JSON events over WebSocket: `{"type": "story_start", "story": "US-003"}`, `{"type": "claude_output", "text": "..."}`, `{"type": "iteration_complete", "passed": true}`. Accepts commands back: `{"cmd": "new", "prompt": "..."}`, `{"cmd": "run"}`, `{"cmd": "pause"}`.
+- **Relay connection**: On startup, connects outbound to a relay (chief.dev by default, or self-hosted). Prints a session URL. Any browser connecting to that URL can drive the instance.
+- **Persistent**: Runs as a daemon. Survives terminal disconnects. Stores state in `.chief/`.
+- **Multiple frontends**: The TUI, the web UI, and the headless mode all become different frontends to the same `chief serve` backend. The TUI could even connect to a remote `chief serve` via the relay.
+
+**Implementation thought**: The main refactor is separating chief's business logic from the TUI rendering. Today they're coupled in the bubbletea model. Extract the core (PRD management, loop orchestration, Claude invocation) into a service layer that both the TUI and `chief serve` consume. The serve command wraps this service with a WebSocket transport + relay connection.
+
 ### Cloud/remote execution via SSH
 
-Run chief on a remote machine while viewing the TUI locally.
+For users who prefer SSH over the web UI:
 
-- **`chief remote <host>`**: SSH into a remote machine, run chief there, forward the TUI back. Like `ssh -t host chief`.
-- **Headless mode**: `chief run --headless` outputs JSON events to stdout. A local TUI connects and renders them. Decouples execution from display.
-- **Persistent sessions**: Use tmux/screen on the remote so chief survives disconnects.
+- **`chief remote <host>`**: SSH into a remote machine, run `chief serve` there, open the relay URL locally. Or just `ssh -t host chief` for the TUI.
+- **Persistent sessions**: `chief serve` already runs as a daemon. No need for tmux/screen.
 
-**Implementation thought**: The headless mode is the real building block. Once chief can emit events to stdout and accept commands via stdin, any frontend can drive it — local TUI, web UI, remote TUI, etc. This is a clean separation that enables multiple features at once.
+### Managed cloud service (future)
 
-### Cloud-hosted execution (managed service)
-
-A hosted version of chief where users don't need to install anything locally.
+A fully hosted version where chief manages the infrastructure:
 
 - Upload or connect a git repo
 - Write/edit PRD in the web UI
-- Chief runs in the cloud (managed Docker containers with Claude Code CLI installed)
-- Watch progress in the web dashboard
+- Chief provisions a container, installs Claude Code CLI, runs the PRD
 - Results pushed to a branch in your repo
 
-**Auth model**: Same BYOK approach as the web app. Users provide their API key, which gets passed to the Claude Code CLI inside the container. For a paid tier, the service provides a managed key with usage-based billing. The Agent SDK handles PRD creation in the web layer; the CLI handles execution inside the container.
+**Auth challenge**: Claude Code CLI needs auth inside the container. Options: (a) user SSHs in once to authenticate, (b) user provides an API key during setup (works but loses Max plan benefits), (c) Claude eventually supports transferable auth tokens. This is the hardest part.
 
-**Consideration**: This is a big leap — it's essentially a product, not a tool. Could be a future monetization path but is a significant investment. The Docker + headless work unlocks this incrementally.
+**Consideration**: This is a big leap — it's essentially a product. The self-hosted `chief serve` + one-click Hetzner deployment covers 90% of the use case with 10% of the complexity. Only build managed hosting if there's clear demand beyond what self-hosted provides.
 
 ---
 
@@ -371,15 +388,16 @@ Making chief and the code it produces more reliable.
 Mapping these ideas by impact vs. effort. Community requests ([GH #3], [GH #4]) are weighted higher because they represent validated demand.
 
 ### High impact, moderate effort (do first)
+- **`chief serve` + headless mode** — the foundational building block. Unlocks the web UI, remote execution, cloud deploy, and clean architecture. Do this first because everything else depends on it.
 - **In-TUI diff viewer** [GH #4] — most requested feature, builds trust by showing what chief is doing, moderate TUI work with existing git infra
 - **Docker-based execution** — addresses the #1 concern (safety)
 - **Codebase-aware PRD generation** — makes PRDs better with minimal architecture change
 - **Token/cost tracking** — gives users confidence and control
-- **Headless mode** — unlocks remote execution, web UI, and clean architecture
 
 ### High impact, high effort (plan carefully)
+- **Web companion (chief.dev)** — thin relay + static web UI that remote-controls `chief serve`. Broadens audience to non-terminal users. Depends on `chief serve`.
 - **Issue management providers** [GH #3] — pluggable provider model is a real architecture decision, but GitHub Issues alone would be a great start
-- **Web companion for PRD authoring** — broadens audience significantly
+- **One-click cloud deploy (Hetzner etc.)** — makes chief accessible to anyone with a browser and a Claude account
 - **Sub-agent architecture** — could dramatically improve per-iteration quality
 - **CI/CD integration (GitHub Action)** — unlocks automation workflows
 
@@ -392,9 +410,7 @@ Mapping these ideas by impact vs. effort. Community requests ([GH #3], [GH #4]) 
 - **Cheaper model for conversion** — use Haiku for prd.md to prd.json
 
 ### Lower priority (future exploration)
-- Mobile app (wait for web app)
-- Desktop app (questionable ROI)
-- Cloud-hosted managed service (big investment)
+- Managed cloud service (only if self-hosted `chief serve` + one-click deploy isn't enough)
 - PRD registry / marketplace (needs community first)
 - IDE plugins (nice-to-have)
 
@@ -408,8 +424,8 @@ Mapping these ideas by impact vs. effort. Community requests ([GH #3], [GH #4]) 
 
 3. **What's the right model for configuration?** Zero-config is a strength. But Docker, quality gates, model selection, and webhooks need config. A `chief.yaml` in the project root? CLI flags only? Both?
 
-4. **BYOK vs managed billing for the web app?** BYOK (users provide their own Anthropic API key) is the simplest starting point — no billing infrastructure, users pay Anthropic directly. But it's friction. A managed tier (users pay chief, chief pays Anthropic) is smoother UX but requires billing infrastructure and carries cost risk. Start BYOK, add managed later?
+4. **How to handle Claude Code auth on cloud VPS?** The one-click deploy (Hetzner etc.) creates a VPS with chief + Claude Code CLI. But the user needs to authenticate Claude Code on that machine. SSH in once? Pass an API key during setup (loses Max plan benefits)? Wait for Claude to offer transferable auth tokens? This is the UX bottleneck for the cloud deploy story.
 
-5. **What's the monetization path?** Chief is MIT-licensed. Cloud-hosted execution, premium PRD templates, team collaboration, and enterprise features (SSO, audit logs, managed execution) are all options. Does the project want to stay fully open source, or is a commercial layer planned?
+5. **What's the monetization path?** Chief is MIT-licensed. The web relay (chief.dev) could be free forever since it's just passing messages. Revenue could come from: managed cloud hosting (chief provisions and manages the VPS for you), team features (shared dashboards, role-based access), enterprise (SSO, audit logs, on-prem relay). Does the project want to stay fully open source, or is a commercial layer planned?
 
 6. **How do we measure PRD quality?** We know a PRD is "good" if it completes in few iterations with correct code. Can we build a feedback loop that improves PRD generation based on execution outcomes?
