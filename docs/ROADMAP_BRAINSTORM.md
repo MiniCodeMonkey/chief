@@ -4,6 +4,24 @@ Where chief goes from here. Ideas are grouped by theme, roughly ordered by poten
 
 ---
 
+## Community Requests (GitHub Issues)
+
+Two open issues from the community that should inform priorities:
+
+### [#4] In-TUI diff viewer (requested by @ddaan)
+
+> "Whenever I open up my terminal where chief is cooking, I would like to see the results of the diff, and the notes of what was implemented."
+
+This is the first real feature request and it's a great one. The user wants a lazygit-style diff view integrated into the TUI — see what changed per story, see the implementation notes, all without leaving chief. This maps directly to the **Observability** theme below. See section 5 for the full design.
+
+### [#3] Issue management systems as provider (requested by @kasperhartwich)
+
+> "You should consider support different ticket systems as a provider you can configure."
+
+Users want to pull stories from GitHub Issues, Linear, Jira, etc. instead of writing PRDs from scratch. This maps to the **Smarter PRDs > PRD from issues/tickets** section below. The pluggable provider model is a natural extension of chief's architecture.
+
+---
+
 ## 1. Accessibility: Reaching Non-Terminal Users
 
 Chief's power comes from orchestrating Claude Code, but the entry point today is `chief new` in a terminal. That's a barrier for less technical teammates (designers, PMs, founders) and for anyone who wants to draft a PRD away from their workstation.
@@ -107,14 +125,19 @@ Catch problems before the loop starts.
 - **Complexity scoring**: Estimate how many iterations each story might take. Warn if the total seems high.
 - **"Dry run" mode**: `chief run --dry-run` — Claude reads the PRD and reports what it would do for each story without actually doing it. Helps validate the PRD makes sense before spending tokens.
 
-### PRD from issues/tickets
+### Issue management systems as providers — [GH #3]
 
-Import work from existing project management tools.
+Import work from existing project management tools. Rather than hardcoding each integration, design a pluggable provider model.
 
-- **`chief import github`**: Convert GitHub issues (with a label like `chief`) into a PRD.
-- **`chief import linear`**: Same for Linear tickets.
-- **`chief import clipboard`**: Paste a feature spec from anywhere, Claude converts it.
-- **Sync back**: When a story completes, update the corresponding GitHub issue / Linear ticket.
+- **Provider interface**: Define a clean interface — `ListIssues()`, `GetIssue(id)`, `UpdateIssue(id, status)`. Each provider implements this.
+- **GitHub Issues provider**: `chief import --from github --label chief` — pulls issues with a specific label, Claude converts them into a PRD. Each issue becomes one or more user stories.
+- **Linear provider**: `chief import --from linear --project X` — same flow for Linear. Linear's richer metadata (estimates, cycles) could inform story priority and sizing.
+- **Jira provider**: Enterprise users often live in Jira. A Jira provider would widen chief's reach significantly.
+- **Clipboard/URL provider**: `chief import --from url <spec-url>` or `chief import --from clipboard` — paste a feature spec from anywhere, Claude converts it.
+- **Bidirectional sync**: When a story completes, update the corresponding issue/ticket. Close GitHub issues, move Linear tickets to "Done", transition Jira tickets.
+- **Continuous sync mode**: Watch for new issues with a label and automatically create/update PRD stories. Chief becomes a continuously-fed work queue.
+
+**Implementation thought**: The provider interface could live in `internal/provider/`. Each provider is a separate file. The import command uses Claude (similar to `convert_prompt.txt`) to transform issue content into the PRD markdown format. Config could be in `chief.yaml` or CLI flags: `provider: github` with `label: chief`.
 
 ### Iterative PRD refinement
 
@@ -173,10 +196,21 @@ When chief runs for 30+ iterations, understanding what happened is hard. Better 
 - **Running cost estimate**: "This PRD has used ~$X.XX so far" in the dashboard.
 - **Cost alerts**: Warn if a single story is consuming unusually many tokens.
 
-### Better progress visualization
+### In-TUI diff viewer — [GH #4]
+
+This is the most requested feature. Users want to see what chief is doing without leaving the TUI.
+
+- **Per-story diff view**: New view mode (`d` key) that shows the cumulative git diff for the selected story. Uses the conventional commit format (`feat: [US-XXX] - Title`) to identify which commits belong to which story.
+- **Live diff during execution**: While a story is in progress, show the working tree diff (uncommitted changes). Updates in real-time as Claude writes files.
+- **Implementation notes panel**: Alongside the diff, show the corresponding progress.md entry for that story — what was implemented, files changed, learnings.
+- **Lazygit-style navigation**: File list on the left, diff on the right. `j`/`k` to navigate files, `enter` to expand/collapse, syntax highlighting via chroma (already a dependency).
+- **Summary view**: A compact view showing stats per story: files changed, lines added/removed, which files were touched.
+
+**Implementation thought**: The git integration already exists in `internal/git/`. The main work is a new TUI view component. Could use `git diff <pre-story-sha>...<post-story-sha>` per story, or `git show <commit>` for each story commit. The commit message convention makes this straightforward to parse.
+
+### Other progress visualization
 
 - **Gantt-style timeline**: Show a timeline of story execution. Which stories took how many iterations, where retries happened, idle time between iterations.
-- **Diff viewer**: For each story, show the cumulative git diff. "Here's what story US-003 changed."
 - **Token sparkline**: Small inline chart next to each story showing token usage over iterations.
 
 ### Structured logging
@@ -287,15 +321,17 @@ Making chief and the code it produces more reliable.
 
 ## Priority Assessment
 
-Mapping these ideas by impact vs. effort:
+Mapping these ideas by impact vs. effort. Community requests ([GH #3], [GH #4]) are weighted higher because they represent validated demand.
 
 ### High impact, moderate effort (do first)
+- **In-TUI diff viewer** [GH #4] — most requested feature, builds trust by showing what chief is doing, moderate TUI work with existing git infra
 - **Docker-based execution** — addresses the #1 concern (safety)
 - **Codebase-aware PRD generation** — makes PRDs better with minimal architecture change
 - **Token/cost tracking** — gives users confidence and control
 - **Headless mode** — unlocks remote execution, web UI, and clean architecture
 
 ### High impact, high effort (plan carefully)
+- **Issue management providers** [GH #3] — pluggable provider model is a real architecture decision, but GitHub Issues alone would be a great start
 - **Web companion for PRD authoring** — broadens audience significantly
 - **Sub-agent architecture** — could dramatically improve per-iteration quality
 - **CI/CD integration (GitHub Action)** — unlocks automation workflows
