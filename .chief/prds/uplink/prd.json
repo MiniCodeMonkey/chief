@@ -114,7 +114,8 @@
         "Ping/pong keepalive support (responds to `ping` with `pong`)"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-007",

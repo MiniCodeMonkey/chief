@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/x/term v0.2.1
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
 )

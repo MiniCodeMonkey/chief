@@ -16,6 +16,14 @@
 - Token refresh is mutex-protected in `internal/auth` — use `auth.RefreshToken(baseURL)` for thread-safe refresh
 - `auth.RevokeDevice(accessToken, baseURL)` handles server-side device revocation
 - Logout gracefully handles revocation failure (warns, still deletes local creds)
+- Shared engine: `internal/engine` package wraps `loop.Manager` with fan-out event subscription via `Subscribe()`
+- TUI uses `a.eng` (engine) not `a.manager` — all loop operations go through engine
+- `engine.New(maxIter)` creates engine; `engine.Subscribe()` returns `(<-chan ManagerEvent, unsubFunc)`
+- Tests using App struct directly must use `eng` field (not `manager`) and create `engine.New()` instances
+- WebSocket client: `internal/ws` package with `ws.New(url, opts...)`, `Connect(ctx)`, `Send(msg)`, `Receive()`, `Close()`
+- Use `gorilla/websocket` library for WebSocket connections
+- WebSocket test pattern: use `httptest.NewServer` + `websocket.Upgrader` for mock servers; `wsURL()` helper to convert HTTP to WS URL
+- `WithOnReconnect(fn)` option allows serve command to re-send state snapshot on reconnect
 
 ---
 
@@ -78,4 +86,38 @@
   - `RevokeDevice()` and `RefreshToken()` accept a `baseURL` parameter for testability (same pattern as login)
   - The `defaultBaseURL` constant was moved to `internal/auth` since both auth and cmd packages need it
   - Thread-safety test verifies only 1 actual HTTP call is made when 5 goroutines call `RefreshToken()` concurrently
+---
+
+## 2026-02-15 - US-005
+- **What was implemented:** Extracted shared engine from TUI into `internal/engine` package
+- **Files changed:**
+  - `internal/engine/engine.go` - New `Engine` struct wrapping `loop.Manager` with fan-out event subscription (`Subscribe()`) for multiple consumers
+  - `internal/engine/engine_test.go` - 25 tests covering: creation, register/unregister, subscribe/unsubscribe, fan-out events, concurrent access, shutdown, worktree info, config, PRD loading
+  - `internal/tui/app.go` - Replaced `manager *loop.Manager` with `eng *engine.Engine`; added `eventCh` and `unsubFn` fields; TUI now subscribes to engine events via `Subscribe()`; added `NewAppWithEngine()` for sharing engine with serve command
+  - `internal/tui/dashboard.go` - Updated `a.manager` → `a.eng` references
+  - `internal/tui/layout_test.go` - Updated tests to create `engine.Engine` instead of `loop.Manager` directly; added `newTestEngine()` and `newTestEngineWithWorktree()` helpers
+- **Learnings for future iterations:**
+  - The `loop.Manager` already had the right abstraction (channels, start/stop/pause, events). The engine adds fan-out subscription on top.
+  - Fan-out uses non-blocking sends (`select { case ch <- event: default: }`) to avoid slow consumers blocking the pipeline
+  - `Subscribe()` returns a cleanup function — must be called to avoid resource leaks
+  - `engine.Shutdown()` stops the forwarding goroutine; `engine.StopAll()` only stops loops
+  - TabBar and PRDPicker still use `loop.Manager` directly (via `eng.Manager()`) since they only need read-only state queries
+  - When tests create `App` struct literals, use `eng` field (not `manager`) and pass `engine.New()` instances
+---
+
+## 2026-02-15 - US-006
+- **What was implemented:** WebSocket client with automatic reconnection in `internal/ws` package
+- **Files changed:**
+  - `internal/ws/client.go` - `Client` struct with `Connect(ctx)`, `Send(msg)`, `Receive()`, `Close()` API; exponential backoff + jitter reconnection (1s→60s max); ping/pong handler; `WithOnReconnect` callback option; context-based cancellation
+  - `internal/ws/client_test.go` - 10 tests: connect/send/receive, graceful close, send-when-disconnected, reconnect-on-server-close, context cancellation, ping/pong, backoff calculation, default URL, channel buffer, multiple messages
+  - `go.mod` / `go.sum` - Added `github.com/gorilla/websocket` dependency
+  - `.chief/prds/uplink/prd.json` - Updated US-006 status
+- **Learnings for future iterations:**
+  - `gorilla/websocket` is the standard Go WebSocket library — `DefaultDialer.Dial()` for connecting, `ReadMessage()`/`WriteMessage()` for I/O
+  - Ping/pong: set `SetPingHandler` to auto-respond with pong via `WriteControl(PongMessage, ...)`; also set `SetPongHandler` (even empty) to prevent default pong from interfering
+  - Reconnection loop lives in `readLoop` — on read error, close old conn, dial new one, set up handlers again, call `onRecon` callback
+  - Backoff with jitter formula: `base * 2^(attempt-1) * rand(0.5, 1.5)`, capped at max
+  - Test pattern for WebSocket: `httptest.NewServer` with `websocket.Upgrader` in handler, convert URL with `strings.TrimPrefix(s.URL, "http")` → `"ws" + ...`
+  - `atomic.Int32` useful for tracking connection counts in reconnection tests
+  - Message struct uses `json.RawMessage` for `Raw` field to preserve the full original message for downstream consumers
 ---
