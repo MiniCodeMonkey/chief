@@ -257,7 +257,8 @@
         "Timer is goroutine-safe (no races between message handling and timeout)"
       ],
       "priority": 14,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-015",

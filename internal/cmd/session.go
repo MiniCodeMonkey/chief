@@ -10,34 +10,70 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/minicodemonkey/chief/embed"
 	"github.com/minicodemonkey/chief/internal/prd"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
+// Default session timeout configuration.
+const (
+	defaultSessionTimeout = 30 * time.Minute
+)
+
+// Default warning thresholds (minutes of inactivity at which to warn).
+var defaultWarningThresholds = []int{20, 25, 29}
+
 // claudeSession tracks a single Claude PRD session process.
 type claudeSession struct {
-	sessionID string
-	project   string
-	cmd       *exec.Cmd
-	stdin     io.WriteCloser
-	done      chan struct{} // closed when the process exits
+	sessionID   string
+	project     string
+	projectPath string
+	cmd         *exec.Cmd
+	stdin       io.WriteCloser
+	done        chan struct{} // closed when the process exits
+	lastActive  time.Time    // last time a prd_message was received
+	activeMu    sync.Mutex   // protects lastActive
+}
+
+// resetActivity updates the last active time for this session.
+func (s *claudeSession) resetActivity() {
+	s.activeMu.Lock()
+	s.lastActive = time.Now()
+	s.activeMu.Unlock()
+}
+
+// inactiveDuration returns how long the session has been inactive.
+func (s *claudeSession) inactiveDuration() time.Duration {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	return time.Since(s.lastActive)
 }
 
 // sessionManager manages Claude PRD sessions spawned via WebSocket.
 type sessionManager struct {
-	mu       sync.RWMutex
-	sessions map[string]*claudeSession
-	client   *ws.Client
+	mu                sync.RWMutex
+	sessions          map[string]*claudeSession
+	client            *ws.Client
+	timeout           time.Duration // session inactivity timeout
+	warningThresholds []int         // minutes of inactivity at which to send warnings
+	checkInterval     time.Duration // how often to check for timeouts (configurable for tests)
+	stopTimeout       chan struct{} // closed to stop the timeout checker
 }
 
 // newSessionManager creates a new session manager.
 func newSessionManager(client *ws.Client) *sessionManager {
-	return &sessionManager{
-		sessions: make(map[string]*claudeSession),
-		client:   client,
+	sm := &sessionManager{
+		sessions:          make(map[string]*claudeSession),
+		client:            client,
+		timeout:           defaultSessionTimeout,
+		warningThresholds: defaultWarningThresholds,
+		checkInterval:     30 * time.Second,
+		stopTimeout:       make(chan struct{}),
 	}
+	go sm.runTimeoutChecker(sm.stopTimeout)
+	return sm
 }
 
 // getSession returns a session by ID, or nil if not found.
@@ -109,11 +145,13 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 	}
 
 	sess := &claudeSession{
-		sessionID: sessionID,
-		project:   projectName,
-		cmd:       cmd,
-		stdin:     stdinPipe,
-		done:      make(chan struct{}),
+		sessionID:   sessionID,
+		project:     projectName,
+		projectPath: projectPath,
+		cmd:         cmd,
+		stdin:       stdinPipe,
+		done:        make(chan struct{}),
+		lastActive:  time.Now(),
 	}
 
 	sm.mu.Lock()
@@ -200,6 +238,9 @@ func (sm *sessionManager) sendMessage(sessionID, content string) error {
 		return fmt.Errorf("session not found")
 	}
 
+	// Reset the inactivity timer
+	sess.resetActivity()
+
 	// Write the message followed by a newline to the Claude process stdin
 	_, err := fmt.Fprintf(sess.stdin, "%s\n", content)
 	if err != nil {
@@ -233,6 +274,14 @@ func (sm *sessionManager) closeSession(sessionID string, save bool) error {
 
 // killAll kills all active sessions (used during shutdown).
 func (sm *sessionManager) killAll() {
+	// Stop the timeout checker
+	select {
+	case <-sm.stopTimeout:
+		// Already closed
+	default:
+		close(sm.stopTimeout)
+	}
+
 	sm.mu.RLock()
 	sessions := make([]*claudeSession, 0, len(sm.sessions))
 	for _, s := range sm.sessions {
@@ -250,6 +299,117 @@ func (sm *sessionManager) killAll() {
 	for _, s := range sessions {
 		<-s.done
 	}
+}
+
+// runTimeoutChecker periodically checks all sessions for inactivity and sends
+// warnings at the configured thresholds. When the timeout is reached, the session
+// is expired: state is saved to disk, the process is killed, and session_expired is sent.
+func (sm *sessionManager) runTimeoutChecker(stopCh <-chan struct{}) {
+	ticker := time.NewTicker(sm.checkInterval)
+	defer ticker.Stop()
+
+	// Track which warnings have been sent for each session to avoid duplicates.
+	// Key: sessionID, Value: set of warning minutes already sent.
+	sentWarnings := make(map[string]map[int]bool)
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			sm.mu.RLock()
+			sessions := make([]*claudeSession, 0, len(sm.sessions))
+			for _, s := range sm.sessions {
+				sessions = append(sessions, s)
+			}
+			sm.mu.RUnlock()
+
+			for _, sess := range sessions {
+				inactive := sess.inactiveDuration()
+				inactiveMinutes := int(inactive.Minutes())
+
+				// Check if session should be expired
+				if inactive >= sm.timeout {
+					log.Printf("Session %s timed out after %v of inactivity", sess.sessionID, sm.timeout)
+					sm.expireSession(sess)
+					delete(sentWarnings, sess.sessionID)
+					continue
+				}
+
+				// Check warning thresholds
+				if _, ok := sentWarnings[sess.sessionID]; !ok {
+					sentWarnings[sess.sessionID] = make(map[int]bool)
+				}
+
+				for _, threshold := range sm.warningThresholds {
+					if inactiveMinutes >= threshold && !sentWarnings[sess.sessionID][threshold] {
+						timeoutMinutes := int(sm.timeout.Minutes())
+						remaining := timeoutMinutes - threshold
+						log.Printf("Session %s: sending timeout warning (%d minutes remaining)", sess.sessionID, remaining)
+						sm.sendTimeoutWarning(sess.sessionID, remaining)
+						sentWarnings[sess.sessionID][threshold] = true
+					}
+				}
+			}
+
+			// Clean up sentWarnings for sessions that no longer exist
+			sm.mu.RLock()
+			for sid := range sentWarnings {
+				if _, exists := sm.sessions[sid]; !exists {
+					delete(sentWarnings, sid)
+				}
+			}
+			sm.mu.RUnlock()
+		}
+	}
+}
+
+// sendTimeoutWarning sends a session_timeout_warning message over WebSocket.
+func (sm *sessionManager) sendTimeoutWarning(sessionID string, minutesRemaining int) {
+	envelope := ws.NewMessage(ws.TypeSessionTimeoutWarning)
+	msg := ws.SessionTimeoutWarningMessage{
+		Type:             envelope.Type,
+		ID:               envelope.ID,
+		Timestamp:        envelope.Timestamp,
+		SessionID:        sessionID,
+		MinutesRemaining: minutesRemaining,
+	}
+	if err := sm.client.Send(msg); err != nil {
+		log.Printf("Error sending session_timeout_warning: %v", err)
+	}
+}
+
+// expireSession saves whatever PRD state exists, kills the Claude process,
+// and sends a session_expired message.
+func (sm *sessionManager) expireSession(sess *claudeSession) {
+	// Close stdin to let Claude finish writing, then kill after a brief grace period
+	sess.stdin.Close()
+
+	// Give Claude 2 seconds to finish writing
+	select {
+	case <-sess.done:
+		// Process exited cleanly
+	case <-time.After(2 * time.Second):
+		// Force kill
+		if sess.cmd.Process != nil {
+			sess.cmd.Process.Kill()
+		}
+		<-sess.done
+	}
+
+	// Send session_expired message
+	envelope := ws.NewMessage(ws.TypeSessionExpired)
+	expiredMsg := ws.SessionExpiredMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		SessionID: sess.sessionID,
+	}
+	if err := sm.client.Send(expiredMsg); err != nil {
+		log.Printf("Error sending session_expired: %v", err)
+	}
+
+	log.Printf("Session %s expired and cleaned up", sess.sessionID)
 }
 
 // autoConvert scans for any prd.md files that need conversion and converts them.

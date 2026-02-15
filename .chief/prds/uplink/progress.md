@@ -41,6 +41,11 @@
 - `sendError(client, code, message, requestID)` helper sends typed error messages over WebSocket
 - `serveTestHelper(t, workspacePath, serverFn)` encapsulates WS test boilerplate (hello/welcome/state_snapshot/cancel)
 - After handshake, server always receives a `state_snapshot` message — existing tests must account for this
+- `sessionManager` in `internal/cmd/session.go` manages Claude PRD sessions: `newPRD()`, `sendMessage()`, `closeSession()`, `killAll()`, `activeSessions()`
+- Mock `claude` binary in tests: write shell script to temp dir, prepend to PATH via `t.Setenv("PATH", dir+":"+origPath)`
+- `projectFinder` interface allows testing handlers without real `workspace.Scanner`
+- Session timeout: `sessionManager` has configurable `timeout`, `warningThresholds`, and `checkInterval` fields — set to small values in tests for speed
+- `expireSession()` closes stdin, waits 2s grace period, then force-kills; sends `session_expired` after process exits
 
 ---
 
@@ -238,4 +243,34 @@
   - Test helper `serveTestHelper()` encapsulates the boilerplate: reads hello, sends welcome, reads state_snapshot, then calls custom server function
   - Existing PingPong test needed updating because state_snapshot is now sent before pong — the server must read it first
   - `FindProject()` uses read lock and linear scan — fine for typical workspace sizes (dozens of projects)
+---
+
+## 2026-02-15 - US-013
+- **What was implemented:** Interactive Claude PRD sessions over WebSocket — spawn, stream output, send messages, and close sessions
+- **Files changed:**
+  - `internal/cmd/session.go` - New `sessionManager` struct managing Claude PRD sessions: `newPRD()` spawns `claude` with init_prompt, `sendMessage()` writes to stdin, `closeSession()` with save/kill options, `killAll()` for shutdown, `activeSessions()` for state snapshots, auto-conversion of prd.md→prd.json on session end
+  - `internal/cmd/session_test.go` - 10 tests: new_prd (real and mock claude), project not found, prd_message session not found, close_prd_session session not found, mock claude lifecycle (spawn→message→close), save close, active sessions tracking, send message with echo verification, close errors, duplicate session prevention
+  - `internal/cmd/serve.go` - Integrated `sessionManager`: created after WS client, passed to `handleMessage()`, `serveShutdown()`, `sendStateSnapshot()`; added routing for `new_prd`, `prd_message`, `close_prd_session` message types; state snapshot now includes active sessions
+  - `.chief/prds/uplink/prd.json` - Updated US-013 status
+- **Learnings for future iterations:**
+  - Claude interactive sessions use positional arg (not `-p` flag): `exec.Command("claude", prompt)` — the `-p` flag is for non-interactive/print mode
+  - Use shell script mocks in tests: write `#!/bin/sh` script to temp dir, prepend to `PATH` with `t.Setenv("PATH", dir+":"+origPath)` — this allows testing process lifecycle without real claude binary
+  - `projectFinder` interface extracted for testability — `*workspace.Scanner` satisfies it implicitly
+  - `sessionManager` uses `done` channel per session for synchronization: `close(sess.done)` signals process exit, `<-sess.done` blocks in `closeSession()` and `killAll()`
+  - Auto-conversion after session: scans all PRD dirs in project for `prd.NeedsConversion()` — Claude may create new PRD dirs during session
+  - `serveTestHelper` reads state_snapshot automatically after handshake — all test server functions receive conn after this step
+---
+
+## 2026-02-15 - US-014
+- **What was implemented:** Session timeout with warnings — sessions automatically expire after 30 minutes of inactivity with warnings at 20, 25, and 29 minutes
+- **Files changed:**
+  - `internal/cmd/session.go` - Added `lastActive`/`activeMu` fields to `claudeSession`, `resetActivity()`/`inactiveDuration()` methods, `runTimeoutChecker()` goroutine with configurable check interval, `sendTimeoutWarning()`, `expireSession()` (saves state, kills process, sends `session_expired`), `sendMessage()` now resets inactivity timer, `killAll()` stops timeout checker
+  - `internal/cmd/session_test.go` - Added 5 tests: `TimeoutExpiration` (session expires and sends `session_expired`), `TimeoutWarnings` (warnings sent at correct thresholds), `TimeoutResetOnMessage` (prd_message resets timer), `IndependentTimers` (concurrent sessions have separate timers), `TimeoutCheckerGoroutineSafe` (concurrent session creation/messaging while timeout checker runs)
+- **Learnings for future iterations:**
+  - Timeout checker uses a `stopTimeout` channel (closed by `killAll()`) to cleanly stop the goroutine
+  - Warning thresholds and check intervals are configurable on `sessionManager` for fast testing — production uses 30s check interval with 20/25/29 minute thresholds
+  - `expireSession()` gives Claude a 2-second grace period to finish writing after closing stdin before force-killing
+  - `sentWarnings` map in the checker prevents duplicate warnings — cleaned up when sessions are removed
+  - Direct `activeMu.Lock()` and `lastActive` manipulation in tests allows simulating time passage without real waits
+  - The process wait goroutine (from `newPRD`) handles cleanup (sends `claude_output done=true`, auto-converts, removes from sessions map); `expireSession` waits for `<-sess.done` so both paths are coordinated
 ---

@@ -846,3 +846,611 @@ func TestSessionManager_DuplicateSession(t *testing.T) {
 
 	sm.killAll()
 }
+
+// newTestSessionManager creates a session manager with configurable timeouts for testing.
+// It does NOT start the timeout checker goroutine automatically.
+func newTestSessionManager(t *testing.T, timeout time.Duration, warningThresholds []int, checkInterval time.Duration) (*sessionManager, *ws.Client, func()) {
+	t.Helper()
+
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Create a mock "claude" script that stays alive
+	mockClaudeBin := filepath.Join(home, "claude")
+	mockScript := `#!/bin/sh
+while IFS= read -r line; do
+    echo "$line"
+done
+`
+	if err := os.WriteFile(mockClaudeBin, []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", home+":"+origPath)
+
+	// Create a WebSocket server that collects messages
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := ws.New(serveWsURL(srv))
+	if err := client.Connect(ctx); err != nil {
+		cancel()
+		srv.Close()
+		t.Fatal(err)
+	}
+
+	sm := &sessionManager{
+		sessions:          make(map[string]*claudeSession),
+		client:            client,
+		timeout:           timeout,
+		warningThresholds: warningThresholds,
+		checkInterval:     checkInterval,
+		stopTimeout:       make(chan struct{}),
+	}
+
+	cleanup := func() {
+		sm.killAll()
+		cancel()
+		client.Close()
+		srv.Close()
+	}
+
+	return sm, client, cleanup
+}
+
+func TestSessionManager_TimeoutExpiration(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Create mock claude
+	mockClaudeBin := filepath.Join(home, "claude")
+	mockScript := `#!/bin/sh
+while IFS= read -r line; do
+    echo "$line"
+done
+`
+	if err := os.WriteFile(mockClaudeBin, []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", home+":"+origPath)
+
+	// Set up WS server that tracks messages
+	var messages []map[string]interface{}
+	var mu sync.Mutex
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var msg map[string]interface{}
+			if json.Unmarshal(data, &msg) == nil {
+				mu.Lock()
+				messages = append(messages, msg)
+				mu.Unlock()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := ws.New(serveWsURL(srv))
+	if err := client.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cancel()
+		client.Close()
+	}()
+
+	sm := &sessionManager{
+		sessions:          make(map[string]*claudeSession),
+		client:            client,
+		timeout:           200 * time.Millisecond, // Very short for testing
+		warningThresholds: []int{},                // No warnings, just test expiry
+		checkInterval:     50 * time.Millisecond,  // Check frequently
+		stopTimeout:       make(chan struct{}),
+	}
+	go sm.runTimeoutChecker(sm.stopTimeout)
+
+	projectDir := filepath.Join(home, "testproject")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := sm.newPRD(projectDir, "testproject", "sess-timeout-1", "test")
+	if err != nil {
+		t.Fatalf("newPRD failed: %v", err)
+	}
+
+	// Session should be active
+	if len(sm.activeSessions()) != 1 {
+		t.Fatal("expected 1 active session")
+	}
+
+	// Wait for timeout to expire + some buffer
+	time.Sleep(500 * time.Millisecond)
+
+	// Session should be expired and removed
+	if len(sm.activeSessions()) != 0 {
+		t.Errorf("expected 0 active sessions after timeout, got %d", len(sm.activeSessions()))
+	}
+
+	// Check that session_expired message was sent
+	mu.Lock()
+	defer mu.Unlock()
+
+	hasExpired := false
+	for _, msg := range messages {
+		if msg["type"] == "session_expired" && msg["session_id"] == "sess-timeout-1" {
+			hasExpired = true
+			break
+		}
+	}
+	if !hasExpired {
+		t.Error("expected session_expired message to be sent")
+	}
+
+	sm.killAll()
+}
+
+func TestSessionManager_TimeoutWarnings(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Create mock claude
+	mockClaudeBin := filepath.Join(home, "claude")
+	mockScript := `#!/bin/sh
+while IFS= read -r line; do
+    echo "$line"
+done
+`
+	if err := os.WriteFile(mockClaudeBin, []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", home+":"+origPath)
+
+	var messages []map[string]interface{}
+	var mu sync.Mutex
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var msg map[string]interface{}
+			if json.Unmarshal(data, &msg) == nil {
+				mu.Lock()
+				messages = append(messages, msg)
+				mu.Unlock()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := ws.New(serveWsURL(srv))
+	if err := client.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cancel()
+		client.Close()
+	}()
+
+	// Use a 3-minute timeout with thresholds at 1 and 2 minutes.
+	// We simulate time by setting lastActive in the past.
+	sm := &sessionManager{
+		sessions:          make(map[string]*claudeSession),
+		client:            client,
+		timeout:           3 * time.Minute,
+		warningThresholds: []int{1, 2},           // Warn at 1min and 2min of inactivity
+		checkInterval:     50 * time.Millisecond,  // Check frequently
+		stopTimeout:       make(chan struct{}),
+	}
+	go sm.runTimeoutChecker(sm.stopTimeout)
+
+	projectDir := filepath.Join(home, "testproject")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := sm.newPRD(projectDir, "testproject", "sess-warn-1", "test")
+	if err != nil {
+		t.Fatalf("newPRD failed: %v", err)
+	}
+
+	// Simulate 90 seconds of inactivity by setting lastActive in the past
+	sess := sm.getSession("sess-warn-1")
+	if sess == nil {
+		t.Fatal("session not found")
+	}
+	sess.activeMu.Lock()
+	sess.lastActive = time.Now().Add(-90 * time.Second)
+	sess.activeMu.Unlock()
+
+	// Wait for the checker to pick it up
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	// Should have the 1-minute warning (2 remaining)
+	var warningMessages []map[string]interface{}
+	for _, msg := range messages {
+		if msg["type"] == "session_timeout_warning" {
+			warningMessages = append(warningMessages, msg)
+		}
+	}
+	mu.Unlock()
+
+	if len(warningMessages) != 1 {
+		t.Fatalf("expected 1 warning message, got %d", len(warningMessages))
+	}
+
+	// The warning at 1 min means 3-1 = 2 minutes remaining
+	if warningMessages[0]["minutes_remaining"] != float64(2) {
+		t.Errorf("expected minutes_remaining=2, got %v", warningMessages[0]["minutes_remaining"])
+	}
+
+	// Now simulate 2.5 minutes of inactivity
+	sess.activeMu.Lock()
+	sess.lastActive = time.Now().Add(-150 * time.Second)
+	sess.activeMu.Unlock()
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	warningMessages = nil
+	for _, msg := range messages {
+		if msg["type"] == "session_timeout_warning" {
+			warningMessages = append(warningMessages, msg)
+		}
+	}
+	mu.Unlock()
+
+	// Should now have 2 warnings (1 min and 2 min thresholds)
+	if len(warningMessages) != 2 {
+		t.Fatalf("expected 2 warning messages, got %d", len(warningMessages))
+	}
+
+	sm.killAll()
+}
+
+func TestSessionManager_TimeoutResetOnMessage(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Create mock claude
+	mockClaudeBin := filepath.Join(home, "claude")
+	mockScript := `#!/bin/sh
+while IFS= read -r line; do
+    echo "$line"
+done
+`
+	if err := os.WriteFile(mockClaudeBin, []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", home+":"+origPath)
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := ws.New(serveWsURL(srv))
+	if err := client.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cancel()
+		client.Close()
+	}()
+
+	sm := &sessionManager{
+		sessions:          make(map[string]*claudeSession),
+		client:            client,
+		timeout:           300 * time.Millisecond,
+		warningThresholds: []int{},
+		checkInterval:     50 * time.Millisecond,
+		stopTimeout:       make(chan struct{}),
+	}
+	go sm.runTimeoutChecker(sm.stopTimeout)
+
+	projectDir := filepath.Join(home, "testproject")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := sm.newPRD(projectDir, "testproject", "sess-reset-1", "test")
+	if err != nil {
+		t.Fatalf("newPRD failed: %v", err)
+	}
+
+	// Wait 200ms (timeout is 300ms)
+	time.Sleep(200 * time.Millisecond)
+
+	// Session should still be active
+	if len(sm.activeSessions()) != 1 {
+		t.Fatal("expected session to still be active before timeout")
+	}
+
+	// Send a message to reset the timer
+	if err := sm.sendMessage("sess-reset-1", "keep alive"); err != nil {
+		t.Fatalf("sendMessage failed: %v", err)
+	}
+
+	// Wait another 200ms (total 400ms since start, but only 200ms since last activity)
+	time.Sleep(200 * time.Millisecond)
+
+	// Session should still be active because we reset the timer
+	if len(sm.activeSessions()) != 1 {
+		t.Error("expected session to still be active after timer reset")
+	}
+
+	// Wait for the full timeout from last activity (another 200ms)
+	time.Sleep(200 * time.Millisecond)
+
+	// Now it should have timed out
+	if len(sm.activeSessions()) != 0 {
+		t.Errorf("expected 0 active sessions after timeout, got %d", len(sm.activeSessions()))
+	}
+
+	sm.killAll()
+}
+
+func TestSessionManager_IndependentTimers(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Create mock claude
+	mockClaudeBin := filepath.Join(home, "claude")
+	mockScript := `#!/bin/sh
+while IFS= read -r line; do
+    echo "$line"
+done
+`
+	if err := os.WriteFile(mockClaudeBin, []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", home+":"+origPath)
+
+	var messages []map[string]interface{}
+	var mu sync.Mutex
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var msg map[string]interface{}
+			if json.Unmarshal(data, &msg) == nil {
+				mu.Lock()
+				messages = append(messages, msg)
+				mu.Unlock()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := ws.New(serveWsURL(srv))
+	if err := client.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cancel()
+		client.Close()
+	}()
+
+	sm := &sessionManager{
+		sessions:          make(map[string]*claudeSession),
+		client:            client,
+		timeout:           300 * time.Millisecond,
+		warningThresholds: []int{},
+		checkInterval:     50 * time.Millisecond,
+		stopTimeout:       make(chan struct{}),
+	}
+	go sm.runTimeoutChecker(sm.stopTimeout)
+
+	projectDir1 := filepath.Join(home, "project1")
+	projectDir2 := filepath.Join(home, "project2")
+	os.MkdirAll(projectDir1, 0o755)
+	os.MkdirAll(projectDir2, 0o755)
+
+	// Start two sessions
+	if err := sm.newPRD(projectDir1, "project1", "sess-a", "test"); err != nil {
+		t.Fatalf("newPRD a failed: %v", err)
+	}
+	if err := sm.newPRD(projectDir2, "project2", "sess-b", "test"); err != nil {
+		t.Fatalf("newPRD b failed: %v", err)
+	}
+
+	// Both should be active
+	if len(sm.activeSessions()) != 2 {
+		t.Fatalf("expected 2 active sessions, got %d", len(sm.activeSessions()))
+	}
+
+	// Keep session B alive by sending a message after 200ms
+	time.Sleep(200 * time.Millisecond)
+	if err := sm.sendMessage("sess-b", "keep alive"); err != nil {
+		t.Fatalf("sendMessage failed: %v", err)
+	}
+
+	// Wait for session A to expire (another 200ms)
+	time.Sleep(200 * time.Millisecond)
+
+	// Session A should be expired, session B should still be active
+	sessions := sm.activeSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 active session, got %d", len(sessions))
+	}
+	if sessions[0].SessionID != "sess-b" {
+		t.Errorf("expected session 'sess-b' to survive, got %q", sessions[0].SessionID)
+	}
+
+	// Verify session_expired was sent for sess-a
+	mu.Lock()
+	hasExpiredA := false
+	for _, msg := range messages {
+		if msg["type"] == "session_expired" && msg["session_id"] == "sess-a" {
+			hasExpiredA = true
+			break
+		}
+	}
+	mu.Unlock()
+
+	if !hasExpiredA {
+		t.Error("expected session_expired for sess-a")
+	}
+
+	sm.killAll()
+}
+
+func TestSessionManager_TimeoutCheckerGoroutineSafe(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Create mock claude
+	mockClaudeBin := filepath.Join(home, "claude")
+	mockScript := `#!/bin/sh
+while IFS= read -r line; do
+    echo "$line"
+done
+`
+	if err := os.WriteFile(mockClaudeBin, []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", home+":"+origPath)
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := ws.New(serveWsURL(srv))
+	if err := client.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cancel()
+		client.Close()
+	}()
+
+	sm := &sessionManager{
+		sessions:          make(map[string]*claudeSession),
+		client:            client,
+		timeout:           500 * time.Millisecond,
+		warningThresholds: []int{},
+		checkInterval:     50 * time.Millisecond,
+		stopTimeout:       make(chan struct{}),
+	}
+	go sm.runTimeoutChecker(sm.stopTimeout)
+
+	projectDir := filepath.Join(home, "testproject")
+	os.MkdirAll(projectDir, 0o755)
+
+	// Concurrently create sessions and send messages while timeout checker runs
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			sid := fmt.Sprintf("sess-conc-%d", idx)
+			dir := filepath.Join(home, fmt.Sprintf("proj-%d", idx))
+			os.MkdirAll(dir, 0o755)
+
+			if err := sm.newPRD(dir, fmt.Sprintf("proj-%d", idx), sid, "test"); err != nil {
+				t.Errorf("newPRD %s failed: %v", sid, err)
+				return
+			}
+
+			// Send some messages
+			for j := 0; j < 3; j++ {
+				time.Sleep(50 * time.Millisecond)
+				sm.sendMessage(sid, fmt.Sprintf("msg-%d", j))
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// No crash = goroutine-safe. Wait for all to expire.
+	time.Sleep(700 * time.Millisecond)
+
+	if len(sm.activeSessions()) != 0 {
+		t.Errorf("expected all sessions to expire, got %d active", len(sm.activeSessions()))
+	}
+
+	sm.killAll()
+}
