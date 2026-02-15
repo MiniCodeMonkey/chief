@@ -83,6 +83,7 @@ func buildRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newListCmd())
 	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newLoginCmd())
 	rootCmd.AddCommand(newWiggumCmd())
 
 	// Custom help for root command only (subcommands use default Cobra help)
@@ -104,6 +105,7 @@ Commands:
   status [name]              Show progress for a PRD (default: main)
   list                       List all PRDs with progress
   update                     Update Chief to the latest version
+  login                      Authenticate with chiefloop.com
 
 Options:
   --max-iterations N, -n N   Set maximum iterations (default: dynamic)
@@ -214,6 +216,23 @@ func newUpdateCmd() *cobra.Command {
 			return cmd.RunUpdate(cmd.UpdateOptions{Version: Version})
 		},
 	}
+}
+
+func newLoginCmd() *cobra.Command {
+	loginOpts := &cmd.LoginOptions{}
+
+	loginCmd := &cobra.Command{
+		Use:   "login",
+		Short: "Authenticate with chiefloop.com",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return cmd.RunLogin(*loginOpts)
+		},
+	}
+
+	loginCmd.Flags().StringVar(&loginOpts.DeviceName, "name", "", "Override device name (default: hostname)")
+
+	return loginCmd
 }
 
 func newWiggumCmd() *cobra.Command {
