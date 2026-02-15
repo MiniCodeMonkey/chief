@@ -21,7 +21,8 @@ type runManager struct {
 	eng    *engine.Engine
 	client *ws.Client
 	// tracks which engine registration key maps to which project/prd
-	runs map[string]*runInfo
+	runs    map[string]*runInfo
+	loggers map[string]*storyLogger
 }
 
 // runInfo tracks metadata about a registered run.
@@ -41,9 +42,10 @@ func runKey(project, prdID string) string {
 // newRunManager creates a new run manager.
 func newRunManager(eng *engine.Engine, client *ws.Client) *runManager {
 	return &runManager{
-		eng:    eng,
-		client: client,
-		runs:   make(map[string]*runInfo),
+		eng:     eng,
+		client:  client,
+		runs:    make(map[string]*runInfo),
+		loggers: make(map[string]*storyLogger),
 	}
 }
 
@@ -108,13 +110,16 @@ func (rm *runManager) handleEvent(event engine.ManagerEvent) {
 		rm.sendRunProgress(info, "retrying", event.Event)
 
 	case loop.EventAssistantText:
+		rm.writeStoryLog(event.PRDName, info.storyID, event.Event.Text)
 		rm.sendClaudeOutput(info, event.Event.Text, false)
 
 	case loop.EventToolStart:
 		text := fmt.Sprintf("[tool_use] %s", event.Event.Tool)
+		rm.writeStoryLog(event.PRDName, info.storyID, text)
 		rm.sendClaudeOutput(info, text, false)
 
 	case loop.EventToolResult:
+		rm.writeStoryLog(event.PRDName, info.storyID, event.Event.Text)
 		rm.sendClaudeOutput(info, event.Event.Text, false)
 
 	case loop.EventError:
@@ -122,6 +127,7 @@ func (rm *runManager) handleEvent(event engine.ManagerEvent) {
 		if event.Event.Err != nil {
 			errText = event.Event.Err.Error()
 		}
+		rm.writeStoryLog(event.PRDName, info.storyID, errText)
 		rm.sendClaudeOutput(info, errText, true)
 	}
 }
@@ -323,12 +329,21 @@ func (rm *runManager) startRun(project, prdID, projectPath string) error {
 		}
 	}
 
+	// Create per-story logger (removes previous logs for this PRD)
+	sl, err := newStoryLogger(prdPath)
+	if err != nil {
+		log.Printf("Warning: could not create story logger: %v", err)
+	}
+
 	rm.mu.Lock()
 	rm.runs[key] = &runInfo{
 		project:   project,
 		prdID:     prdID,
 		prdPath:   prdPath,
 		startTime: time.Now(),
+	}
+	if sl != nil {
+		rm.loggers[key] = sl
 	}
 	rm.mu.Unlock()
 
@@ -388,9 +403,24 @@ func (rm *runManager) stopRun(project, prdID string) error {
 	return nil
 }
 
+// writeStoryLog writes a line to the per-story log file.
+func (rm *runManager) writeStoryLog(runKey, storyID, text string) {
+	rm.mu.RLock()
+	sl := rm.loggers[runKey]
+	rm.mu.RUnlock()
+
+	if sl != nil {
+		sl.WriteLog(storyID, text)
+	}
+}
+
 // cleanup removes tracking for a completed/stopped run.
 func (rm *runManager) cleanup(key string) {
 	rm.mu.Lock()
+	if sl, ok := rm.loggers[key]; ok {
+		sl.Close()
+		delete(rm.loggers, key)
+	}
 	delete(rm.runs, key)
 	rm.mu.Unlock()
 }
@@ -398,6 +428,14 @@ func (rm *runManager) cleanup(key string) {
 // stopAll stops all active runs (for shutdown).
 func (rm *runManager) stopAll() {
 	rm.eng.StopAll()
+
+	// Close all story loggers
+	rm.mu.Lock()
+	for key, sl := range rm.loggers {
+		sl.Close()
+		delete(rm.loggers, key)
+	}
+	rm.mu.Unlock()
 }
 
 // loopStateToString converts a LoopState to a string for WebSocket messages.

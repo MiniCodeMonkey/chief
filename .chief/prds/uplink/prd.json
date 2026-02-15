@@ -339,7 +339,8 @@
         "`log_lines` response includes `project`, `prd_id`, `story_id`, `lines[]`, and `level`"
       ],
       "priority": 19,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-020",
