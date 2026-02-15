@@ -1,9 +1,13 @@
 package auth
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -259,5 +263,226 @@ func TestSaveCredentials_CreatesDirectory(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Error("expected .chief to be a directory")
+	}
+}
+
+func TestRefreshToken_Success(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Save credentials that are near expiry (within 5 minutes)
+	creds := &Credentials{
+		AccessToken:  "old-access-token",
+		RefreshToken: "test-refresh-token",
+		ExpiresAt:    time.Now().Add(2 * time.Minute), // near expiry
+		DeviceName:   "test-device",
+		User:         "user@example.com",
+	}
+	if err := SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth/token" {
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			if body["refresh_token"] != "test-refresh-token" {
+				t.Errorf("expected refresh_token %q, got %q", "test-refresh-token", body["refresh_token"])
+			}
+			json.NewEncoder(w).Encode(refreshResponse{
+				AccessToken:  "new-access-token",
+				RefreshToken: "new-refresh-token",
+				ExpiresIn:    3600,
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	refreshed, err := RefreshToken(server.URL)
+	if err != nil {
+		t.Fatalf("RefreshToken failed: %v", err)
+	}
+
+	if refreshed.AccessToken != "new-access-token" {
+		t.Errorf("expected access_token %q, got %q", "new-access-token", refreshed.AccessToken)
+	}
+	if refreshed.RefreshToken != "new-refresh-token" {
+		t.Errorf("expected refresh_token %q, got %q", "new-refresh-token", refreshed.RefreshToken)
+	}
+
+	// Verify credentials were persisted
+	loaded, err := LoadCredentials()
+	if err != nil {
+		t.Fatalf("LoadCredentials failed: %v", err)
+	}
+	if loaded.AccessToken != "new-access-token" {
+		t.Errorf("expected persisted access_token %q, got %q", "new-access-token", loaded.AccessToken)
+	}
+}
+
+func TestRefreshToken_NotNearExpiry(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Save credentials that are NOT near expiry
+	creds := &Credentials{
+		AccessToken:  "valid-token",
+		RefreshToken: "refresh-token",
+		ExpiresAt:    time.Now().Add(30 * time.Minute),
+		DeviceName:   "test-device",
+		User:         "user@example.com",
+	}
+	if err := SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	// Server should not be called since token is still valid
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called when token is not near expiry")
+	}))
+	defer server.Close()
+
+	refreshed, err := RefreshToken(server.URL)
+	if err != nil {
+		t.Fatalf("RefreshToken failed: %v", err)
+	}
+
+	if refreshed.AccessToken != "valid-token" {
+		t.Errorf("expected access_token %q, got %q", "valid-token", refreshed.AccessToken)
+	}
+}
+
+func TestRefreshToken_SessionExpired(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	creds := &Credentials{
+		AccessToken:  "old-token",
+		RefreshToken: "revoked-refresh-token",
+		ExpiresAt:    time.Now().Add(2 * time.Minute),
+		DeviceName:   "test-device",
+		User:         "user@example.com",
+	}
+	if err := SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth/token" {
+			json.NewEncoder(w).Encode(refreshResponse{
+				Error: "invalid_grant",
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	_, err := RefreshToken(server.URL)
+	if !errors.Is(err, ErrSessionExpired) {
+		t.Fatalf("expected ErrSessionExpired, got %v", err)
+	}
+}
+
+func TestRefreshToken_NotLoggedIn(t *testing.T) {
+	setTestHome(t, t.TempDir())
+
+	_, err := RefreshToken("")
+	if !errors.Is(err, ErrNotLoggedIn) {
+		t.Fatalf("expected ErrNotLoggedIn, got %v", err)
+	}
+}
+
+func TestRefreshToken_ThreadSafe(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	creds := &Credentials{
+		AccessToken:  "old-token",
+		RefreshToken: "refresh-token",
+		ExpiresAt:    time.Now().Add(2 * time.Minute),
+		DeviceName:   "test-device",
+		User:         "user@example.com",
+	}
+	if err := SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	var callCount int
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth/token" {
+			mu.Lock()
+			callCount++
+			mu.Unlock()
+			json.NewEncoder(w).Encode(refreshResponse{
+				AccessToken:  "new-token",
+				RefreshToken: "new-refresh",
+				ExpiresIn:    3600,
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	// Run multiple concurrent refreshes
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := RefreshToken(server.URL)
+			if err != nil {
+				t.Errorf("RefreshToken failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Only one actual refresh should have hit the server
+	// (the first one refreshes, subsequent ones see it's no longer near expiry)
+	mu.Lock()
+	count := callCount
+	mu.Unlock()
+	if count != 1 {
+		t.Errorf("expected exactly 1 server call, got %d", count)
+	}
+}
+
+func TestRevokeDevice_Success(t *testing.T) {
+	var receivedToken string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth/revoke" {
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			receivedToken = body["access_token"]
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	err := RevokeDevice("my-token", server.URL)
+	if err != nil {
+		t.Fatalf("RevokeDevice failed: %v", err)
+	}
+	if receivedToken != "my-token" {
+		t.Errorf("expected token %q, got %q", "my-token", receivedToken)
+	}
+}
+
+func TestRevokeDevice_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	err := RevokeDevice("my-token", server.URL)
+	if err == nil {
+		t.Fatal("expected error for server error response")
 	}
 }

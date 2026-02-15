@@ -33,7 +33,8 @@
         "Unit tests for load/save/delete cycle and permission enforcement"
       ],
       "priority": 2,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-003",
@@ -54,7 +55,8 @@
         "If already logged in, warns and asks for confirmation before overwriting"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-004",
@@ -72,7 +74,8 @@
         "Refresh is thread-safe (mutex-protected for concurrent use by serve)"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-005",

@@ -84,6 +84,7 @@ func buildRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newListCmd())
 	rootCmd.AddCommand(newUpdateCmd())
 	rootCmd.AddCommand(newLoginCmd())
+	rootCmd.AddCommand(newLogoutCmd())
 	rootCmd.AddCommand(newWiggumCmd())
 
 	// Custom help for root command only (subcommands use default Cobra help)
@@ -106,6 +107,7 @@ Commands:
   list                       List all PRDs with progress
   update                     Update Chief to the latest version
   login                      Authenticate with chiefloop.com
+  logout                     Log out and deauthorize this device
 
 Options:
   --max-iterations N, -n N   Set maximum iterations (default: dynamic)
@@ -233,6 +235,17 @@ func newLoginCmd() *cobra.Command {
 	loginCmd.Flags().StringVar(&loginOpts.DeviceName, "name", "", "Override device name (default: hostname)")
 
 	return loginCmd
+}
+
+func newLogoutCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "logout",
+		Short: "Log out and deauthorize this device",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return cmd.RunLogout(cmd.LogoutOptions{})
+		},
+	}
 }
 
 func newWiggumCmd() *cobra.Command {
