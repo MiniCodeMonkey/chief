@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,6 +12,7 @@ import (
 	"github.com/minicodemonkey/chief/internal/git"
 	"github.com/minicodemonkey/chief/internal/prd"
 	"github.com/minicodemonkey/chief/internal/tui"
+	"github.com/spf13/cobra"
 )
 
 // Version is set at build time via ldflags
@@ -29,53 +29,203 @@ type TUIOptions struct {
 }
 
 func main() {
-	// Handle subcommands first
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "new":
-			runNew()
-			return
-		case "edit":
-			runEdit()
-			return
-		case "status":
-			runStatus()
-			return
-		case "list":
-			runList()
-			return
-		case "help":
-			printHelp()
-			return
-		case "--help", "-h":
-			printHelp()
-			return
-		case "--version", "-v":
-			fmt.Printf("chief version %s\n", Version)
-			return
-		case "update":
-			runUpdate()
-			return
-		case "wiggum":
-			printWiggum()
-			return
-		}
-	}
-
 	// Non-blocking version check on startup (for interactive TUI sessions)
 	cmd.CheckVersionOnStartup(Version)
 
-	// Parse flags for TUI mode
-	opts := parseTUIFlags()
+	rootCmd := buildRootCmd()
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	// Handle special flags that were parsed
-	if opts == nil {
-		// Already handled (--help or --version)
-		return
+func buildRootCmd() *cobra.Command {
+	opts := &TUIOptions{}
+
+	rootCmd := &cobra.Command{
+		Use:   "chief [name|path/to/prd.json]",
+		Short: "Chief - Autonomous PRD Agent",
+		Long:  "Chief breaks down PRDs into user stories and uses Claude Code to implement them autonomously.",
+		// Accept arbitrary args so positional PRD name/path works
+		Args:    cobra.ArbitraryArgs,
+		Version: Version,
+		// Silence Cobra's default error/usage printing so we control output
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(c *cobra.Command, args []string) error {
+			// Resolve positional argument as PRD name or path
+			if len(args) > 0 {
+				arg := args[0]
+				if strings.HasSuffix(arg, ".json") || strings.HasSuffix(arg, "/") {
+					opts.PRDPath = arg
+				} else {
+					opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", arg)
+				}
+			}
+			runTUIWithOptions(opts)
+			return nil
+		},
 	}
 
-	// Run the TUI
-	runTUIWithOptions(opts)
+	// Set custom version template to match previous output format
+	rootCmd.SetVersionTemplate("chief version {{.Version}}\n")
+
+	// Root flags (TUI mode)
+	rootCmd.Flags().IntVarP(&opts.MaxIterations, "max-iterations", "n", 0, "Set maximum iterations (default: dynamic)")
+	rootCmd.Flags().BoolVar(&opts.NoRetry, "no-retry", false, "Disable auto-retry on Claude crashes")
+	rootCmd.Flags().BoolVar(&opts.Verbose, "verbose", false, "Show raw Claude output in log")
+	rootCmd.Flags().BoolVar(&opts.Merge, "merge", false, "Auto-merge progress on conversion conflicts")
+	rootCmd.Flags().BoolVar(&opts.Force, "force", false, "Auto-overwrite on conversion conflicts")
+
+	// Subcommands
+	rootCmd.AddCommand(newNewCmd())
+	rootCmd.AddCommand(newEditCmd())
+	rootCmd.AddCommand(newStatusCmd())
+	rootCmd.AddCommand(newListCmd())
+	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newWiggumCmd())
+
+	// Custom help for root command only (subcommands use default Cobra help)
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		if c != rootCmd {
+			defaultHelp(c, args)
+			return
+		}
+		fmt.Print(`Chief - Autonomous PRD Agent
+
+Usage:
+  chief [options] [<name>|<path/to/prd.json>]
+  chief <command> [arguments]
+
+Commands:
+  new [name] [context]       Create a new PRD interactively
+  edit [name] [options]      Edit an existing PRD interactively
+  status [name]              Show progress for a PRD (default: main)
+  list                       List all PRDs with progress
+  update                     Update Chief to the latest version
+
+Options:
+  --max-iterations N, -n N   Set maximum iterations (default: dynamic)
+  --no-retry                 Disable auto-retry on Claude crashes
+  --verbose                  Show raw Claude output in log
+  --merge                    Auto-merge progress on conversion conflicts
+  --force                    Auto-overwrite on conversion conflicts
+  -h, --help                 Show this help message
+  -v, --version              Show version number
+
+Examples:
+  chief                      Launch TUI with default PRD (.chief/prds/main/)
+  chief auth                 Launch TUI with named PRD (.chief/prds/auth/)
+  chief ./my-prd.json        Launch TUI with specific PRD file
+  chief -n 20                Launch with 20 max iterations
+  chief --max-iterations=5 auth
+                             Launch auth PRD with 5 max iterations
+  chief --verbose            Launch with raw Claude output visible
+  chief new                  Create PRD in .chief/prds/main/
+  chief new auth             Create PRD in .chief/prds/auth/
+  chief new auth "JWT authentication for REST API"
+                             Create PRD with context hint
+  chief edit                 Edit PRD in .chief/prds/main/
+  chief edit auth            Edit PRD in .chief/prds/auth/
+  chief edit auth --merge    Edit and auto-merge progress
+  chief status               Show progress for default PRD
+  chief status auth          Show progress for auth PRD
+  chief list                 List all PRDs with progress
+  chief update               Update to the latest version
+  chief --version            Show version number
+`)
+	})
+
+	return rootCmd
+}
+
+func newNewCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "new [name] [context...]",
+		Short: "Create a new PRD interactively",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			opts := cmd.NewOptions{}
+			if len(args) > 0 {
+				opts.Name = args[0]
+			}
+			if len(args) > 1 {
+				opts.Context = strings.Join(args[1:], " ")
+			}
+			return cmd.RunNew(opts)
+		},
+	}
+}
+
+func newEditCmd() *cobra.Command {
+	editOpts := &cmd.EditOptions{}
+
+	editCmd := &cobra.Command{
+		Use:   "edit [name]",
+		Short: "Edit an existing PRD interactively",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				editOpts.Name = args[0]
+			}
+			return cmd.RunEdit(*editOpts)
+		},
+	}
+
+	editCmd.Flags().BoolVar(&editOpts.Merge, "merge", false, "Auto-merge progress on conversion conflicts")
+	editCmd.Flags().BoolVar(&editOpts.Force, "force", false, "Auto-overwrite on conversion conflicts")
+
+	return editCmd
+}
+
+func newStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status [name]",
+		Short: "Show progress for a PRD (default: main)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			opts := cmd.StatusOptions{}
+			if len(args) > 0 {
+				opts.Name = args[0]
+			}
+			return cmd.RunStatus(opts)
+		},
+	}
+}
+
+func newListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all PRDs with progress",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return cmd.RunList(cmd.ListOptions{})
+		},
+	}
+}
+
+func newUpdateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "update",
+		Short: "Update Chief to the latest version",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return cmd.RunUpdate(cmd.UpdateOptions{Version: Version})
+		},
+	}
+}
+
+func newWiggumCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "wiggum",
+		Short:  "Bake 'em away, toys!",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		Run: func(c *cobra.Command, args []string) {
+			printWiggum()
+		},
+	}
 }
 
 // findAvailablePRD looks for any available PRD in .chief/prds/
@@ -116,170 +266,6 @@ func listAvailablePRDs() []string {
 		}
 	}
 	return names
-}
-
-// parseTUIFlags parses command-line flags for TUI mode
-func parseTUIFlags() *TUIOptions {
-	opts := &TUIOptions{
-		PRDPath:       "", // Will be resolved later
-		MaxIterations: 0,  // 0 signals dynamic calculation (remaining stories + 5)
-		Verbose:       false,
-		Merge:         false,
-		Force:         false,
-		NoRetry:       false,
-	}
-
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
-
-		switch {
-		case arg == "--help" || arg == "-h":
-			printHelp()
-			return nil
-		case arg == "--version" || arg == "-v":
-			fmt.Printf("chief version %s\n", Version)
-			return nil
-		case arg == "--verbose":
-			opts.Verbose = true
-		case arg == "--merge":
-			opts.Merge = true
-		case arg == "--force":
-			opts.Force = true
-		case arg == "--no-retry":
-			opts.NoRetry = true
-		case arg == "--max-iterations" || arg == "-n":
-			// Next argument should be the number
-			if i+1 < len(os.Args) {
-				i++
-				n, err := strconv.Atoi(os.Args[i])
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error: invalid value for %s: %s\n", arg, os.Args[i])
-					os.Exit(1)
-				}
-				if n < 1 {
-					fmt.Fprintf(os.Stderr, "Error: --max-iterations must be at least 1\n")
-					os.Exit(1)
-				}
-				opts.MaxIterations = n
-			} else {
-				fmt.Fprintf(os.Stderr, "Error: %s requires a value\n", arg)
-				os.Exit(1)
-			}
-		case strings.HasPrefix(arg, "--max-iterations="):
-			val := strings.TrimPrefix(arg, "--max-iterations=")
-			n, err := strconv.Atoi(val)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: invalid value for --max-iterations: %s\n", val)
-				os.Exit(1)
-			}
-			if n < 1 {
-				fmt.Fprintf(os.Stderr, "Error: --max-iterations must be at least 1\n")
-				os.Exit(1)
-			}
-			opts.MaxIterations = n
-		case strings.HasPrefix(arg, "-n="):
-			val := strings.TrimPrefix(arg, "-n=")
-			n, err := strconv.Atoi(val)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: invalid value for -n: %s\n", val)
-				os.Exit(1)
-			}
-			if n < 1 {
-				fmt.Fprintf(os.Stderr, "Error: -n must be at least 1\n")
-				os.Exit(1)
-			}
-			opts.MaxIterations = n
-		case strings.HasPrefix(arg, "-"):
-			// Unknown flag
-			fmt.Fprintf(os.Stderr, "Error: unknown flag: %s\n", arg)
-			fmt.Fprintf(os.Stderr, "Run 'chief --help' for usage.\n")
-			os.Exit(1)
-		default:
-			// Positional argument: PRD name or path
-			if strings.HasSuffix(arg, ".json") || strings.HasSuffix(arg, "/") {
-				opts.PRDPath = arg
-			} else {
-				// Treat as PRD name
-				opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", arg)
-			}
-		}
-	}
-
-	return opts
-}
-
-func runNew() {
-	opts := cmd.NewOptions{}
-
-	// Parse arguments: chief new [name] [context...]
-	if len(os.Args) > 2 {
-		opts.Name = os.Args[2]
-	}
-	if len(os.Args) > 3 {
-		opts.Context = strings.Join(os.Args[3:], " ")
-	}
-
-	if err := cmd.RunNew(opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func runEdit() {
-	opts := cmd.EditOptions{}
-
-	// Parse arguments: chief edit [name] [--merge] [--force]
-	for i := 2; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		switch arg {
-		case "--merge":
-			opts.Merge = true
-		case "--force":
-			opts.Force = true
-		default:
-			// If not a flag, treat as PRD name (first non-flag arg)
-			if opts.Name == "" && !strings.HasPrefix(arg, "-") {
-				opts.Name = arg
-			}
-		}
-	}
-
-	if err := cmd.RunEdit(opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func runStatus() {
-	opts := cmd.StatusOptions{}
-
-	// Parse arguments: chief status [name]
-	if len(os.Args) > 2 && !strings.HasPrefix(os.Args[2], "-") {
-		opts.Name = os.Args[2]
-	}
-
-	if err := cmd.RunStatus(opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func runUpdate() {
-	if err := cmd.RunUpdate(cmd.UpdateOptions{
-		Version: Version,
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func runList() {
-	opts := cmd.ListOptions{}
-
-	if err := cmd.RunList(opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
 }
 
 func runTUIWithOptions(opts *TUIOptions) {
@@ -429,59 +415,6 @@ func runTUIWithOptions(opts *TUIOptions) {
 			runTUIWithOptions(opts)
 		}
 	}
-}
-
-func printHelp() {
-	fmt.Println(`Chief - Autonomous PRD Agent
-
-Usage:
-  chief [options] [<name>|<path/to/prd.json>]
-  chief <command> [arguments]
-
-Commands:
-  new [name] [context]      Create a new PRD interactively
-  edit [name] [options]     Edit an existing PRD interactively
-  status [name]             Show progress for a PRD (default: main)
-  list                      List all PRDs with progress
-  update                    Update Chief to the latest version
-  help                      Show this help message
-
-Global Options:
-  --max-iterations N, -n N  Set maximum iterations (default: dynamic)
-  --no-retry                Disable auto-retry on Claude crashes
-  --verbose                 Show raw Claude output in log
-  --merge                   Auto-merge progress on conversion conflicts
-  --force                   Auto-overwrite on conversion conflicts
-  --help, -h                Show this help message
-  --version, -v             Show version number
-
-Edit Options:
-  --merge                   Auto-merge progress on conversion conflicts
-  --force                   Auto-overwrite on conversion conflicts
-
-Positional Arguments:
-  <name>                    PRD name (loads .chief/prds/<name>/prd.json)
-  <path/to/prd.json>        Direct path to a prd.json file
-
-Examples:
-  chief                     Launch TUI with default PRD (.chief/prds/main/)
-  chief auth                Launch TUI with named PRD (.chief/prds/auth/)
-  chief ./my-prd.json       Launch TUI with specific PRD file
-  chief -n 20               Launch with 20 max iterations
-  chief --max-iterations=5 auth
-                            Launch auth PRD with 5 max iterations
-  chief --verbose           Launch with raw Claude output visible
-  chief new                 Create PRD in .chief/prds/main/
-  chief new auth            Create PRD in .chief/prds/auth/
-  chief new auth "JWT authentication for REST API"
-                            Create PRD with context hint
-  chief edit                Edit PRD in .chief/prds/main/
-  chief edit auth           Edit PRD in .chief/prds/auth/
-  chief edit auth --merge   Edit and auto-merge progress
-  chief status              Show progress for default PRD
-  chief status auth         Show progress for auth PRD
-  chief list                List all PRDs with progress
-  chief --version           Show version number`)
 }
 
 func printWiggum() {
