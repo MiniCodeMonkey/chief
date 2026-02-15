@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -39,6 +40,81 @@ func newRunManager(eng *engine.Engine, client *ws.Client) *runManager {
 		eng:    eng,
 		client: client,
 		runs:   make(map[string]*runInfo),
+	}
+}
+
+// startEventMonitor subscribes to engine events and handles quota exhaustion.
+// It runs until the context is cancelled.
+func (rm *runManager) startEventMonitor(ctx context.Context) {
+	eventCh, unsub := rm.eng.Subscribe()
+	go func() {
+		defer unsub()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-eventCh:
+				if !ok {
+					return
+				}
+				if event.Event.Type == loop.EventQuotaExhausted {
+					rm.handleQuotaExhausted(event.PRDName)
+				}
+			}
+		}
+	}()
+}
+
+// handleQuotaExhausted handles a quota exhaustion event for a specific run.
+func (rm *runManager) handleQuotaExhausted(prdName string) {
+	rm.mu.RLock()
+	info, exists := rm.runs[prdName]
+	rm.mu.RUnlock()
+
+	if !exists {
+		log.Printf("Quota exhausted for unknown run key: %s", prdName)
+		return
+	}
+
+	log.Printf("Quota exhausted for %s/%s, auto-pausing", info.project, info.prdID)
+
+	if rm.client == nil {
+		return
+	}
+
+	// Send run_paused with reason quota_exhausted
+	envelope := ws.NewMessage(ws.TypeRunPaused)
+	pausedMsg := ws.RunPausedMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Project:   info.project,
+		PRDID:     info.prdID,
+		Reason:    "quota_exhausted",
+	}
+	if err := rm.client.Send(pausedMsg); err != nil {
+		log.Printf("Error sending run_paused: %v", err)
+	}
+
+	// Send quota_exhausted message listing affected runs
+	rm.sendQuotaExhausted(info.project, info.prdID)
+}
+
+// sendQuotaExhausted sends a quota_exhausted message over WebSocket.
+func (rm *runManager) sendQuotaExhausted(project, prdID string) {
+	if rm.client == nil {
+		return
+	}
+	envelope := ws.NewMessage(ws.TypeQuotaExhausted)
+	msg := ws.QuotaExhaustedMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Runs:      []string{runKey(project, prdID)},
+		Sessions:  []string{},
+	}
+	if err := rm.client.Send(msg); err != nil {
+		log.Printf("Error sending quota_exhausted: %v", err)
 	}
 }
 

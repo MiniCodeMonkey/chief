@@ -46,6 +46,13 @@
 - `projectFinder` interface allows testing handlers without real `workspace.Scanner`
 - Session timeout: `sessionManager` has configurable `timeout`, `warningThresholds`, and `checkInterval` fields — set to small values in tests for speed
 - `expireSession()` closes stdin, waits 2s grace period, then force-kills; sends `session_expired` after process exits
+- `runManager` in `internal/cmd/runs.go` manages Ralph loop runs: `startRun()`, `pauseRun()`, `resumeRun()`, `stopRun()`, `activeRuns()`, `stopAll()`
+- Run control uses `engine.Engine` — resume works by calling `engine.Start()` again (creates fresh Loop picking up next unfinished story)
+- `runKey(project, prdID)` creates engine registration key as `"project/prdID"`
+- Quota errors detected via `loop.IsQuotaError(text)` — checks stderr/exit error for patterns like "rate limit", "quota", "429"
+- Quota errors bypass retry logic and set `LoopStatePaused` (not `LoopStateError`) for resumability
+- `runManager.startEventMonitor(ctx)` subscribes to engine events for cross-cutting concerns like quota detection
+- `sendStateSnapshot`, `handleMessage`, and `serveShutdown` now accept `*runManager` parameter
 
 ---
 
@@ -273,4 +280,38 @@
   - `sentWarnings` map in the checker prevents duplicate warnings — cleaned up when sessions are removed
   - Direct `activeMu.Lock()` and `lastActive` manipulation in tests allows simulating time passage without real waits
   - The process wait goroutine (from `newPRD`) handles cleanup (sends `claude_output done=true`, auto-converts, removes from sessions map); `expireSession` waits for `<-sess.done` so both paths are coordinated
+---
+
+## 2026-02-15 - US-015
+- **What was implemented:** Run control handlers for start_run, pause_run, resume_run, stop_run via WebSocket
+- **Files changed:**
+  - `internal/cmd/runs.go` - New `runManager` struct wrapping `engine.Engine` with `startRun()`, `pauseRun()`, `resumeRun()`, `stopRun()`, `activeRuns()`, `stopAll()` methods; handler functions `handleStartRun`, `handlePauseRun`, `handleResumeRun`, `handleStopRun`; `activator` interface for testability
+  - `internal/cmd/runs_test.go` - 11 tests: start_run routing, project not found, pause/resume/stop not active errors, run manager unit tests (start+already active, pause/resume, stop, active runs, multiple concurrent projects, state string conversion)
+  - `internal/cmd/serve.go` - Integrated engine and run manager: creates `engine.New(5)` and `newRunManager()`, passes to `handleMessage()`, `sendStateSnapshot()`, `serveShutdown()`; routes `start_run`/`pause_run`/`resume_run`/`stop_run` messages; state snapshot now includes active runs; shutdown stops all runs
+- **Learnings for future iterations:**
+  - Resume is implemented by calling `engine.Start()` again after a paused loop — `Manager.Start()` creates a fresh `Loop` that picks up from the next unfinished story in prd.json
+  - `runKey(project, prdID)` creates engine registration key as `"project/prdID"` to support multiple PRDs per project
+  - Error strings like `"RUN_ALREADY_ACTIVE"` and `"RUN_NOT_ACTIVE"` are used as sentinel error messages matched in handlers
+  - `sendStateSnapshot`, `handleMessage`, and `serveShutdown` now accept `*runManager` parameter — existing tests continued to work because `serveTestHelper` uses these functions indirectly through `RunServe`
+  - `activator` interface allows testing `handleStartRun` without a real `workspace.Watcher`
+---
+
+## 2026-02-15 - US-016
+- **What was implemented:** Quota detection and auto-pause for Ralph loop runs
+- **Files changed:**
+  - `internal/loop/parser.go` - Added `IsQuotaError()` function with quota/rate-limit pattern matching, `ErrQuotaExhausted` sentinel error, `EventQuotaExhausted` event type
+  - `internal/loop/loop.go` - Capture stderr into buffer during `runIteration()`, check for quota patterns on non-zero exit; skip retries for quota errors; emit `EventQuotaExhausted` instead of `EventError`
+  - `internal/loop/manager.go` - Set `LoopStatePaused` (not `LoopStateError`) when quota exhaustion is detected, making the run resumable
+  - `internal/cmd/runs.go` - Added `startEventMonitor()` goroutine that subscribes to engine events and detects `EventQuotaExhausted`; `handleQuotaExhausted()` sends `run_paused` with `reason: "quota_exhausted"` and `quota_exhausted` message over WebSocket
+  - `internal/cmd/serve.go` - Wired up `runs.startEventMonitor(ctx)` after run manager creation
+  - `internal/loop/parser_test.go` - Added `TestIsQuotaError` with 16 test cases for pattern matching
+  - `internal/cmd/runs_test.go` - Added 5 tests: `HandleQuotaExhausted`, `HandleQuotaExhaustedUnknownRun`, `EventMonitorQuotaDetection`, `QuotaExhaustedWebSocket` (integration test with mock claude), `IsQuotaErrorIntegration`
+- **Learnings for future iterations:**
+  - Quota errors are detected by checking stderr content and exit code error text against known patterns ("rate limit", "quota", "429", "too many requests", "resource_exhausted", "overloaded")
+  - Quota errors bypass retry logic entirely — `runIterationWithRetry` returns immediately with `ErrQuotaExhausted` instead of retrying
+  - The manager sets `LoopStatePaused` for quota errors (not `LoopStateError`) so the run can be resumed by the user
+  - `runManager.startEventMonitor()` subscribes to engine events and runs in a goroutine — it watches for `EventQuotaExhausted` across all runs
+  - When sending WS messages from `handleQuotaExhausted`, must guard against nil client (run manager can be used without a client in tests)
+  - `logAndCaptureStream` captures stderr into a `bytes.Buffer` while still logging it — used instead of `logStream` for the stderr pipe
+  - Mock claude scripts for quota tests: `echo "rate limit exceeded" >&2; exit 1` simulates quota exhaustion
 ---

@@ -2,6 +2,7 @@ package loop
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -31,6 +32,8 @@ const (
 	EventError
 	// EventRetrying is emitted when retrying after a crash.
 	EventRetrying
+	// EventQuotaExhausted is emitted when Claude exits due to quota/rate-limit errors.
+	EventQuotaExhausted
 )
 
 // String returns the string representation of an EventType.
@@ -56,6 +59,8 @@ func (e EventType) String() string {
 		return "Error"
 	case EventRetrying:
 		return "Retrying"
+	case EventQuotaExhausted:
+		return "QuotaExhausted"
 	default:
 		return "Unknown"
 	}
@@ -214,6 +219,31 @@ func parseUserMessage(raw json.RawMessage) *Event {
 	}
 
 	return nil
+}
+
+// ErrQuotaExhausted is returned when Claude exits due to quota/rate-limit errors.
+var ErrQuotaExhausted = errors.New("quota exhausted")
+
+// quotaPatterns are stderr/error patterns that indicate quota or rate-limit exhaustion.
+var quotaPatterns = []string{
+	"rate limit",
+	"rate_limit",
+	"quota",
+	"429",
+	"too many requests",
+	"resource_exhausted",
+	"overloaded",
+}
+
+// IsQuotaError checks if an error text contains quota/rate-limit patterns.
+func IsQuotaError(errText string) bool {
+	lower := strings.ToLower(errText)
+	for _, pattern := range quotaPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // extractStoryID extracts a story ID from text between start and end tags.

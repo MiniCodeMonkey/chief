@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/engine"
+	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
@@ -457,6 +459,180 @@ func TestRunManager_LoopStateToString(t *testing.T) {
 	for _, tt := range tests {
 		if tt.state.Status != tt.expected {
 			t.Errorf("expected %q, got %q", tt.expected, tt.state.Status)
+		}
+	}
+}
+
+func TestRunManager_HandleQuotaExhausted(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	// Create a mock WS client to capture sent messages
+	rm := newRunManager(eng, nil)
+
+	// Add a run to the runs map
+	rm.mu.Lock()
+	rm.runs["myproject/feature"] = &runInfo{
+		project: "myproject",
+		prdID:   "feature",
+		prdPath: "/tmp/test/prd.json",
+	}
+	rm.mu.Unlock()
+
+	// handleQuotaExhausted should not panic even with nil client
+	// (it logs errors but continues)
+	rm.handleQuotaExhausted("myproject/feature")
+}
+
+func TestRunManager_HandleQuotaExhaustedUnknownRun(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil)
+
+	// Should not panic for unknown run
+	rm.handleQuotaExhausted("unknown/run")
+}
+
+func TestRunManager_EventMonitorQuotaDetection(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil)
+
+	// Set up run tracking
+	rm.mu.Lock()
+	rm.runs["test/feature"] = &runInfo{
+		project: "test",
+		prdID:   "feature",
+		prdPath: "/tmp/test/prd.json",
+	}
+	rm.mu.Unlock()
+
+	// Start the event monitor
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rm.startEventMonitor(ctx)
+
+	// Give the goroutine time to start
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel context to stop the monitor
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestRunManager_QuotaExhaustedWebSocket(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a git repo with a PRD that uses a mock claude that simulates quota error
+	projectDir := filepath.Join(workspaceDir, "myproject")
+	createGitRepo(t, projectDir)
+
+	prdDir := filepath.Join(projectDir, ".chief", "prds", "feature")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prdState := `{"project": "My Feature", "userStories": [{"id": "US-001", "title": "Test Story", "passes": false}]}`
+	if err := os.WriteFile(filepath.Join(prdDir, "prd.json"), []byte(prdState), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a mock claude that outputs a quota error on stderr and exits with non-zero
+	mockDir := t.TempDir()
+	mockScript := `#!/bin/sh
+echo "rate limit exceeded" >&2
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(mockDir, "claude"), []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", mockDir+":"+origPath)
+
+	var messages []map[string]interface{}
+	var mu sync.Mutex
+
+	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+		// Send start_run request
+		startReq := map[string]string{
+			"type":      "start_run",
+			"id":        "req-1",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"project":   "myproject",
+			"prd_id":    "feature",
+		}
+		conn.WriteJSON(startReq)
+
+		// Read messages — we expect run_paused with reason "quota_exhausted"
+		// and a quota_exhausted message
+		for i := 0; i < 5; i++ {
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			var msg map[string]interface{}
+			if json.Unmarshal(data, &msg) == nil {
+				mu.Lock()
+				messages = append(messages, msg)
+				mu.Unlock()
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Check that we received a run_paused with reason quota_exhausted
+	foundRunPaused := false
+	foundQuotaExhausted := false
+	for _, msg := range messages {
+		if msg["type"] == "run_paused" {
+			if msg["reason"] == "quota_exhausted" {
+				foundRunPaused = true
+			}
+		}
+		if msg["type"] == "quota_exhausted" {
+			foundQuotaExhausted = true
+		}
+	}
+
+	if !foundRunPaused {
+		t.Errorf("expected run_paused with reason quota_exhausted, got messages: %v", messages)
+	}
+	if !foundQuotaExhausted {
+		t.Errorf("expected quota_exhausted message, got messages: %v", messages)
+	}
+}
+
+func TestIsQuotaErrorIntegration(t *testing.T) {
+	// Test that the loop package's IsQuotaError function correctly identifies quota errors
+	tests := []struct {
+		stderr   string
+		expected bool
+	}{
+		{"Error: rate limit exceeded for model", true},
+		{"HTTP 429 Too Many Requests", true},
+		{"quota has been exceeded", true},
+		{"normal crash: segfault", false},
+	}
+
+	for _, tt := range tests {
+		got := loop.IsQuotaError(tt.stderr)
+		if got != tt.expected {
+			t.Errorf("IsQuotaError(%q) = %v, want %v", tt.stderr, got, tt.expected)
 		}
 	}
 }

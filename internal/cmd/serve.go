@@ -121,6 +121,9 @@ func RunServe(opts ServeOptions) error {
 	// Create run manager for Ralph loop runs
 	runs = newRunManager(eng, client)
 
+	// Start engine event monitor for quota detection
+	runs.startEventMonitor(ctx)
+
 	// Connect to WebSocket server
 	if err := client.Connect(ctx); err != nil {
 		return fmt.Errorf("connecting to WebSocket server: %w", err)

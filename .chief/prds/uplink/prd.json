@@ -291,7 +291,7 @@
         "Quota errors are distinguishable from Claude crashes (which trigger existing retry logic)"
       ],
       "priority": 16,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-017",
