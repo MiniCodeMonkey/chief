@@ -31,6 +31,9 @@
 - Error codes defined as `ErrCode*` constants in `internal/ws/messages.go` (e.g., `ErrCodeProjectNotFound`)
 - Use `ws.NewDispatcher()` to create a message router; `Register(type, handler)` to add handlers; `Dispatch(msg)` to route
 - Use pointer fields (`*int`, `*bool`, `*string`) for optional/partial update messages to distinguish "not set" from zero values
+- Serve command uses `ServeOptions.Ctx` (context) for testability — tests cancel ctx to stop serve loop
+- For handshake error tests (incompatible/auth_failed), call `srv.CloseClientConnections()` to prevent ws reconnection loops
+- Cancel context before `client.Close()` to avoid race where readLoop reconnects during Close()
 
 ---
 
@@ -159,4 +162,20 @@
   - Dispatcher uses `sync.RWMutex` for safe concurrent access — handlers can be registered/unregistered while dispatching
   - Unknown message types are logged and ignored (forward compatibility per spec)
   - `interface{}` is used for `PRDContentMessage.State` since the PRD state is a flexible JSON object
+---
+
+## 2026-02-15 - US-009
+- **What was implemented:** Basic `chief serve` command — headless daemon that connects to chiefloop.com via WebSocket
+- **Files changed:**
+  - `internal/cmd/serve.go` - `RunServe(ServeOptions)` with workspace validation, credential check, token refresh, WebSocket connection, protocol handshake, signal handling, ping/pong handling, clean shutdown
+  - `internal/cmd/serve_test.go` - 9 tests: workspace validation (nonexistent, file-not-dir), not-logged-in, successful connect+handshake, device name override, incompatible version, auth failure, log file output, ping/pong, token refresh
+  - `cmd/chief/main.go` - Added `serve` subcommand with `--workspace`, `--name`, `--log-file` flags; updated help text
+  - `.chief/prds/uplink/prd.json` - Updated US-009 status
+- **Learnings for future iterations:**
+  - `ServeOptions.Ctx` (context.Context) is the key testing mechanism — tests create a context, cancel it from the mock server handler after handshake completes, which causes RunServe to exit cleanly
+  - For error-path tests (incompatible/auth_failed), the ws.Client reconnection behavior creates issues — use `srv.CloseClientConnections()` in the server handler to prevent reconnection loops during Close()
+  - Must cancel context BEFORE calling `client.Close()` to avoid race where readLoop reconnects and Close() gets a stale conn reference
+  - The serve command passes `version` from build-time `Version` var in main.go through `ServeOptions.Version` to the handshake
+  - Device name defaults to credential's device name, overridable via `--name` flag
+  - Log output defaults to stdout; `--log-file` redirects `log.SetOutput()` to a file
 ---
