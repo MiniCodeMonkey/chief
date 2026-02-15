@@ -440,7 +440,8 @@
         "User still needs to authenticate Claude Code separately (unavoidable)"
       ],
       "priority": 25,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-026",

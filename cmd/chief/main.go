@@ -241,6 +241,7 @@ func newLoginCmd() *cobra.Command {
 	}
 
 	loginCmd.Flags().StringVar(&loginOpts.DeviceName, "name", "", "Override device name (default: hostname)")
+	loginCmd.Flags().StringVar(&loginOpts.SetupToken, "setup-token", "", "One-time setup token for automated auth")
 
 	return loginCmd
 }

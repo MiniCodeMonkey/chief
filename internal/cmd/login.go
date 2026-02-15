@@ -26,6 +26,7 @@ const (
 type LoginOptions struct {
 	DeviceName string // Override device name (default: hostname)
 	BaseURL    string // Override base URL (for testing)
+	SetupToken string // One-time setup token for automated auth
 }
 
 // deviceCodeResponse is the response from the device code endpoint.
@@ -58,6 +59,11 @@ func RunLogin(opts LoginOptions) error {
 		} else {
 			deviceName = hostname
 		}
+	}
+
+	// Setup token mode: exchange token for credentials directly
+	if opts.SetupToken != "" {
+		return exchangeSetupToken(baseURL, opts.SetupToken, deviceName)
 	}
 
 	// Check if already logged in
@@ -118,6 +124,52 @@ func RunLogin(opts LoginOptions) error {
 	}
 
 	fmt.Printf("\nLogged in as %s (%s)\n", creds.User, creds.DeviceName)
+	return nil
+}
+
+// exchangeSetupToken exchanges a one-time setup token for credentials.
+// This is used during automated VPS provisioning via cloud-init.
+func exchangeSetupToken(baseURL, token, deviceName string) error {
+	reqBody, _ := json.Marshal(map[string]string{
+		"setup_token": token,
+		"device_name": deviceName,
+	})
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(baseURL+"/oauth/device/exchange", "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("exchanging setup token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var tokenResp tokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return fmt.Errorf("parsing setup token response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK || tokenResp.Error != "" {
+		errMsg := tokenResp.Error
+		if errMsg == "" {
+			errMsg = resp.Status
+		}
+		fmt.Fprintf(os.Stderr, "Setup token exchange failed: %s\n", errMsg)
+		fmt.Fprintf(os.Stderr, "Please authenticate manually by running: chief login\n")
+		return fmt.Errorf("setup token exchange failed: %s", errMsg)
+	}
+
+	creds := &auth.Credentials{
+		AccessToken:  tokenResp.AccessToken,
+		RefreshToken: tokenResp.RefreshToken,
+		ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
+		DeviceName:   deviceName,
+		User:         tokenResp.User,
+	}
+
+	if err := auth.SaveCredentials(creds); err != nil {
+		return fmt.Errorf("saving credentials: %w", err)
+	}
+
+	fmt.Printf("Logged in as %s (%s)\n", creds.User, creds.DeviceName)
 	return nil
 }
 

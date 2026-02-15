@@ -9,6 +9,10 @@
 #   #!/bin/bash
 #   curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/main/deploy/cloud-init.sh | bash
 #
+# With setup token (automated auth):
+#   #!/bin/bash
+#   curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/main/deploy/cloud-init.sh | CHIEF_SETUP_TOKEN=<token> bash
+#
 # What this script does:
 #   1. Creates a 'chief' user
 #   2. Installs the Chief binary
@@ -18,7 +22,7 @@
 #
 # After this script runs, you must:
 #   1. SSH into the server
-#   2. Run: sudo -u chief chief login
+#   2. Run: sudo -u chief chief login (skipped if CHIEF_SETUP_TOKEN is set)
 #   3. Authenticate Claude Code: sudo -u chief claude
 #   4. Start the service: sudo systemctl start chief
 #
@@ -151,6 +155,48 @@ UNIT
     info "Service enabled (but NOT started — authentication required first)"
 }
 
+# Handle setup token if provided
+handle_setup_token() {
+    if [ -z "${CHIEF_SETUP_TOKEN:-}" ]; then
+        return 0
+    fi
+
+    info "Setup token provided, configuring automated authentication..."
+
+    # Write the setup token to a temporary file readable only by the chief user
+    local token_file="/tmp/chief-setup-token"
+    echo "${CHIEF_SETUP_TOKEN}" > "${token_file}"
+    chown "${CHIEF_USER}:${CHIEF_USER}" "${token_file}"
+    chmod 600 "${token_file}"
+
+    # Create a one-shot systemd service that exchanges the token
+    cat > /etc/systemd/system/chief-setup.service <<SETUP_UNIT
+[Unit]
+Description=Chief Setup Token Exchange
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${CHIEF_USER}
+Group=${CHIEF_USER}
+Environment=HOME=${CHIEF_HOME}
+ExecStart=/bin/bash -c '/usr/local/bin/chief login --setup-token "\$(cat /tmp/chief-setup-token)" && rm -f /tmp/chief-setup-token && systemctl start chief'
+ExecStartPost=/bin/bash -c 'rm -f /tmp/chief-setup-token'
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+SETUP_UNIT
+
+    systemctl daemon-reload
+    systemctl enable chief-setup.service
+    systemctl start chief-setup.service || {
+        warn "Setup token exchange failed. Please authenticate manually: sudo -u ${CHIEF_USER} chief login"
+        rm -f "${token_file}"
+    }
+}
+
 # Print post-deploy instructions
 print_instructions() {
     echo ""
@@ -158,22 +204,37 @@ print_instructions() {
     echo "  Chief setup complete!"
     echo "============================================"
     echo ""
-    echo "Next steps:"
-    echo ""
-    echo "  1. SSH into this server"
-    echo ""
-    echo "  2. Authenticate Chief with chiefloop.com:"
-    echo "     sudo -u ${CHIEF_USER} chief login"
-    echo ""
-    echo "  3. Authenticate Claude Code:"
-    echo "     sudo -u ${CHIEF_USER} claude"
-    echo ""
-    echo "  4. Start the Chief service:"
-    echo "     sudo systemctl start chief"
-    echo ""
-    echo "  5. Check service status:"
-    echo "     sudo systemctl status chief"
-    echo "     sudo journalctl -u chief -f"
+    if [ -n "${CHIEF_SETUP_TOKEN:-}" ]; then
+        echo "Chief authentication was configured automatically."
+        echo ""
+        echo "Next steps:"
+        echo ""
+        echo "  1. SSH into this server"
+        echo ""
+        echo "  2. Authenticate Claude Code:"
+        echo "     sudo -u ${CHIEF_USER} claude"
+        echo ""
+        echo "  3. Check service status:"
+        echo "     sudo systemctl status chief"
+        echo "     sudo journalctl -u chief -f"
+    else
+        echo "Next steps:"
+        echo ""
+        echo "  1. SSH into this server"
+        echo ""
+        echo "  2. Authenticate Chief with chiefloop.com:"
+        echo "     sudo -u ${CHIEF_USER} chief login"
+        echo ""
+        echo "  3. Authenticate Claude Code:"
+        echo "     sudo -u ${CHIEF_USER} claude"
+        echo ""
+        echo "  4. Start the Chief service:"
+        echo "     sudo systemctl start chief"
+        echo ""
+        echo "  5. Check service status:"
+        echo "     sudo systemctl status chief"
+        echo "     sudo journalctl -u chief -f"
+    fi
     echo ""
     echo "============================================"
 }
@@ -193,6 +254,7 @@ main() {
     create_workspace
     create_config_dir
     install_service
+    handle_setup_token
     print_instructions
 
     info "Chief setup complete!"
