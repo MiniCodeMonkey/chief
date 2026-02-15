@@ -14,19 +14,21 @@ import (
 
 	"github.com/minicodemonkey/chief/internal/auth"
 	"github.com/minicodemonkey/chief/internal/engine"
+	"github.com/minicodemonkey/chief/internal/update"
 	"github.com/minicodemonkey/chief/internal/workspace"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
 // ServeOptions contains configuration for the serve command.
 type ServeOptions struct {
-	Workspace  string          // Path to workspace directory
-	DeviceName string          // Override device name (default: from credentials)
-	LogFile    string          // Path to log file (default: stdout)
-	BaseURL    string          // Override base URL (for testing)
-	WSURL      string          // Override WebSocket URL (for testing/dev)
-	Version    string          // Chief version string
-	Ctx        context.Context // Optional context for cancellation (for testing)
+	Workspace   string          // Path to workspace directory
+	DeviceName  string          // Override device name (default: from credentials)
+	LogFile     string          // Path to log file (default: stdout)
+	BaseURL     string          // Override base URL (for testing)
+	WSURL       string          // Override WebSocket URL (for testing/dev)
+	Version     string          // Chief version string
+	ReleasesURL string          // Override GitHub releases URL (for testing)
+	Ctx         context.Context // Optional context for cancellation (for testing)
 }
 
 // RunServe starts the headless serve daemon.
@@ -166,6 +168,9 @@ func RunServe(opts ServeOptions) error {
 		go watcher.Run(ctx)
 		log.Println("File watcher started")
 	}
+
+	// Start periodic version check (every 24 hours)
+	go runVersionChecker(ctx, client, opts.Version, opts.ReleasesURL)
 
 	// Set up signal handling
 	sigCh := make(chan os.Signal, 1)
@@ -410,6 +415,49 @@ func handleGetPRD(client *ws.Client, scanner *workspace.Scanner, msg ws.Message)
 	}
 	if err := client.Send(prdMsg); err != nil {
 		log.Printf("Error sending prd_content: %v", err)
+	}
+}
+
+// runVersionChecker periodically checks for updates and sends update_available over WebSocket.
+func runVersionChecker(ctx context.Context, client *ws.Client, version, releasesURL string) {
+	// Check immediately on startup
+	checkAndNotify(client, version, releasesURL)
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			checkAndNotify(client, version, releasesURL)
+		}
+	}
+}
+
+// checkAndNotify performs a version check and sends update_available if needed.
+func checkAndNotify(client *ws.Client, version, releasesURL string) {
+	result, err := update.CheckForUpdate(version, update.Options{
+		ReleasesURL: releasesURL,
+	})
+	if err != nil {
+		log.Printf("Version check failed: %v", err)
+		return
+	}
+	if result.UpdateAvailable {
+		log.Printf("Update available: v%s (current: v%s)", result.LatestVersion, result.CurrentVersion)
+		envelope := ws.NewMessage(ws.TypeUpdateAvailable)
+		msg := ws.UpdateAvailableMessage{
+			Type:           envelope.Type,
+			ID:             envelope.ID,
+			Timestamp:      envelope.Timestamp,
+			CurrentVersion: result.CurrentVersion,
+			LatestVersion:  result.LatestVersion,
+		}
+		if err := client.Send(msg); err != nil {
+			log.Printf("Error sending update_available: %v", err)
+		}
 	}
 }
 

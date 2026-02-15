@@ -29,9 +29,6 @@ type TUIOptions struct {
 }
 
 func main() {
-	// Non-blocking version check on startup (for interactive TUI sessions)
-	cmd.CheckVersionOnStartup(Version)
-
 	rootCmd := buildRootCmd()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -52,6 +49,14 @@ func buildRootCmd() *cobra.Command {
 		// Silence Cobra's default error/usage printing so we control output
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		PersistentPreRun: func(c *cobra.Command, args []string) {
+			// Non-blocking version check on startup for all interactive commands
+			// Skip for update command itself and serve (which has its own check)
+			name := c.Name()
+			if name != "update" && name != "serve" && name != "version" {
+				cmd.CheckVersionOnStartup(Version)
+			}
+		},
 		RunE: func(c *cobra.Command, args []string) error {
 			// Resolve positional argument as PRD name or path
 			if len(args) > 0 {
@@ -110,6 +115,7 @@ Commands:
   login                      Authenticate with chiefloop.com
   logout                     Log out and deauthorize this device
   serve                      Start headless daemon for web app
+  update                     Update Chief to the latest version
 
 Options:
   --max-iterations N, -n N   Set maximum iterations (default: dynamic)

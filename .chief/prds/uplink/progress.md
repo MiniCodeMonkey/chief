@@ -60,6 +60,11 @@
 - Per-story logs: `storyLogger` in `internal/cmd/logs.go` writes to `.chief/prds/<id>/logs/<story-id>.log`; `handleGetLogs` handler retrieves them
 - `runManager.loggers` map tracks per-run story loggers; `writeStoryLog()` writes during event handling; loggers cleaned up on `cleanup()`/`stopAll()`
 - Per-story diffs: `handleGetDiff` in `internal/cmd/diffs.go` uses `git log --grep <storyID>` to find commits, then `git show` for diff/files; proactive diffs sent on `EventStoryCompleted`
+- Clone/create: `handleCloneRepo`/`handleCreateProject` in `internal/cmd/clone.go`; clone runs async in goroutine; `scanner.WorkspacePath()` exposes workspace dir
+- Version check/update: `internal/update` package for GitHub Releases API check + binary download; `internal/cmd/update.go` for `RunUpdate()` command
+- `update.CheckForUpdate(version, opts)` returns `CheckResult` with `UpdateAvailable` bool; `update.PerformUpdate(version, opts)` does full download+replace
+- Startup version check runs non-blocking in `PersistentPreRun`; serve mode checks every 24h and sends `update_available` WS message
+- `ServeOptions.ReleasesURL` allows testing the periodic version checker with a mock server
 
 ---
 
@@ -387,4 +392,43 @@
   - `sendStoryDiff` derives project path from `prdPath` by walking 4 levels up: `prd.json → <id> → prds → .chief → project`
   - `getStoryDiff` is shared between the `handleGetDiff` handler (on-demand) and `sendStoryDiff` (proactive on story completion)
   - `createGitRepoWithStoryCommit()` test helper creates a git repo with a commit matching the story pattern for diff testing
+---
+
+## 2026-02-15 - US-021
+- **What was implemented:** Git clone and project creation via WebSocket — `clone_repo` and `create_project` handlers
+- **Files changed:**
+  - `internal/cmd/clone.go` - New file with `handleCloneRepo` (async git clone with progress streaming), `handleCreateProject` (directory creation with optional git init), `inferDirName()`, `runClone()`, `scanGitProgress()`, `sendCloneProgress()`, `sendCloneComplete()` functions
+  - `internal/cmd/clone_test.go` - 15 tests: inferDirName, clone success, custom directory name, directory already exists, invalid URL, create project success, create with git init, already exists, empty name, scanGitProgress splitter, percent pattern parsing, nil client safety
+  - `internal/cmd/serve.go` - Added `clone_repo` and `create_project` message routing in `handleMessage()`
+  - `internal/workspace/scanner.go` - Added `WorkspacePath()` method to expose workspace directory path
+  - `.chief/prds/uplink/prd.json` - Updated US-021 status
+- **Learnings for future iterations:**
+  - Git clone writes progress to stderr, not stdout — use `StderrPipe()` to capture progress
+  - Git clone uses `\r` for in-place progress updates — custom `scanGitProgress` splitter handles both `\r` and `\n`
+  - Clone runs in a goroutine to avoid blocking the message loop — sends `clone_progress` and `clone_complete` messages asynchronously
+  - `inferDirName()` handles both HTTPS URLs and SSH-style URLs (git@github.com:user/repo.git)
+  - After clone/create, `scanner.ScanAndUpdate()` is called to make the new project immediately discoverable
+  - `create_project` with `git_init: true` sends `project_state` (project is discoverable); without git_init sends `project_list`
+  - `WorkspacePath()` was added to `Scanner` to expose the workspace path for clone/create operations
+---
+
+## 2026-02-15 - US-022
+- **What was implemented:** Version check against GitHub Releases API and `chief update` self-update command
+- **Files changed:**
+  - `internal/update/update.go` - New package with `CheckForUpdate()`, `PerformUpdate()`, `CompareVersions()`, version normalization, asset finding, download/checksum verification, atomic binary replacement
+  - `internal/update/update_test.go` - 19 tests: version check (update available, already latest, dev version, API error, bad JSON), version normalization, version comparison, asset finding (match, no match, no checksum), write permission check, download to temp, checksum verification (success, mismatch), perform update (already latest, full flow), version with v-prefix
+  - `internal/cmd/update.go` - `RunUpdate(UpdateOptions)` command, `CheckVersionOnStartup()` (non-blocking goroutine for interactive CLI), `CheckVersionForServe()` for serve mode
+  - `internal/cmd/update_test.go` - 6 tests: already latest, API error, serve version check (update available, no update, API failure, dev version)
+  - `internal/cmd/serve.go` - Added `runVersionChecker()` goroutine (checks every 24h), `checkAndNotify()` helper that sends `update_available` over WebSocket, added `ReleasesURL` to `ServeOptions` for testing
+  - `cmd/chief/main.go` - Added `update` subcommand, `PersistentPreRun` with non-blocking startup version check (skipped for update/serve/version commands), updated help text
+- **Learnings for future iterations:**
+  - `PerformUpdate()` accepts `currentVersion` as parameter (not discovered from binary) — version is set via ldflags at build time and passed through
+  - Asset naming convention: `chief-<GOOS>-<GOARCH>` for binary, `.sha256` suffix for checksum
+  - Checksum file format: `"hash  filename"` — use `strings.Fields()` to parse
+  - `os.Executable()` + `filepath.EvalSymlinks()` to get the real binary path for replacement
+  - Write permission check: try `os.CreateTemp` in the target directory, immediately clean up
+  - `PersistentPreRun` on root Cobra command runs before all subcommands — use command name to skip specific commands
+  - Startup version check runs in a goroutine (non-blocking) — print message asynchronously; may appear after other output
+  - Serve version checker: immediate check on startup + `time.NewTicker(24 * time.Hour)` for periodic checks
+  - `update.Options.ReleasesURL` field allows tests to point at mock server (same pattern as `auth.BaseURL`)
 ---
