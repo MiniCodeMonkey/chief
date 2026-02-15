@@ -355,7 +355,8 @@
         "`diff` messages also sent proactively when a story completes during an active run"
       ],
       "priority": 20,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-021",

@@ -286,6 +286,9 @@ func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *works
 	case ws.TypeStopRun:
 		handleStopRun(client, runs, msg)
 
+	case ws.TypeGetDiff:
+		handleGetDiff(client, scanner, msg)
+
 	case ws.TypeGetLogs:
 		handleGetLogs(client, scanner, msg)
 

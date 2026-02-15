@@ -57,6 +57,9 @@
 - `handleEvent()` routes engine events to `sendRunProgress()`, `sendRunComplete()`, `sendClaudeOutput()` based on event type
 - Settings handlers in `internal/cmd/settings.go`: `handleGetSettings`, `handleUpdateSettings` — use `config.Load()`/`config.Save()` with project path
 - Config uses `*bool` for optional booleans (e.g., `AutoCommit`) and `Effective*()` methods to provide defaults
+- Per-story logs: `storyLogger` in `internal/cmd/logs.go` writes to `.chief/prds/<id>/logs/<story-id>.log`; `handleGetLogs` handler retrieves them
+- `runManager.loggers` map tracks per-run story loggers; `writeStoryLog()` writes during event handling; loggers cleaned up on `cleanup()`/`stopAll()`
+- Per-story diffs: `handleGetDiff` in `internal/cmd/diffs.go` uses `git log --grep <storyID>` to find commits, then `git show` for diff/files; proactive diffs sent on `EventStoryCompleted`
 
 ---
 
@@ -350,4 +353,38 @@
   - Settings handlers reuse `projectFinder` interface (same pattern as sessions and runs)
   - `handleUpdateSettings` does load→merge→save pattern: loads existing config, applies only non-nil fields from request, saves back
   - YAML tags use `omitempty` to avoid writing zero values to config file
+---
+
+## 2026-02-15 - US-019
+- **What was implemented:** Per-story logging during Ralph loop runs and `get_logs` handler
+- **Files changed:**
+  - `internal/cmd/logs.go` - New `storyLogger` struct for writing per-story log files, `handleGetLogs` handler for retrieving logs via WebSocket, `readLogFile`/`readMostRecentLog`/`sendLogLines` helper functions
+  - `internal/cmd/logs_test.go` - 15 tests: story logger write/read, empty story ID, overwrite on new run, line limit, nonexistent files, most recent log, run manager integration, serve integration tests for get_logs (with story ID, without story ID, project not found, PRD not found, line limit), end-to-end logging integration
+  - `internal/cmd/runs.go` - Added `loggers` map to `runManager`, `writeStoryLog()` method, logger creation in `startRun()`, logger cleanup in `cleanup()`/`stopAll()`, story log writing in `handleEvent()` for AssistantText/ToolStart/ToolResult/Error events
+  - `internal/cmd/serve.go` - Added `get_logs` message routing in `handleMessage()`
+  - `.chief/prds/uplink/prd.json` - Updated US-019 status
+- **Learnings for future iterations:**
+  - Per-story logs are stored at `.chief/prds/<id>/logs/<story-id>.log` — separate from the main `claude.log` which logs all raw output
+  - `newStoryLogger()` removes the entire `logs/` directory on creation (V1 simplicity: starting a new run overwrites previous logs)
+  - `storyLogger` lazily opens files on first write for each story ID — avoids creating empty log files
+  - `readMostRecentLog()` uses file modification time to find the most recently active story's log
+  - `readLogFile()` returns empty slice (not error) for nonexistent files — graceful handling of missing logs
+  - The `runManager.loggers` map is keyed by the same `runKey(project, prdID)` as the `runs` map
+  - Story log writing happens in `handleEvent()` alongside WebSocket message sending — they are parallel operations
+  - `handleGetLogs` follows the same `projectFinder` + error handling pattern as settings/sessions handlers
+---
+
+## 2026-02-15 - US-020
+- **What was implemented:** Per-story diff generation and retrieval via `get_diff` WebSocket handler, plus proactive diff sending on story completion
+- **Files changed:**
+  - `internal/cmd/diffs.go` - New file with `handleGetDiff` handler, `getStoryDiff()`, `findStoryCommit()`, `getCommitDiff()`, `getCommitFiles()`, `sendDiffMessage()` functions
+  - `internal/cmd/diffs_test.go` - 11 tests: getStoryDiff success/no-commit/multiple-files, findStoryCommit most-recent, sendDiffMessage nil-safety, runManager sendStoryDiff, serve integration tests (get_diff success, project not found, PRD not found, no commit)
+  - `internal/cmd/runs.go` - Added `sendStoryDiff()` method to `runManager` for proactive diff on `EventStoryCompleted`; added call in `handleEvent()`
+  - `internal/cmd/serve.go` - Added `get_diff` message routing in `handleMessage()`
+- **Learnings for future iterations:**
+  - Story commits follow `feat: <story-id> - <title>` pattern — use `git log --grep <storyID> -1` to find the most recent matching commit
+  - `git show --format= --patch <hash>` gives the diff without commit metadata; `--name-only` gives the file list
+  - `sendStoryDiff` derives project path from `prdPath` by walking 4 levels up: `prd.json → <id> → prds → .chief → project`
+  - `getStoryDiff` is shared between the `handleGetDiff` handler (on-demand) and `sendStoryDiff` (proactive on story completion)
+  - `createGitRepoWithStoryCommit()` test helper creates a git repo with a commit matching the story pattern for diff testing
 ---

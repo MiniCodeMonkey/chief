@@ -97,6 +97,7 @@ func (rm *runManager) handleEvent(event engine.ManagerEvent) {
 
 	case loop.EventStoryCompleted:
 		rm.sendRunProgress(info, "story_completed", event.Event)
+		rm.sendStoryDiff(info, event.Event)
 
 	case loop.EventComplete:
 		rm.sendRunProgress(info, "complete", event.Event)
@@ -230,6 +231,35 @@ func (rm *runManager) sendClaudeOutput(info *runInfo, data string, done bool) {
 	if err := rm.client.Send(msg); err != nil {
 		log.Printf("Error sending claude_output: %v", err)
 	}
+}
+
+// sendStoryDiff sends a proactive diff message when a story completes during a run.
+func (rm *runManager) sendStoryDiff(info *runInfo, event loop.Event) {
+	if rm.client == nil {
+		return
+	}
+
+	storyID := event.StoryID
+	if storyID == "" {
+		rm.mu.RLock()
+		storyID = info.storyID
+		rm.mu.RUnlock()
+	}
+	if storyID == "" {
+		return
+	}
+
+	// Get the project path from the PRD path
+	// prdPath is like /path/to/project/.chief/prds/<id>/prd.json
+	projectPath := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(info.prdPath))))
+
+	diffText, files, err := getStoryDiff(projectPath, storyID)
+	if err != nil {
+		log.Printf("Could not get diff for story %s: %v", storyID, err)
+		return
+	}
+
+	sendDiffMessage(rm.client, info.project, info.prdID, storyID, files, diffText)
 }
 
 // handleQuotaExhausted handles a quota exhaustion event for a specific run.
