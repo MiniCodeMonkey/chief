@@ -27,6 +27,10 @@
 - Protocol handshake: `client.Handshake(accessToken, version, deviceName)` after `Connect()` — sends `hello`, waits for `welcome`/`incompatible`/`auth_failed`
 - UUID generation: `ws.newUUID()` uses `crypto/rand` (no external dependency); `ws.NewMessage(type)` creates envelope with UUID + ISO8601 timestamp
 - Handshake errors: `*ErrIncompatible` (version mismatch, do NOT retry), `ErrAuthFailed` (deauthorized), `ErrHandshakeTimeout` (10s timeout)
+- Message types defined as `Type*` constants in `internal/ws/messages.go` (e.g., `TypeStartRun`, `TypeGetProject`)
+- Error codes defined as `ErrCode*` constants in `internal/ws/messages.go` (e.g., `ErrCodeProjectNotFound`)
+- Use `ws.NewDispatcher()` to create a message router; `Register(type, handler)` to add handlers; `Dispatch(msg)` to route
+- Use pointer fields (`*int`, `*bool`, `*string`) for optional/partial update messages to distinguish "not set" from zero values
 
 ---
 
@@ -138,4 +142,21 @@
   - Handshake must be called after `Connect()` — it sends the hello message and blocks until response or timeout
   - When connection closes during handshake, the readLoop reconnects but handshake still times out (correct behavior — caller should retry)
   - `runtime.GOOS` and `runtime.GOARCH` provide OS/architecture info for the hello message
+---
+
+## 2026-02-15 - US-008
+- **What was implemented:** Strongly-typed message definitions, error codes, and message dispatcher for the WebSocket protocol
+- **Files changed:**
+  - `internal/ws/messages.go` - All message type structs for the protocol catalog (server→web app, web app→server, bidirectional), type constants, error code constants
+  - `internal/ws/dispatcher.go` - `Dispatcher` struct with `Register()`, `Unregister()`, `Dispatch()` for routing messages by type to handlers
+  - `internal/ws/messages_test.go` - 28 serialization/deserialization round-trip tests covering all message types, optional field omission, partial updates
+  - `internal/ws/dispatcher_test.go` - 7 tests: register/dispatch, unknown type ignored, unregister, handler replacement, raw JSON passthrough, concurrent access, multiple handlers
+- **Learnings for future iterations:**
+  - Use `*int`, `*bool`, `*string` pointer fields for partial/optional updates (e.g., `UpdateSettingsMessage`) — allows distinguishing "not provided" from zero values
+  - `json.RawMessage` on the `Message.Raw` field preserves the full original JSON, so dispatcher handlers can unmarshal into the specific message type
+  - Error codes are string constants (`ErrCodeProjectNotFound`) not enums — easier to serialize and forward-compatible
+  - Type constants (`TypeStartRun`, `TypeGetProject`, etc.) centralize string literals and prevent typos
+  - Dispatcher uses `sync.RWMutex` for safe concurrent access — handlers can be registered/unregistered while dispatching
+  - Unknown message types are logged and ignored (forward compatibility per spec)
+  - `interface{}` is used for `PRDContentMessage.State` since the PRD state is a flexible JSON object
 ---

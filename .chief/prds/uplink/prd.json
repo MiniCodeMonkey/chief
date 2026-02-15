@@ -151,7 +151,8 @@
         "Unit tests for serialization/deserialization round-trips"
       ],
       "priority": 8,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-009",
