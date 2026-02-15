@@ -93,7 +93,8 @@
         "All existing TUI tests still pass"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-006",

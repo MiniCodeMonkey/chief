@@ -84,10 +84,10 @@ func (a *App) renderStackedDashboard() string {
 // getWorktreeInfo returns the branch and directory info for the current PRD.
 // Returns empty strings if no branch is set (backward compatible).
 func (a *App) getWorktreeInfo() (branch, dir string) {
-	if a.manager == nil {
+	if a.eng == nil {
 		return "", ""
 	}
-	instance := a.manager.GetInstance(a.prdName)
+	instance := a.eng.GetInstance(a.prdName)
 	if instance == nil || instance.Branch == "" {
 		return "", ""
 	}
