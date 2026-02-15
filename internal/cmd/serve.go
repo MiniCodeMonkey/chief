@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/minicodemonkey/chief/internal/auth"
+	"github.com/minicodemonkey/chief/internal/workspace"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
@@ -122,6 +123,11 @@ func RunServe(opts ServeOptions) error {
 		return fmt.Errorf("handshake failed: %w", err)
 	}
 	log.Println("Handshake complete")
+
+	// Start workspace scanner
+	scanner := workspace.New(opts.Workspace, client)
+	go scanner.Run(ctx)
+	log.Println("Workspace scanner started")
 
 	// Set up signal handling
 	sigCh := make(chan os.Signal, 1)

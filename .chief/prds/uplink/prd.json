@@ -189,7 +189,8 @@
         "Handles permission errors gracefully (logs warning, skips directory)"
       ],
       "priority": 10,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-011",
