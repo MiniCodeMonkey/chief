@@ -286,6 +286,12 @@ func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *works
 	case ws.TypeStopRun:
 		handleStopRun(client, runs, msg)
 
+	case ws.TypeGetSettings:
+		handleGetSettings(client, scanner, msg)
+
+	case ws.TypeUpdateSettings:
+		handleUpdateSettings(client, scanner, msg)
+
 	default:
 		log.Printf("Received message type: %s", msg.Type)
 	}

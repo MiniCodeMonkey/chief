@@ -51,8 +51,12 @@
 - `runKey(project, prdID)` creates engine registration key as `"project/prdID"`
 - Quota errors detected via `loop.IsQuotaError(text)` — checks stderr/exit error for patterns like "rate limit", "quota", "429"
 - Quota errors bypass retry logic and set `LoopStatePaused` (not `LoopStateError`) for resumability
-- `runManager.startEventMonitor(ctx)` subscribes to engine events for cross-cutting concerns like quota detection
+- `runManager.startEventMonitor(ctx)` subscribes to engine events for cross-cutting concerns like quota detection, progress streaming, and output forwarding
 - `sendStateSnapshot`, `handleMessage`, and `serveShutdown` now accept `*runManager` parameter
+- `runInfo` tracks `startTime` and `storyID` for progress messages — `storyID` is updated on `EventStoryStarted`
+- `handleEvent()` routes engine events to `sendRunProgress()`, `sendRunComplete()`, `sendClaudeOutput()` based on event type
+- Settings handlers in `internal/cmd/settings.go`: `handleGetSettings`, `handleUpdateSettings` — use `config.Load()`/`config.Save()` with project path
+- Config uses `*bool` for optional booleans (e.g., `AutoCommit`) and `Effective*()` methods to provide defaults
 
 ---
 
@@ -314,4 +318,36 @@
   - When sending WS messages from `handleQuotaExhausted`, must guard against nil client (run manager can be used without a client in tests)
   - `logAndCaptureStream` captures stderr into a `bytes.Buffer` while still logging it — used instead of `logStream` for the stderr pipe
   - Mock claude scripts for quota tests: `echo "rate limit exceeded" >&2; exit 1` simulates quota exhaustion
+---
+
+## 2026-02-15 - US-017
+- **What was implemented:** Run progress streaming — `run_progress`, `run_complete`, and `claude_output` messages sent over WebSocket during active Ralph loop runs
+- **Files changed:**
+  - `internal/cmd/runs.go` - Extended `startEventMonitor` to handle all engine event types; added `handleEvent()` router, `sendRunProgress()`, `sendRunComplete()`, `sendClaudeOutput()` methods; added `startTime` and `storyID` tracking to `runInfo`
+  - `internal/cmd/runs_test.go` - Added 5 tests: `HandleEventRunProgress` (all event types with nil client), `HandleEventUnknownRun`, `HandleEventStoryTracking`, `SendRunComplete`, `RunProgressStreaming` (integration test with mock claude)
+  - `.chief/prds/uplink/prd.json` - Updated US-017 status
+- **Learnings for future iterations:**
+  - `startEventMonitor` was extended (not replaced) — the event loop now handles all event types via `handleEvent()`, not just quota exhaustion
+  - `runInfo` tracks `storyID` (updated on `EventStoryStarted`) so that `sendRunProgress` and `sendClaudeOutput` can include it even for events that don't carry a story ID
+  - `sendRunComplete` loads the PRD from disk to calculate pass/fail counts — same pattern as other PRD readers in the codebase
+  - All send methods guard against nil client, so the run manager can be used in tests without a WebSocket connection
+  - Mock claude scripts that output stream-json format are useful for integration testing: `echo '{"type":"system","subtype":"init"}'` triggers `EventIterationStart`
+  - `time.Since(info.startTime).Round(time.Second).String()` gives human-readable durations like "5m0s" for the `run_complete` message
+---
+
+## 2026-02-15 - US-018
+- **What was implemented:** Project settings via WebSocket — `get_settings` and `update_settings` handlers
+- **Files changed:**
+  - `internal/config/config.go` - Added `MaxIterations`, `AutoCommit` (`*bool`), `CommitPrefix`, `ClaudeModel`, `TestCommand` fields to `Config` struct; added `EffectiveMaxIterations()` and `EffectiveAutoCommit()` helper methods; added `DefaultMaxIterations` constant
+  - `internal/config/config_test.go` - Added `TestSaveAndLoadSettingsFields` and `TestEffectiveDefaults` tests
+  - `internal/cmd/settings.go` - New file with `handleGetSettings()` and `handleUpdateSettings()` handlers; loads/saves config via `config.Load()`/`config.Save()`; validates `max_iterations >= 1`; partial update support via pointer fields
+  - `internal/cmd/settings_test.go` - 7 integration tests: defaults, project not found (get/update), existing config, full update, partial update preserving existing, invalid max_iterations
+  - `internal/cmd/serve.go` - Added routing for `get_settings` and `update_settings` messages in `handleMessage()`
+  - `.chief/prds/uplink/prd.json` - Updated US-018 status
+- **Learnings for future iterations:**
+  - Config fields use `*bool` for `AutoCommit` so `false` is distinguishable from "not set" — `EffectiveAutoCommit()` returns `true` when nil
+  - `config.Load()` returns `Default()` when config file doesn't exist — no error, just zero values with `Effective*()` providing defaults
+  - Settings handlers reuse `projectFinder` interface (same pattern as sessions and runs)
+  - `handleUpdateSettings` does load→merge→save pattern: loads existing config, applies only non-nil fields from request, saves back
+  - YAML tags use `omitempty` to avoid writing zero values to config file
 ---

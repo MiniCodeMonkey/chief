@@ -321,7 +321,8 @@
         "New config fields added to existing `internal/config` package"
       ],
       "priority": 18,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-019",
