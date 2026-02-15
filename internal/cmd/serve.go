@@ -100,13 +100,17 @@ func RunServe(opts ServeOptions) error {
 
 	// Create WebSocket client with reconnect handler that re-sends state
 	var client *ws.Client
+	var sessions *sessionManager
 	client = ws.New(wsURL, ws.WithOnReconnect(func() {
 		log.Println("WebSocket reconnected, re-sending state snapshot")
-		sendStateSnapshot(client, scanner)
+		sendStateSnapshot(client, scanner, sessions)
 	}))
 
 	// Set scanner's client now that it exists
 	scanner.SetClient(client)
+
+	// Create session manager for Claude PRD sessions
+	sessions = newSessionManager(client)
 
 	// Connect to WebSocket server
 	if err := client.Connect(ctx); err != nil {
@@ -136,7 +140,7 @@ func RunServe(opts ServeOptions) error {
 	log.Println("Handshake complete")
 
 	// Send initial state snapshot after successful handshake
-	sendStateSnapshot(client, scanner)
+	sendStateSnapshot(client, scanner, sessions)
 
 	// Start periodic scanning loop
 	go scanner.Run(ctx)
@@ -163,34 +167,43 @@ func RunServe(opts ServeOptions) error {
 		select {
 		case <-ctx.Done():
 			log.Println("Context cancelled, shutting down...")
-			return serveShutdown(client, watcher)
+			return serveShutdown(client, watcher, sessions)
 
 		case sig := <-sigCh:
 			log.Printf("Received signal %s, shutting down...", sig)
-			return serveShutdown(client, watcher)
+			return serveShutdown(client, watcher, sessions)
 
 		case msg, ok := <-client.Receive():
 			if !ok {
 				// Channel closed, connection lost permanently
 				log.Println("WebSocket connection closed permanently")
-				return serveShutdown(client, watcher)
+				return serveShutdown(client, watcher, sessions)
 			}
-			handleMessage(client, scanner, watcher, msg)
+			handleMessage(client, scanner, watcher, sessions, msg)
 		}
 	}
 }
 
 // sendStateSnapshot sends a full state snapshot over WebSocket.
-func sendStateSnapshot(client *ws.Client, scanner *workspace.Scanner) {
+func sendStateSnapshot(client *ws.Client, scanner *workspace.Scanner, sessions *sessionManager) {
 	projects := scanner.Projects()
 	envelope := ws.NewMessage(ws.TypeStateSnapshot)
+
+	var activeSessions []ws.SessionState
+	if sessions != nil {
+		activeSessions = sessions.activeSessions()
+	}
+	if activeSessions == nil {
+		activeSessions = []ws.SessionState{}
+	}
+
 	snapshot := ws.StateSnapshotMessage{
 		Type:      envelope.Type,
 		ID:        envelope.ID,
 		Timestamp: envelope.Timestamp,
 		Projects:  projects,
 		Runs:      []ws.RunState{},
-		Sessions:  []ws.SessionState{},
+		Sessions:  activeSessions,
 	}
 	if err := client.Send(snapshot); err != nil {
 		log.Printf("Error sending state_snapshot: %v", err)
@@ -216,7 +229,7 @@ func sendError(client *ws.Client, code, message, requestID string) {
 }
 
 // handleMessage routes incoming WebSocket messages.
-func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *workspace.Watcher, msg ws.Message) {
+func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *workspace.Watcher, sessions *sessionManager, msg ws.Message) {
 	switch msg.Type {
 	case ws.TypePing:
 		pong := ws.NewMessage(ws.TypePong)
@@ -232,6 +245,15 @@ func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *works
 
 	case ws.TypeGetPRD:
 		handleGetPRD(client, scanner, msg)
+
+	case ws.TypeNewPRD:
+		handleNewPRD(client, scanner, sessions, msg)
+
+	case ws.TypePRDMessage:
+		handlePRDMessage(client, sessions, msg)
+
+	case ws.TypeClosePRDSession:
+		handleClosePRDSession(client, sessions, msg)
 
 	default:
 		log.Printf("Received message type: %s", msg.Type)
@@ -343,8 +365,13 @@ func handleGetPRD(client *ws.Client, scanner *workspace.Scanner, msg ws.Message)
 }
 
 // serveShutdown performs clean shutdown of the serve command.
-func serveShutdown(client *ws.Client, watcher *workspace.Watcher) error {
+func serveShutdown(client *ws.Client, watcher *workspace.Watcher, sessions *sessionManager) error {
 	log.Println("Shutting down...")
+
+	// Kill all active Claude sessions
+	if sessions != nil {
+		sessions.killAll()
+	}
 
 	// Close file watcher
 	if watcher != nil {

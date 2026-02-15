@@ -240,7 +240,8 @@
         "Claude process runs in the project's working directory"
       ],
       "priority": 13,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-014",
