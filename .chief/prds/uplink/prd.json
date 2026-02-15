@@ -172,7 +172,8 @@
         "Handles SIGTERM/SIGINT: kills all child Claude processes, closes WebSocket cleanly, exits"
       ],
       "priority": 9,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-010",

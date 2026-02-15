@@ -85,6 +85,7 @@ func buildRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newUpdateCmd())
 	rootCmd.AddCommand(newLoginCmd())
 	rootCmd.AddCommand(newLogoutCmd())
+	rootCmd.AddCommand(newServeCmd())
 	rootCmd.AddCommand(newWiggumCmd())
 
 	// Custom help for root command only (subcommands use default Cobra help)
@@ -108,6 +109,7 @@ Commands:
   update                     Update Chief to the latest version
   login                      Authenticate with chiefloop.com
   logout                     Log out and deauthorize this device
+  serve                      Start headless daemon for web app
 
 Options:
   --max-iterations N, -n N   Set maximum iterations (default: dynamic)
@@ -246,6 +248,27 @@ func newLogoutCmd() *cobra.Command {
 			return cmd.RunLogout(cmd.LogoutOptions{})
 		},
 	}
+}
+
+func newServeCmd() *cobra.Command {
+	serveOpts := &cmd.ServeOptions{}
+
+	serveCmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start headless daemon for web app",
+		Long:  "Starts a headless daemon that connects to chiefloop.com via WebSocket and accepts commands from the web app.",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			serveOpts.Version = Version
+			return cmd.RunServe(*serveOpts)
+		},
+	}
+
+	serveCmd.Flags().StringVar(&serveOpts.Workspace, "workspace", "", "Path to workspace directory (required)")
+	serveCmd.Flags().StringVar(&serveOpts.DeviceName, "name", "", "Override device name for this session")
+	serveCmd.Flags().StringVar(&serveOpts.LogFile, "log-file", "", "Path to log file (default: stdout)")
+
+	return serveCmd
 }
 
 func newWiggumCmd() *cobra.Command {
