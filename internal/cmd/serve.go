@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -93,10 +94,19 @@ func RunServe(opts ServeOptions) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Create WebSocket client
-	client := ws.New(wsURL, ws.WithOnReconnect(func() {
+	// Start workspace scanner (before WebSocket connect so initial scan is ready)
+	scanner := workspace.New(opts.Workspace, nil) // client set after connect
+	scanner.ScanAndUpdate()
+
+	// Create WebSocket client with reconnect handler that re-sends state
+	var client *ws.Client
+	client = ws.New(wsURL, ws.WithOnReconnect(func() {
 		log.Println("WebSocket reconnected, re-sending state snapshot")
+		sendStateSnapshot(client, scanner)
 	}))
+
+	// Set scanner's client now that it exists
+	scanner.SetClient(client)
 
 	// Connect to WebSocket server
 	if err := client.Connect(ctx); err != nil {
@@ -125,8 +135,10 @@ func RunServe(opts ServeOptions) error {
 	}
 	log.Println("Handshake complete")
 
-	// Start workspace scanner
-	scanner := workspace.New(opts.Workspace, client)
+	// Send initial state snapshot after successful handshake
+	sendStateSnapshot(client, scanner)
+
+	// Start periodic scanning loop
 	go scanner.Run(ctx)
 	log.Println("Workspace scanner started")
 
@@ -163,29 +175,170 @@ func RunServe(opts ServeOptions) error {
 				log.Println("WebSocket connection closed permanently")
 				return serveShutdown(client, watcher)
 			}
-			handleMessage(client, watcher, msg)
+			handleMessage(client, scanner, watcher, msg)
 		}
 	}
 }
 
+// sendStateSnapshot sends a full state snapshot over WebSocket.
+func sendStateSnapshot(client *ws.Client, scanner *workspace.Scanner) {
+	projects := scanner.Projects()
+	envelope := ws.NewMessage(ws.TypeStateSnapshot)
+	snapshot := ws.StateSnapshotMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Projects:  projects,
+		Runs:      []ws.RunState{},
+		Sessions:  []ws.SessionState{},
+	}
+	if err := client.Send(snapshot); err != nil {
+		log.Printf("Error sending state_snapshot: %v", err)
+	} else {
+		log.Printf("Sent state_snapshot with %d projects", len(projects))
+	}
+}
+
+// sendError sends an error message over WebSocket.
+func sendError(client *ws.Client, code, message, requestID string) {
+	envelope := ws.NewMessage(ws.TypeError)
+	errMsg := ws.ErrorMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Code:      code,
+		Message:   message,
+		RequestID: requestID,
+	}
+	if err := client.Send(errMsg); err != nil {
+		log.Printf("Error sending error message: %v", err)
+	}
+}
+
 // handleMessage routes incoming WebSocket messages.
-func handleMessage(client *ws.Client, watcher *workspace.Watcher, msg ws.Message) {
+func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *workspace.Watcher, msg ws.Message) {
 	switch msg.Type {
 	case ws.TypePing:
 		pong := ws.NewMessage(ws.TypePong)
 		if err := client.Send(pong); err != nil {
 			log.Printf("Error sending pong: %v", err)
 		}
+
+	case ws.TypeListProjects:
+		handleListProjects(client, scanner)
+
 	case ws.TypeGetProject:
-		// Activate file watching for the requested project
-		if watcher != nil {
-			var getProj ws.GetProjectMessage
-			if err := json.Unmarshal(msg.Raw, &getProj); err == nil && getProj.Project != "" {
-				watcher.Activate(getProj.Project)
-			}
-		}
+		handleGetProject(client, scanner, watcher, msg)
+
+	case ws.TypeGetPRD:
+		handleGetPRD(client, scanner, msg)
+
 	default:
 		log.Printf("Received message type: %s", msg.Type)
+	}
+}
+
+// handleListProjects handles a list_projects request.
+func handleListProjects(client *ws.Client, scanner *workspace.Scanner) {
+	projects := scanner.Projects()
+	envelope := ws.NewMessage(ws.TypeProjectList)
+	plMsg := ws.ProjectListMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Projects:  projects,
+	}
+	if err := client.Send(plMsg); err != nil {
+		log.Printf("Error sending project_list: %v", err)
+	}
+}
+
+// handleGetProject handles a get_project request.
+func handleGetProject(client *ws.Client, scanner *workspace.Scanner, watcher *workspace.Watcher, msg ws.Message) {
+	var req ws.GetProjectMessage
+	if err := json.Unmarshal(msg.Raw, &req); err != nil {
+		log.Printf("Error parsing get_project message: %v", err)
+		return
+	}
+
+	project, found := scanner.FindProject(req.Project)
+	if !found {
+		sendError(client, ws.ErrCodeProjectNotFound,
+			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
+		return
+	}
+
+	// Activate file watching for the requested project
+	if watcher != nil {
+		watcher.Activate(req.Project)
+	}
+
+	envelope := ws.NewMessage(ws.TypeProjectState)
+	psMsg := ws.ProjectStateMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Project:   project,
+	}
+	if err := client.Send(psMsg); err != nil {
+		log.Printf("Error sending project_state: %v", err)
+	}
+}
+
+// handleGetPRD handles a get_prd request.
+func handleGetPRD(client *ws.Client, scanner *workspace.Scanner, msg ws.Message) {
+	var req ws.GetPRDMessage
+	if err := json.Unmarshal(msg.Raw, &req); err != nil {
+		log.Printf("Error parsing get_prd message: %v", err)
+		return
+	}
+
+	project, found := scanner.FindProject(req.Project)
+	if !found {
+		sendError(client, ws.ErrCodeProjectNotFound,
+			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
+		return
+	}
+
+	// Read PRD markdown content
+	prdDir := filepath.Join(project.Path, ".chief", "prds", req.PRDID)
+	prdMD := filepath.Join(prdDir, "prd.md")
+	prdJSON := filepath.Join(prdDir, "prd.json")
+
+	// Check that the PRD directory exists
+	if _, err := os.Stat(prdDir); os.IsNotExist(err) {
+		sendError(client, ws.ErrCodePRDNotFound,
+			fmt.Sprintf("PRD %q not found in project %q", req.PRDID, req.Project), msg.ID)
+		return
+	}
+
+	// Read markdown content (optional — may not exist yet)
+	var content string
+	if data, err := os.ReadFile(prdMD); err == nil {
+		content = string(data)
+	}
+
+	// Read prd.json state
+	var state interface{}
+	if data, err := os.ReadFile(prdJSON); err == nil {
+		var parsed interface{}
+		if json.Unmarshal(data, &parsed) == nil {
+			state = parsed
+		}
+	}
+
+	envelope := ws.NewMessage(ws.TypePRDContent)
+	prdMsg := ws.PRDContentMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Project:   req.Project,
+		PRDID:     req.PRDID,
+		Content:   content,
+		State:     state,
+	}
+	if err := client.Send(prdMsg); err != nil {
+		log.Printf("Error sending prd_content: %v", err)
 	}
 }
 

@@ -39,6 +39,14 @@ func New(workspace string, client *ws.Client) *Scanner {
 	}
 }
 
+// SetClient sets the WebSocket client on the scanner.
+// This allows creating the scanner before the client is fully set up.
+func (s *Scanner) SetClient(client *ws.Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.client = client
+}
+
 // Projects returns the current list of discovered projects.
 func (s *Scanner) Projects() []ws.ProjectSummary {
 	s.mu.RLock()
@@ -46,6 +54,19 @@ func (s *Scanner) Projects() []ws.ProjectSummary {
 	result := make([]ws.ProjectSummary, len(s.projects))
 	copy(result, s.projects)
 	return result
+}
+
+// FindProject looks up a single project by name.
+// Returns the project and true if found, or a zero value and false if not found.
+func (s *Scanner) FindProject(name string) (ws.ProjectSummary, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, p := range s.projects {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return ws.ProjectSummary{}, false
 }
 
 // Scan performs a single scan of the workspace directory and returns discovered projects.
