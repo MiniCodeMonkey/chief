@@ -274,7 +274,8 @@
         "Run state reflected in `prd.json` (existing `inProgress` field for interrupted stories)"
       ],
       "priority": 15,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-016",
