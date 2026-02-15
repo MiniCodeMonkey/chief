@@ -39,6 +39,11 @@ func New(workspace string, client *ws.Client) *Scanner {
 	}
 }
 
+// WorkspacePath returns the workspace directory path.
+func (s *Scanner) WorkspacePath() string {
+	return s.workspace
+}
+
 // SetClient sets the WebSocket client on the scanner.
 // This allows creating the scanner before the client is fully set up.
 func (s *Scanner) SetClient(client *ws.Client) {

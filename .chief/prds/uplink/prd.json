@@ -373,7 +373,8 @@
         "New projects appear in next workspace scan or immediately via fsnotify"
       ],
       "priority": 21,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-022",

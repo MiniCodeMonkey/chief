@@ -298,6 +298,12 @@ func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *works
 	case ws.TypeUpdateSettings:
 		handleUpdateSettings(client, scanner, msg)
 
+	case ws.TypeCloneRepo:
+		handleCloneRepo(client, scanner, msg)
+
+	case ws.TypeCreateProject:
+		handleCreateProject(client, scanner, msg)
+
 	default:
 		log.Printf("Received message type: %s", msg.Type)
 	}
