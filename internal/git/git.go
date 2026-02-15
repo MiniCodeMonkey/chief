@@ -68,3 +68,81 @@ func CommitCount(repoDir, branch string) int {
 	}
 	return count
 }
+
+// GetDiff returns the git diff output for the working directory.
+// It shows the diff between the current branch and its merge base with the default branch.
+// If on main/master or if merge-base fails, it shows the last few commits' diff.
+func GetDiff(dir string) (string, error) {
+	branch, err := GetCurrentBranch(dir)
+	if err != nil {
+		return "", err
+	}
+
+	// If on a feature branch, diff against merge-base with main/master
+	if !IsProtectedBranch(branch) {
+		baseBranch, err := GetDefaultBranch(dir)
+		if err == nil && baseBranch != "" {
+			mergeBase, err := getMergeBase(dir, baseBranch, "HEAD")
+			if err == nil && mergeBase != "" {
+				return getDiffOutput(dir, mergeBase, "HEAD")
+			}
+		}
+	}
+
+	// Fallback: show diff of recent commits (last 10)
+	return getDiffOutput(dir, "HEAD~10", "HEAD")
+}
+
+// GetDiffStats returns a short diffstat summary.
+func GetDiffStats(dir string) (string, error) {
+	branch, err := GetCurrentBranch(dir)
+	if err != nil {
+		return "", err
+	}
+
+	if !IsProtectedBranch(branch) {
+		baseBranch, err := GetDefaultBranch(dir)
+		if err == nil && baseBranch != "" {
+			mergeBase, err := getMergeBase(dir, baseBranch, "HEAD")
+			if err == nil && mergeBase != "" {
+				cmd := exec.Command("git", "diff", "--stat", mergeBase, "HEAD")
+				cmd.Dir = dir
+				output, err := cmd.Output()
+				if err != nil {
+					return "", err
+				}
+				return strings.TrimSpace(string(output)), nil
+			}
+		}
+	}
+
+	cmd := exec.Command("git", "diff", "--stat", "HEAD~10", "HEAD")
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// getMergeBase returns the merge base commit between two refs.
+func getMergeBase(dir, ref1, ref2 string) (string, error) {
+	cmd := exec.Command("git", "merge-base", ref1, ref2)
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// getDiffOutput returns the full diff between two refs.
+func getDiffOutput(dir, from, to string) (string, error) {
+	cmd := exec.Command("git", "diff", from, to)
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(output), nil
+}

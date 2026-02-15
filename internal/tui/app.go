@@ -128,6 +128,7 @@ type ViewMode int
 const (
 	ViewDashboard ViewMode = iota
 	ViewLog
+	ViewDiff
 	ViewPicker
 	ViewHelp
 	ViewBranchWarning
@@ -172,6 +173,10 @@ type App struct {
 
 	// Project config
 	config *config.Config
+
+	// Diff viewer
+	diffViewer *DiffViewer
+
 
 	// Help overlay
 	helpOverlay      *HelpOverlay
@@ -295,6 +300,7 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		watcher:       watcher,
 		viewMode:      ViewDashboard,
 		logViewer:     NewLogViewer(),
+		diffViewer:    NewDiffViewer(baseDir),
 		tabBar:        tabBar,
 		picker:        picker,
 		baseDir:       baseDir,
@@ -505,7 +511,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// View switching
 		case "t":
-			if a.viewMode == ViewDashboard {
+			if a.viewMode == ViewDashboard || a.viewMode == ViewDiff {
 				a.viewMode = ViewLog
 				a.logViewer.SetSize(a.width, a.height-a.effectiveHeaderHeight()-footerHeight-2)
 			} else {
@@ -513,9 +519,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 
+		// Diff view
+		case "d":
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+				a.diffViewer.SetSize(a.width-4, a.height-headerHeight-footerHeight-2)
+				a.diffViewer.Load()
+				a.viewMode = ViewDiff
+			} else if a.viewMode == ViewDiff {
+				a.viewMode = ViewDashboard
+			}
+			return a, nil
+
 		// New PRD (opens picker in input mode)
 		case "n":
-			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog || a.viewMode == ViewDiff {
 				a.picker.Refresh()
 				a.picker.SetSize(a.width, a.height)
 				a.picker.StartInputMode()
@@ -525,7 +542,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// List PRDs (opens picker in selection mode)
 		case "l":
-			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog || a.viewMode == ViewDiff {
 				a.picker.Refresh()
 				a.picker.SetSize(a.width, a.height)
 				a.viewMode = ViewPicker
@@ -534,7 +551,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Edit current PRD
 		case "e":
-			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog || a.viewMode == ViewDiff {
 				a.stopAllLoops()
 				a.stopWatcher()
 				return a, func() tea.Msg {
@@ -545,7 +562,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Number keys 1-9 to switch PRDs
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog || a.viewMode == ViewDiff {
 				index := int(msg.String()[0] - '1') // Convert "1" to 0, "2" to 1, etc.
 				if entry := a.tabBar.GetEntry(index); entry != nil {
 					return a.switchToPRD(entry.Name, entry.Path)
@@ -571,6 +588,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if a.viewMode == ViewLog {
 				a.logViewer.ScrollUp()
+			} else if a.viewMode == ViewDiff {
+				a.diffViewer.ScrollUp()
 			} else {
 				if a.selectedIndex > 0 {
 					a.selectedIndex--
@@ -579,28 +598,38 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			if a.viewMode == ViewLog {
 				a.logViewer.ScrollDown()
+			} else if a.viewMode == ViewDiff {
+				a.diffViewer.ScrollDown()
 			} else {
 				if a.selectedIndex < len(a.prd.UserStories)-1 {
 					a.selectedIndex++
 				}
 			}
 
-		// Log-specific scrolling
+		// Log/diff scrolling
 		case "ctrl+d":
 			if a.viewMode == ViewLog {
 				a.logViewer.PageDown()
+			} else if a.viewMode == ViewDiff {
+				a.diffViewer.PageDown()
 			}
 		case "ctrl+u":
 			if a.viewMode == ViewLog {
 				a.logViewer.PageUp()
+			} else if a.viewMode == ViewDiff {
+				a.diffViewer.PageUp()
 			}
 		case "g":
 			if a.viewMode == ViewLog {
 				a.logViewer.ScrollToTop()
+			} else if a.viewMode == ViewDiff {
+				a.diffViewer.ScrollToTop()
 			}
 		case "G":
 			if a.viewMode == ViewLog {
 				a.logViewer.ScrollToBottom()
+			} else if a.viewMode == ViewDiff {
+				a.diffViewer.ScrollToBottom()
 			}
 
 		// Max iterations control
@@ -886,6 +915,8 @@ func (a App) View() string {
 	switch a.viewMode {
 	case ViewLog:
 		return a.renderLogView()
+	case ViewDiff:
+		return a.renderDiffView()
 	case ViewPicker:
 		return a.renderPickerView()
 	case ViewHelp:

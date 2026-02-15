@@ -224,18 +224,21 @@ func (a *App) renderFooter() string {
 
 	if a.viewMode == ViewLog {
 		// Log view shortcuts
-		shortcuts = []string{"t: dashboard", "e: edit", "n: new", "l: list", "1-9: switch", "?: help", "j/k: scroll", "q: quit"}
+		shortcuts = []string{"t: dashboard", "d: diff", "e: edit", "n: new", "l: list", "1-9: switch", "?: help", "j/k: scroll", "q: quit"}
+	} else if a.viewMode == ViewDiff {
+		// Diff view shortcuts
+		shortcuts = []string{"d: dashboard", "t: log", "e: edit", "n: new", "l: list", "?: help", "j/k: scroll", "q: quit"}
 	} else {
 		// Dashboard view shortcuts
 		switch a.state {
 		case StateReady, StatePaused:
-			shortcuts = []string{"s: start", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"s: start", "d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
 		case StateRunning:
-			shortcuts = []string{"p: pause", "x: stop", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"p: pause", "x: stop", "d: diff", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
 		case StateStopped, StateError:
-			shortcuts = []string{"s: retry", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"s: retry", "d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
 		default:
-			shortcuts = []string{"e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
 		}
 	}
 	shortcutsStr := footerStyle.Render(strings.Join(shortcuts, "  │  "))
@@ -697,6 +700,114 @@ func truncateWithEllipsis(text string, maxLen int) string {
 		return text
 	}
 	return text[:maxLen-3] + "..."
+}
+
+// renderDiffView renders the full-screen diff view.
+func (a *App) renderDiffView() string {
+	if a.width == 0 || a.height == 0 {
+		return "Loading..."
+	}
+
+	var header, footer string
+	if a.isNarrowMode() {
+		header = a.renderNarrowDiffHeader()
+		footer = a.renderNarrowFooter()
+	} else {
+		header = a.renderDiffHeader()
+		footer = a.renderFooter()
+	}
+
+	// Calculate content area height (same approach as log view)
+	contentHeight := a.height - headerHeight - footerHeight - 2
+
+	// Render diff content
+	a.diffViewer.SetSize(a.width-4, contentHeight)
+	diffContent := a.diffViewer.Render()
+
+	// Wrap in a panel
+	diffPanel := panelStyle.Width(a.width - 2).Height(contentHeight).Render(diffContent)
+
+	// Stack header, content, and footer
+	return lipgloss.JoinVertical(lipgloss.Left, header, diffPanel, footer)
+}
+
+// renderDiffHeader renders the header for the diff view.
+func (a *App) renderDiffHeader() string {
+	// Branding
+	brand := headerStyle.Render("chief")
+
+	// View indicator
+	viewIndicator := lipgloss.NewStyle().
+		Foreground(PrimaryColor).
+		Bold(true).
+		Render("[Diff View]")
+
+	// State indicator
+	stateStyle := GetStateStyle(a.state)
+	state := stateStyle.Render(fmt.Sprintf("[%s]", a.state.String()))
+
+	// Scroll position
+	var scrollInfo string
+	if len(a.diffViewer.lines) > 0 {
+		pct := 0
+		if a.diffViewer.maxOffset() > 0 {
+			pct = a.diffViewer.offset * 100 / a.diffViewer.maxOffset()
+		}
+		scrollInfo = SubtitleStyle.Render(fmt.Sprintf("%d lines  %d%%", len(a.diffViewer.lines), pct))
+	}
+
+	// Combine elements
+	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, brand, "  ", viewIndicator, "  ", state)
+	rightPart := scrollInfo
+
+	// Create the full header line with proper spacing
+	spacing := strings.Repeat(" ", max(0, a.width-lipgloss.Width(leftPart)-lipgloss.Width(rightPart)-2))
+	headerLine := lipgloss.JoinHorizontal(lipgloss.Center, leftPart, spacing, rightPart)
+
+	// Stats line (show diffstat summary if available)
+	var statsLine string
+	if a.diffViewer.stats != "" {
+		statsLines := strings.Split(a.diffViewer.stats, "\n")
+		if len(statsLines) > 0 {
+			summary := statsLines[len(statsLines)-1]
+			statsLine = SubtitleStyle.Render(" " + strings.TrimSpace(summary))
+		}
+	}
+
+	// Add a border below
+	border := DividerStyle.Render(strings.Repeat("─", a.width))
+
+	if statsLine != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, headerLine, statsLine, border)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, headerLine, border)
+}
+
+// renderNarrowDiffHeader renders a condensed header for the diff view in narrow mode.
+func (a *App) renderNarrowDiffHeader() string {
+	brand := headerStyle.Render("chief")
+
+	viewIndicator := lipgloss.NewStyle().
+		Foreground(PrimaryColor).
+		Bold(true).
+		Render("[Diff]")
+
+	stateStyle := GetStateStyle(a.state)
+	state := stateStyle.Render(fmt.Sprintf("[%s]", a.state.String()))
+
+	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, brand, " ", viewIndicator, " ", state)
+
+	var rightPart string
+	if len(a.diffViewer.lines) > 0 {
+		rightPart = SubtitleStyle.Render(fmt.Sprintf("%d lines", len(a.diffViewer.lines)))
+	}
+
+	spacing := strings.Repeat(" ", max(0, a.width-lipgloss.Width(leftPart)-lipgloss.Width(rightPart)-2))
+	headerLine := lipgloss.JoinHorizontal(lipgloss.Center, leftPart, spacing, rightPart)
+
+	border := DividerStyle.Render(strings.Repeat("─", a.width))
+
+	return lipgloss.JoinVertical(lipgloss.Left, headerLine, border)
 }
 
 // renderLogView renders the full-screen log view.

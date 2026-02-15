@@ -58,6 +58,7 @@ func (h *HelpOverlay) GetCategories() []ShortcutCategory {
 		Name: "Views",
 		Shortcuts: []Shortcut{
 			{Key: "t", Description: "Toggle log view"},
+			{Key: "d", Description: "Toggle diff view"},
 			{Key: "?", Description: "Help overlay"},
 		},
 	}
@@ -83,7 +84,7 @@ func (h *HelpOverlay) GetCategories() []ShortcutCategory {
 
 	// View-specific categories
 	switch h.viewMode {
-	case ViewLog:
+	case ViewLog, ViewDiff:
 		scrolling := ShortcutCategory{
 			Name: "Scrolling",
 			Shortcuts: []Shortcut{
