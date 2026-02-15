@@ -305,7 +305,7 @@
         "Progress messages are the primary mechanism for the web app to update its UI"
       ],
       "priority": 17,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-018",

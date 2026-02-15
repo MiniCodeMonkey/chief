@@ -7,9 +7,11 @@ import (
 	"log"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/minicodemonkey/chief/internal/engine"
 	"github.com/minicodemonkey/chief/internal/loop"
+	"github.com/minicodemonkey/chief/internal/prd"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
@@ -24,9 +26,11 @@ type runManager struct {
 
 // runInfo tracks metadata about a registered run.
 type runInfo struct {
-	project string
-	prdID   string
-	prdPath string // absolute path to prd.json
+	project   string
+	prdID     string
+	prdPath   string // absolute path to prd.json
+	startTime time.Time
+	storyID   string // currently active story ID
 }
 
 // runKey returns the engine registration key for a project/PRD combination.
@@ -43,7 +47,8 @@ func newRunManager(eng *engine.Engine, client *ws.Client) *runManager {
 	}
 }
 
-// startEventMonitor subscribes to engine events and handles quota exhaustion.
+// startEventMonitor subscribes to engine events and handles progress streaming,
+// run completion, Claude output streaming, and quota exhaustion.
 // It runs until the context is cancelled.
 func (rm *runManager) startEventMonitor(ctx context.Context) {
 	eventCh, unsub := rm.eng.Subscribe()
@@ -57,12 +62,168 @@ func (rm *runManager) startEventMonitor(ctx context.Context) {
 				if !ok {
 					return
 				}
-				if event.Event.Type == loop.EventQuotaExhausted {
-					rm.handleQuotaExhausted(event.PRDName)
-				}
+				rm.handleEvent(event)
 			}
 		}
 	}()
+}
+
+// handleEvent routes an engine event to the appropriate handler.
+func (rm *runManager) handleEvent(event engine.ManagerEvent) {
+	rm.mu.RLock()
+	info, exists := rm.runs[event.PRDName]
+	rm.mu.RUnlock()
+
+	if !exists {
+		// Events from runs we don't track (e.g., TUI-driven runs)
+		return
+	}
+
+	switch event.Event.Type {
+	case loop.EventQuotaExhausted:
+		rm.handleQuotaExhausted(event.PRDName)
+
+	case loop.EventIterationStart:
+		rm.sendRunProgress(info, "iteration_started", event.Event)
+
+	case loop.EventStoryStarted:
+		// Track the current story ID
+		rm.mu.Lock()
+		info.storyID = event.Event.StoryID
+		rm.mu.Unlock()
+		rm.sendRunProgress(info, "story_started", event.Event)
+
+	case loop.EventStoryCompleted:
+		rm.sendRunProgress(info, "story_completed", event.Event)
+
+	case loop.EventComplete:
+		rm.sendRunProgress(info, "complete", event.Event)
+		rm.sendRunComplete(info, event.PRDName)
+
+	case loop.EventMaxIterationsReached:
+		rm.sendRunProgress(info, "max_iterations_reached", event.Event)
+		rm.sendRunComplete(info, event.PRDName)
+
+	case loop.EventRetrying:
+		rm.sendRunProgress(info, "retrying", event.Event)
+
+	case loop.EventAssistantText:
+		rm.sendClaudeOutput(info, event.Event.Text, false)
+
+	case loop.EventToolStart:
+		text := fmt.Sprintf("[tool_use] %s", event.Event.Tool)
+		rm.sendClaudeOutput(info, text, false)
+
+	case loop.EventToolResult:
+		rm.sendClaudeOutput(info, event.Event.Text, false)
+
+	case loop.EventError:
+		errText := ""
+		if event.Event.Err != nil {
+			errText = event.Event.Err.Error()
+		}
+		rm.sendClaudeOutput(info, errText, true)
+	}
+}
+
+// sendRunProgress sends a run_progress message over WebSocket.
+func (rm *runManager) sendRunProgress(info *runInfo, status string, event loop.Event) {
+	if rm.client == nil {
+		return
+	}
+
+	rm.mu.RLock()
+	storyID := info.storyID
+	rm.mu.RUnlock()
+
+	// Use the event's story ID if available, otherwise use tracked story ID
+	if event.StoryID != "" {
+		storyID = event.StoryID
+	}
+
+	envelope := ws.NewMessage(ws.TypeRunProgress)
+	msg := ws.RunProgressMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Project:   info.project,
+		PRDID:     info.prdID,
+		StoryID:   storyID,
+		Status:    status,
+		Iteration: event.Iteration,
+		Attempt:   event.RetryCount,
+	}
+	if err := rm.client.Send(msg); err != nil {
+		log.Printf("Error sending run_progress: %v", err)
+	}
+}
+
+// sendRunComplete sends a run_complete message over WebSocket.
+func (rm *runManager) sendRunComplete(info *runInfo, prdName string) {
+	if rm.client == nil {
+		return
+	}
+
+	// Calculate duration
+	rm.mu.RLock()
+	duration := time.Since(info.startTime)
+	rm.mu.RUnlock()
+
+	// Load PRD to get pass/fail counts
+	var passCount, failCount, storiesCompleted int
+	p, err := prd.LoadPRD(info.prdPath)
+	if err == nil {
+		for _, s := range p.UserStories {
+			if s.Passes {
+				passCount++
+				storiesCompleted++
+			} else {
+				failCount++
+			}
+		}
+	}
+
+	envelope := ws.NewMessage(ws.TypeRunComplete)
+	msg := ws.RunCompleteMessage{
+		Type:             envelope.Type,
+		ID:               envelope.ID,
+		Timestamp:        envelope.Timestamp,
+		Project:          info.project,
+		PRDID:            info.prdID,
+		StoriesCompleted: storiesCompleted,
+		Duration:         duration.Round(time.Second).String(),
+		PassCount:        passCount,
+		FailCount:        failCount,
+	}
+	if err := rm.client.Send(msg); err != nil {
+		log.Printf("Error sending run_complete: %v", err)
+	}
+}
+
+// sendClaudeOutput sends a claude_output message for an active run over WebSocket.
+func (rm *runManager) sendClaudeOutput(info *runInfo, data string, done bool) {
+	if rm.client == nil {
+		return
+	}
+
+	rm.mu.RLock()
+	storyID := info.storyID
+	rm.mu.RUnlock()
+
+	envelope := ws.NewMessage(ws.TypeClaudeOutput)
+	msg := ws.ClaudeOutputMessage{
+		Type:      envelope.Type,
+		ID:        envelope.ID,
+		Timestamp: envelope.Timestamp,
+		Project:   info.project,
+		PRDID:     info.prdID,
+		StoryID:   storyID,
+		Data:      data,
+		Done:      done,
+	}
+	if err := rm.client.Send(msg); err != nil {
+		log.Printf("Error sending claude_output: %v", err)
+	}
 }
 
 // handleQuotaExhausted handles a quota exhaustion event for a specific run.
@@ -164,9 +325,10 @@ func (rm *runManager) startRun(project, prdID, projectPath string) error {
 
 	rm.mu.Lock()
 	rm.runs[key] = &runInfo{
-		project: project,
-		prdID:   prdID,
-		prdPath: prdPath,
+		project:   project,
+		prdID:     prdID,
+		prdPath:   prdPath,
+		startTime: time.Now(),
 	}
 	rm.mu.Unlock()
 

@@ -636,3 +636,246 @@ func TestIsQuotaErrorIntegration(t *testing.T) {
 		}
 	}
 }
+
+func TestRunManager_HandleEventRunProgress(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil) // nil client — sendRunProgress guards against nil
+
+	// Add a run to the runs map
+	rm.mu.Lock()
+	rm.runs["myproject/feature"] = &runInfo{
+		project:   "myproject",
+		prdID:     "feature",
+		prdPath:   "/tmp/test/prd.json",
+		startTime: time.Now(),
+	}
+	rm.mu.Unlock()
+
+	// Test that handleEvent does not panic for each event type with nil client
+	eventTypes := []loop.EventType{
+		loop.EventIterationStart,
+		loop.EventStoryStarted,
+		loop.EventStoryCompleted,
+		loop.EventComplete,
+		loop.EventMaxIterationsReached,
+		loop.EventRetrying,
+		loop.EventAssistantText,
+		loop.EventToolStart,
+		loop.EventToolResult,
+		loop.EventError,
+	}
+
+	for _, et := range eventTypes {
+		event := engine.ManagerEvent{
+			PRDName: "myproject/feature",
+			Event: loop.Event{
+				Type:      et,
+				Iteration: 1,
+				StoryID:   "US-001",
+				Text:      "test text",
+				Tool:      "TestTool",
+			},
+		}
+		rm.handleEvent(event) // should not panic with nil client
+	}
+}
+
+func TestRunManager_HandleEventUnknownRun(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil)
+
+	// Events for unknown runs should be silently ignored
+	event := engine.ManagerEvent{
+		PRDName: "unknown/run",
+		Event: loop.Event{
+			Type:      loop.EventIterationStart,
+			Iteration: 1,
+		},
+	}
+	rm.handleEvent(event) // should not panic
+}
+
+func TestRunManager_HandleEventStoryTracking(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil)
+
+	rm.mu.Lock()
+	rm.runs["myproject/feature"] = &runInfo{
+		project:   "myproject",
+		prdID:     "feature",
+		prdPath:   "/tmp/test/prd.json",
+		startTime: time.Now(),
+	}
+	rm.mu.Unlock()
+
+	// Send a StoryStarted event — should update the tracked storyID
+	event := engine.ManagerEvent{
+		PRDName: "myproject/feature",
+		Event: loop.Event{
+			Type:    loop.EventStoryStarted,
+			StoryID: "US-042",
+		},
+	}
+	rm.handleEvent(event)
+
+	rm.mu.RLock()
+	storyID := rm.runs["myproject/feature"].storyID
+	rm.mu.RUnlock()
+
+	if storyID != "US-042" {
+		t.Errorf("expected storyID 'US-042', got %q", storyID)
+	}
+}
+
+func TestRunManager_SendRunComplete(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil) // nil client — guards against nil
+
+	// Create a temp PRD with known pass/fail counts
+	tmpDir := t.TempDir()
+	prdDir := filepath.Join(tmpDir, ".chief", "prds", "feature")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prdJSON := `{"project": "Test", "userStories": [{"id": "US-001", "passes": true}, {"id": "US-002", "passes": true}, {"id": "US-003", "passes": false}]}`
+	prdPath := filepath.Join(prdDir, "prd.json")
+	if err := os.WriteFile(prdPath, []byte(prdJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	info := &runInfo{
+		project:   "myproject",
+		prdID:     "feature",
+		prdPath:   prdPath,
+		startTime: time.Now().Add(-5 * time.Minute),
+	}
+
+	// Should not panic with nil client
+	rm.sendRunComplete(info, "myproject/feature")
+}
+
+func TestRunServe_RunProgressStreaming(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a git repo with a PRD
+	projectDir := filepath.Join(workspaceDir, "myproject")
+	createGitRepo(t, projectDir)
+
+	prdDir := filepath.Join(projectDir, ".chief", "prds", "feature")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prdState := `{"project": "My Feature", "userStories": [{"id": "US-001", "title": "Test Story", "passes": false}]}`
+	if err := os.WriteFile(filepath.Join(prdDir, "prd.json"), []byte(prdState), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a mock claude that outputs stream-json with a story start marker then exits successfully
+	mockDir := t.TempDir()
+	mockScript := `#!/bin/sh
+echo '{"type":"system","subtype":"init"}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Working on <ralph-status>US-001</ralph-status>"}]}}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Hello from Claude"}]}}'
+echo '{"type":"result"}'
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(mockDir, "claude"), []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", mockDir+":"+origPath)
+
+	var messages []map[string]interface{}
+	var mu sync.Mutex
+
+	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+		// Send start_run request
+		startReq := map[string]string{
+			"type":      "start_run",
+			"id":        "req-1",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"project":   "myproject",
+			"prd_id":    "feature",
+		}
+		conn.WriteJSON(startReq)
+
+		// Read messages — expect run_progress and claude_output messages
+		for i := 0; i < 15; i++ {
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			var msg map[string]interface{}
+			if json.Unmarshal(data, &msg) == nil {
+				mu.Lock()
+				messages = append(messages, msg)
+				mu.Unlock()
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Check for run_progress messages
+	foundIterationStart := false
+	foundStoryStarted := false
+	foundClaudeOutput := false
+	for _, msg := range messages {
+		if msg["type"] == "run_progress" {
+			status, _ := msg["status"].(string)
+			if status == "iteration_started" {
+				foundIterationStart = true
+			}
+			if status == "story_started" {
+				foundStoryStarted = true
+				if msg["story_id"] != "US-001" {
+					t.Errorf("expected story_id 'US-001', got %v", msg["story_id"])
+				}
+				if msg["project"] != "myproject" {
+					t.Errorf("expected project 'myproject', got %v", msg["project"])
+				}
+				if msg["prd_id"] != "feature" {
+					t.Errorf("expected prd_id 'feature', got %v", msg["prd_id"])
+				}
+			}
+		}
+		if msg["type"] == "claude_output" {
+			foundClaudeOutput = true
+			if msg["project"] != "myproject" {
+				t.Errorf("expected project 'myproject', got %v", msg["project"])
+			}
+		}
+	}
+
+	if !foundIterationStart {
+		t.Errorf("expected run_progress with status 'iteration_started', messages: %v", messages)
+	}
+	if !foundStoryStarted {
+		t.Errorf("expected run_progress with status 'story_started', messages: %v", messages)
+	}
+	if !foundClaudeOutput {
+		t.Errorf("expected claude_output messages, messages: %v", messages)
+	}
+}
