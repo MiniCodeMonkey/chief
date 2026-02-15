@@ -38,6 +38,7 @@ func DefaultRetryConfig() RetryConfig {
 // Loop manages the core agent loop that invokes Claude repeatedly until all stories are complete.
 type Loop struct {
 	prdPath     string
+	workDir     string
 	prompt      string
 	maxIter     int
 	iteration   int
@@ -54,6 +55,19 @@ type Loop struct {
 func NewLoop(prdPath, prompt string, maxIter int) *Loop {
 	return &Loop{
 		prdPath:     prdPath,
+		prompt:      prompt,
+		maxIter:     maxIter,
+		events:      make(chan Event, 100),
+		retryConfig: DefaultRetryConfig(),
+	}
+}
+
+// NewLoopWithWorkDir creates a new Loop instance with a configurable working directory.
+// When workDir is empty, defaults to the project root for backward compatibility.
+func NewLoopWithWorkDir(prdPath, workDir string, prompt string, maxIter int) *Loop {
+	return &Loop{
+		prdPath:     prdPath,
+		workDir:     workDir,
 		prompt:      prompt,
 		maxIter:     maxIter,
 		events:      make(chan Event, 100),
@@ -252,8 +266,8 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		"--output-format", "stream-json",
 		"--verbose",
 	)
-	// Set working directory to the PRD directory
-	l.claudeCmd.Dir = filepath.Dir(l.prdPath)
+	// Set working directory: use workDir if configured, otherwise default to PRD directory
+	l.claudeCmd.Dir = l.effectiveWorkDir()
 	l.mu.Unlock()
 
 	// Create pipes for stdout and stderr
@@ -390,6 +404,15 @@ func (l *Loop) IsStopped() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.stopped
+}
+
+// effectiveWorkDir returns the working directory to use for Claude.
+// If workDir is set, it is used directly. Otherwise, defaults to the PRD directory.
+func (l *Loop) effectiveWorkDir() string {
+	if l.workDir != "" {
+		return l.workDir
+	}
+	return filepath.Dir(l.prdPath)
 }
 
 // IsRunning returns whether a Claude process is currently running.

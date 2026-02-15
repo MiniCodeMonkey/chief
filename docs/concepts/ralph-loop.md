@@ -65,6 +65,18 @@ Here's the complete Ralph Loop as a flowchart:
     └─────────────┘
 ```
 
+## Before the Loop: Worktree Setup
+
+Before the loop starts, Chief sets up the working environment. When you press `s` to start a PRD, the TUI shows a dialog offering to create an isolated worktree:
+
+1. **Create branch** — A new branch (e.g., `chief/auth-system`) is created from your default branch
+2. **Create worktree** — A git worktree is set up at `.chief/worktrees/<prd-name>/`
+3. **Run setup** — If a setup command is configured (e.g., `npm install`), it runs in the worktree
+
+This setup happens once per PRD. The loop then runs entirely within the worktree directory, isolating all file changes and commits to that branch.
+
+You can also skip worktree creation and run in the current directory if you prefer.
+
 ## Step by Step
 
 Each step in the loop has a specific purpose. Here's what happens in each one.
@@ -195,6 +207,23 @@ If you hit the limit, it usually means:
 - There's an issue with the PRD format
 
 You can adjust the limit with the `--max-iterations` flag or in your configuration.
+
+## Post-Completion Actions
+
+When all stories in a PRD are complete, Chief can automatically:
+
+1. **Push the branch** — If `onComplete.push` is enabled in `.chief/config.yaml`, Chief pushes the branch to origin
+2. **Create a pull request** — If `onComplete.createPR` is also enabled, Chief creates a PR via the `gh` CLI with a title and body generated from the PRD
+
+The completion screen shows the progress of these actions with spinners, checkmarks, or error messages. On PR success, the PR URL is displayed and clickable.
+
+If auto-actions aren't configured, the completion screen shows a hint to configure them via the Settings TUI (`,`).
+
+You can also take manual actions from the completion screen:
+- `m` — Merge the branch locally
+- `c` — Clean up the worktree
+- `l` — Switch to another PRD
+- `q` — Quit Chief
 
 ## Why "Ralph"?
 

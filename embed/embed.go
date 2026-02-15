@@ -19,6 +19,9 @@ var editPromptTemplate string
 //go:embed convert_prompt.txt
 var convertPromptTemplate string
 
+//go:embed detect_setup_prompt.txt
+var detectSetupPromptTemplate string
+
 // GetPrompt returns the agent prompt with the PRD path substituted.
 func GetPrompt(prdPath string) string {
 	return strings.ReplaceAll(promptTemplate, "{{PRD_PATH}}", prdPath)
@@ -41,4 +44,9 @@ func GetEditPrompt(prdDir string) string {
 // GetConvertPrompt returns the PRD converter prompt for prd.md to prd.json conversion.
 func GetConvertPrompt(prdDir string) string {
 	return strings.ReplaceAll(convertPromptTemplate, "{{PRD_DIR}}", prdDir)
+}
+
+// GetDetectSetupPrompt returns the prompt for detecting project setup commands.
+func GetDetectSetupPrompt() string {
+	return detectSetupPromptTemplate
 }

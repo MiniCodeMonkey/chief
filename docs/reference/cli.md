@@ -229,6 +229,14 @@ When Chief is running, the TUI provides real-time feedback and interactive contr
 | `n` | Open **PRD picker** (switch PRDs or create new) |
 | `1-9` | **Quick switch** to PRD tabs 1-9 |
 | `e` | **Edit** selected PRD (in picker) |
+| `m` | **Merge** completed PRD's branch into main (in picker or completion screen) |
+| `c` | **Clean** worktree and optionally delete branch (in picker or completion screen) |
+
+### Settings
+
+| Key | Action |
+|-----|--------|
+| `,` | Open **Settings** overlay (from any view) |
 
 ### Navigation
 

@@ -72,6 +72,34 @@ func TestNewLoop(t *testing.T) {
 	}
 }
 
+func TestNewLoopWithWorkDir(t *testing.T) {
+	l := NewLoopWithWorkDir("/path/to/prd.json", "/work/dir", "test prompt", 5)
+
+	if l.prdPath != "/path/to/prd.json" {
+		t.Errorf("Expected prdPath %q, got %q", "/path/to/prd.json", l.prdPath)
+	}
+	if l.workDir != "/work/dir" {
+		t.Errorf("Expected workDir %q, got %q", "/work/dir", l.workDir)
+	}
+	if l.prompt != "test prompt" {
+		t.Errorf("Expected prompt %q, got %q", "test prompt", l.prompt)
+	}
+	if l.maxIter != 5 {
+		t.Errorf("Expected maxIter %d, got %d", 5, l.maxIter)
+	}
+	if l.events == nil {
+		t.Error("Expected events channel to be initialized")
+	}
+}
+
+func TestNewLoopWithWorkDir_EmptyWorkDir(t *testing.T) {
+	l := NewLoopWithWorkDir("/path/to/prd.json", "", "test prompt", 5)
+
+	if l.workDir != "" {
+		t.Errorf("Expected empty workDir, got %q", l.workDir)
+	}
+}
+
 func TestLoop_Events(t *testing.T) {
 	l := NewLoop("/path/to/prd.json", "test prompt", 5)
 	events := l.Events()

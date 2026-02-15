@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/minicodemonkey/chief/embed"
+	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/prd"
 )
 
@@ -42,16 +44,18 @@ func (s LoopState) String() string {
 
 // LoopInstance represents a single loop with its metadata.
 type LoopInstance struct {
-	Name      string
-	PRDPath   string
-	Loop      *Loop
-	State     LoopState
-	Iteration int
-	StartTime time.Time
-	Error     error
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.Mutex
+	Name        string
+	PRDPath     string
+	WorktreeDir string // Working directory for this PRD (empty = project root)
+	Branch      string // Git branch for this PRD (empty = current branch)
+	Loop        *Loop
+	State       LoopState
+	Iteration   int
+	StartTime   time.Time
+	Error       error
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
 }
 
 // ManagerEvent represents an event from any managed loop.
@@ -67,9 +71,11 @@ type Manager struct {
 	events      chan ManagerEvent
 	maxIter     int
 	retryConfig RetryConfig
-	mu          sync.RWMutex
-	wg          sync.WaitGroup
-	onComplete  func(prdName string) // Callback when a PRD completes
+	config         *config.Config                       // Project config for post-completion actions
+	mu             sync.RWMutex
+	wg             sync.WaitGroup
+	onComplete     func(prdName string)                  // Callback when a PRD completes
+	onPostComplete func(prdName, branch, workDir string) // Callback for post-completion actions (push, PR)
 }
 
 // NewManager creates a new loop manager.
@@ -103,6 +109,28 @@ func (m *Manager) SetCompletionCallback(fn func(prdName string)) {
 	m.onComplete = fn
 }
 
+// SetPostCompleteCallback sets a callback for post-completion actions (push, PR creation).
+// The callback receives the PRD name, branch name, and working directory.
+func (m *Manager) SetPostCompleteCallback(fn func(prdName, branch, workDir string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onPostComplete = fn
+}
+
+// SetConfig sets the project config for post-completion actions.
+func (m *Manager) SetConfig(cfg *config.Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config = cfg
+}
+
+// Config returns the current project config.
+func (m *Manager) Config() *config.Config {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.config
+}
+
 // Events returns the channel for receiving events from all loops.
 func (m *Manager) Events() <-chan ManagerEvent {
 	return m.events
@@ -122,6 +150,27 @@ func (m *Manager) Register(name, prdPath string) error {
 		Name:    name,
 		PRDPath: prdPath,
 		State:   LoopStateReady,
+	}
+
+	return nil
+}
+
+// RegisterWithWorktree registers a PRD with worktree metadata (does not start it).
+func (m *Manager) RegisterWithWorktree(name, prdPath, worktreeDir, branch string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if already registered
+	if _, exists := m.instances[name]; exists {
+		return fmt.Errorf("PRD %s is already registered", name)
+	}
+
+	m.instances[name] = &LoopInstance{
+		Name:        name,
+		PRDPath:     prdPath,
+		WorktreeDir: worktreeDir,
+		Branch:      branch,
+		State:       LoopStateReady,
 	}
 
 	return nil
@@ -165,8 +214,13 @@ func (m *Manager) Start(name string) error {
 		return fmt.Errorf("PRD %s is already running", name)
 	}
 
-	// Create a new loop instance
-	instance.Loop = NewLoopWithEmbeddedPrompt(instance.PRDPath, m.maxIter)
+	// Create a new loop instance, using worktree-aware constructor if WorktreeDir is set
+	if instance.WorktreeDir != "" {
+		prompt := embed.GetPrompt(instance.PRDPath)
+		instance.Loop = NewLoopWithWorkDir(instance.PRDPath, instance.WorktreeDir, prompt, m.maxIter)
+	} else {
+		instance.Loop = NewLoopWithEmbeddedPrompt(instance.PRDPath, m.maxIter)
+	}
 	m.mu.RLock()
 	instance.Loop.SetRetryConfig(m.retryConfig)
 	m.mu.RUnlock()
@@ -212,13 +266,21 @@ func (m *Manager) runLoop(instance *LoopInstance) {
 					Completed: completed,
 				}
 
-				// If completed, trigger callback
+				// If completed, trigger callbacks
 				if completed {
 					m.mu.RLock()
 					callback := m.onComplete
+					postCallback := m.onPostComplete
 					m.mu.RUnlock()
 					if callback != nil {
 						callback(instance.Name)
+					}
+					if postCallback != nil {
+						instance.mu.Lock()
+						branch := instance.Branch
+						workDir := instance.WorktreeDir
+						instance.mu.Unlock()
+						postCallback(instance.Name, branch, workDir)
 					}
 				}
 			case <-instance.ctx.Done():
@@ -308,6 +370,46 @@ func (m *Manager) Stop(name string) error {
 	return nil
 }
 
+// UpdateWorktreeInfo updates the worktree directory and branch for an existing PRD instance.
+func (m *Manager) UpdateWorktreeInfo(name, worktreeDir, branch string) error {
+	m.mu.RLock()
+	instance, exists := m.instances[name]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("PRD %s not found", name)
+	}
+
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
+	instance.WorktreeDir = worktreeDir
+	instance.Branch = branch
+
+	return nil
+}
+
+// ClearWorktreeInfo clears the worktree directory and optionally the branch for a PRD instance.
+func (m *Manager) ClearWorktreeInfo(name string, clearBranch bool) error {
+	m.mu.RLock()
+	instance, exists := m.instances[name]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("PRD %s not found", name)
+	}
+
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
+
+	instance.WorktreeDir = ""
+	if clearBranch {
+		instance.Branch = ""
+	}
+
+	return nil
+}
+
 // GetState returns the state of a specific PRD loop.
 func (m *Manager) GetState(name string) (LoopState, int, error) {
 	m.mu.RLock()
@@ -339,12 +441,14 @@ func (m *Manager) GetInstance(name string) *LoopInstance {
 
 	// Return a copy to avoid race conditions
 	return &LoopInstance{
-		Name:      instance.Name,
-		PRDPath:   instance.PRDPath,
-		State:     instance.State,
-		Iteration: instance.Iteration,
-		StartTime: instance.StartTime,
-		Error:     instance.Error,
+		Name:        instance.Name,
+		PRDPath:     instance.PRDPath,
+		WorktreeDir: instance.WorktreeDir,
+		Branch:      instance.Branch,
+		State:       instance.State,
+		Iteration:   instance.Iteration,
+		StartTime:   instance.StartTime,
+		Error:       instance.Error,
 	}
 }
 
@@ -357,12 +461,14 @@ func (m *Manager) GetAllInstances() []*LoopInstance {
 	for _, instance := range m.instances {
 		instance.mu.Lock()
 		copy := &LoopInstance{
-			Name:      instance.Name,
-			PRDPath:   instance.PRDPath,
-			State:     instance.State,
-			Iteration: instance.Iteration,
-			StartTime: instance.StartTime,
-			Error:     instance.Error,
+			Name:        instance.Name,
+			PRDPath:     instance.PRDPath,
+			WorktreeDir: instance.WorktreeDir,
+			Branch:      instance.Branch,
+			State:       instance.State,
+			Iteration:   instance.Iteration,
+			StartTime:   instance.StartTime,
+			Error:       instance.Error,
 		}
 		instance.mu.Unlock()
 		result = append(result, copy)

@@ -95,6 +95,22 @@ The `progress.md` file is what makes fresh context windows possible. After every
 
 When the next iteration starts, Claude reads this file and immediately understands the project's history, without needing thousands of tokens of prior conversation. This gives you the benefits of long-running context (consistency, institutional memory) without the downsides (context overflow, degraded performance).
 
+## Worktree Isolation for Parallel PRDs
+
+When running multiple PRDs simultaneously, each PRD can work in its own isolated git worktree. This prevents parallel Claude instances from conflicting over files, producing interleaved commits, or stepping on each other's branches.
+
+When you start a PRD, Chief offers to create a worktree:
+- A new branch is created (e.g., `chief/auth-system`) from your default branch
+- A worktree is set up at `.chief/worktrees/<prd-name>/`
+- Any configured setup command runs automatically (e.g., `npm install`)
+
+Each worktree is a full checkout of your project, so Claude can read, write, and run tests independently. When the PRD completes, you can merge the branch back, push it to a remote, or have Chief automatically create a pull request.
+
+The TUI shows branch and directory information throughout:
+- **Tab bar**: Branch name next to each PRD tab
+- **Dashboard header**: Current branch and working directory
+- **PRD picker**: Branch and worktree path for each PRD
+
 ## Staying in Control
 
 Autonomous doesn't mean unattended. The TUI lets you:
@@ -102,6 +118,9 @@ Autonomous doesn't mean unattended. The TUI lets you:
 - **Start / Pause / Stop**: Press `s` to start, `p` to pause after the current story, `x` to stop immediately
 - **Switch projects**: Press `n` to cycle through projects, or `1-9` to jump directly
 - **Resume anytime**: Walk away, come back, press `s`. Chief picks up where you left off
+- **Merge branches**: Press `m` in the picker to merge a completed branch
+- **Clean worktrees**: Press `c` in the picker to remove a worktree and optionally delete the branch
+- **Configure settings**: Press `,` to open the Settings overlay
 
 ## Further Reading
 

@@ -3,11 +3,13 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/git"
 	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/prd"
@@ -67,6 +69,49 @@ type PRDCompletedMsg struct {
 	PRDName string
 }
 
+// mergeResultMsg is sent when a merge operation completes.
+type mergeResultMsg struct {
+	branch    string
+	conflicts []string
+	output    string
+	err       error
+}
+
+// cleanResultMsg is sent when a clean operation completes.
+type cleanResultMsg struct {
+	prdName      string
+	success      bool
+	message      string
+	clearBranch  bool
+}
+
+// autoActionResultMsg is sent when a post-completion auto-action (push/PR) completes.
+type autoActionResultMsg struct {
+	action  string // "push" or "pr"
+	err     error
+	prURL   string // Only set for successful PR creation
+	prTitle string // Only set for successful PR creation
+}
+
+// completionSpinnerTickMsg is sent to animate the completion screen spinner.
+type completionSpinnerTickMsg struct{}
+
+// worktreeStepResultMsg is sent when a worktree setup step completes.
+type worktreeStepResultMsg struct {
+	step WorktreeSpinnerStep
+	err  error
+}
+
+// worktreeSpinnerTickMsg is sent to animate the worktree setup spinner.
+type worktreeSpinnerTickMsg struct{}
+
+// settingsGHCheckResultMsg is sent when GH CLI validation completes in settings.
+type settingsGHCheckResultMsg struct {
+	installed     bool
+	authenticated bool
+	err           error
+}
+
 // LaunchInitMsg signals the TUI should exit to launch the init flow.
 type LaunchInitMsg struct {
 	Name string
@@ -86,6 +131,9 @@ const (
 	ViewPicker
 	ViewHelp
 	ViewBranchWarning
+	ViewWorktreeSpinner
+	ViewCompletion
+	ViewSettings
 )
 
 // App is the main Bubble Tea model for the Chief TUI.
@@ -122,13 +170,26 @@ type App struct {
 	picker  *PRDPicker
 	baseDir string // Base directory for .chief/prds/
 
+	// Project config
+	config *config.Config
+
 	// Help overlay
 	helpOverlay      *HelpOverlay
 	previousViewMode ViewMode // View to return to when closing help
 
 	// Branch warning dialog
-	branchWarning   *BranchWarning
-	pendingStartPRD string // PRD name waiting to start after branch decision
+	branchWarning      *BranchWarning
+	pendingStartPRD    string // PRD name waiting to start after branch decision
+	pendingWorktreePath string // Absolute worktree path for pending PRD
+
+	// Worktree setup spinner
+	worktreeSpinner *WorktreeSpinner
+
+	// Completion screen
+	completionScreen *CompletionScreen
+
+	// Settings overlay
+	settingsOverlay *SettingsOverlay
 
 	// Completion notification callback
 	onCompletion func(prdName string)
@@ -198,8 +259,20 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		baseDir, _ = os.Getwd()
 	}
 
+	// Load project config
+	cfg, err := config.Load(baseDir)
+	if err != nil {
+		cfg = config.Default()
+	}
+
+	// Prune stale worktrees on startup (clean git's internal tracking)
+	if git.IsGitRepo(baseDir) {
+		_ = git.PruneWorktrees(baseDir)
+	}
+
 	// Create loop manager for parallel PRD execution
 	manager := loop.NewManager(maxIter)
+	manager.SetConfig(cfg)
 
 	// Register the initial PRD with the manager
 	manager.Register(prdName, prdPath)
@@ -225,8 +298,12 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		tabBar:        tabBar,
 		picker:        picker,
 		baseDir:       baseDir,
-		helpOverlay:   NewHelpOverlay(),
-		branchWarning: NewBranchWarning(),
+		config:        cfg,
+		helpOverlay:      NewHelpOverlay(),
+		branchWarning:    NewBranchWarning(),
+		worktreeSpinner:  NewWorktreeSpinner(),
+		completionScreen: NewCompletionScreen(),
+		settingsOverlay:  NewSettingsOverlay(),
 	}, nil
 }
 
@@ -288,7 +365,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		// Update log viewer size
-		a.logViewer.SetSize(a.width, a.height-headerHeight-footerHeight-2)
+		a.logViewer.SetSize(a.width, a.height-a.effectiveHeaderHeight()-footerHeight-2)
 		return a, nil
 
 	case LoopEventMsg:
@@ -308,6 +385,38 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.picker.Refresh()
 		return a, nil
+
+	case mergeResultMsg:
+		return a.handleMergeResult(msg)
+
+	case cleanResultMsg:
+		return a.handleCleanResult(msg)
+
+	case autoActionResultMsg:
+		return a.handleAutoActionResult(msg)
+
+	case backgroundAutoActionResultMsg:
+		return a.handleBackgroundAutoAction(msg)
+
+	case completionSpinnerTickMsg:
+		if a.viewMode == ViewCompletion && a.completionScreen.IsAutoActionRunning() {
+			a.completionScreen.Tick()
+			return a, tickCompletionSpinner()
+		}
+		return a, nil
+
+	case worktreeStepResultMsg:
+		return a.handleWorktreeStepResult(msg)
+
+	case worktreeSpinnerTickMsg:
+		if a.viewMode == ViewWorktreeSpinner {
+			a.worktreeSpinner.Tick()
+			return a, tickWorktreeSpinner()
+		}
+		return a, nil
+
+	case settingsGHCheckResultMsg:
+		return a.handleSettingsGHCheck(msg)
 
 	case PRDUpdateMsg:
 		return a.handlePRDUpdate(msg)
@@ -338,6 +447,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// Handle settings overlay (can be opened/closed from any view)
+		if msg.String() == "," {
+			if a.viewMode == ViewSettings {
+				// Close settings
+				a.viewMode = a.previousViewMode
+				return a, nil
+			}
+			if a.viewMode == ViewDashboard || a.viewMode == ViewLog || a.viewMode == ViewPicker || a.viewMode == ViewCompletion {
+				a.previousViewMode = a.viewMode
+				a.settingsOverlay.SetSize(a.width, a.height)
+				a.settingsOverlay.LoadFromConfig(a.config)
+				a.viewMode = ViewSettings
+				return a, nil
+			}
+		}
+
 		// Handle help view (only Esc closes it besides ?)
 		if a.viewMode == ViewHelp {
 			if msg.String() == "esc" {
@@ -345,6 +470,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Ignore other keys in help view
 			return a, nil
+		}
+
+		// Handle settings view
+		if a.viewMode == ViewSettings {
+			return a.handleSettingsKeys(msg)
 		}
 
 		// Handle picker view separately (it has its own input mode)
@@ -357,6 +487,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.handleBranchWarningKeys(msg)
 		}
 
+		// Handle worktree spinner view - only Esc is active
+		if a.viewMode == ViewWorktreeSpinner {
+			return a.handleWorktreeSpinnerKeys(msg)
+		}
+
+		// Handle completion screen view
+		if a.viewMode == ViewCompletion {
+			return a.handleCompletionKeys(msg)
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			a.stopAllLoops()
@@ -367,7 +507,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			if a.viewMode == ViewDashboard {
 				a.viewMode = ViewLog
-				a.logViewer.SetSize(a.width, a.height-headerHeight-footerHeight-2)
+				a.logViewer.SetSize(a.width, a.height-a.effectiveHeaderHeight()-footerHeight-2)
 			} else {
 				a.viewMode = ViewDashboard
 			}
@@ -484,21 +624,56 @@ func (a App) startLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
 	// Get the PRD directory
 	prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
 
-	// Check if on a protected branch
-	if git.IsGitRepo(a.baseDir) {
-		branch, err := git.GetCurrentBranch(a.baseDir)
-		if err == nil && git.IsProtectedBranch(branch) {
-			// Show branch warning dialog
-			a.branchWarning.SetSize(a.width, a.height)
-			a.branchWarning.SetContext(branch, prdName)
-			a.branchWarning.Reset()
-			a.pendingStartPRD = prdName
-			a.viewMode = ViewBranchWarning
-			return a, nil
-		}
+	if !git.IsGitRepo(a.baseDir) {
+		return a.doStartLoop(prdName, prdDir)
 	}
 
-	return a.doStartLoop(prdName, prdDir)
+	branch, err := git.GetCurrentBranch(a.baseDir)
+	if err != nil {
+		return a.doStartLoop(prdName, prdDir)
+	}
+
+	worktreePath := git.WorktreePathForPRD(a.baseDir, prdName)
+	relWorktreePath := fmt.Sprintf(".chief/worktrees/%s/", prdName)
+
+	// Determine dialog context
+	isProtected := git.IsProtectedBranch(branch)
+	anotherRunningInSameDir := a.isAnotherPRDRunningInSameDir(prdName)
+
+	if !isProtected && !anotherRunningInSameDir {
+		// No conflicts: skip the dialog entirely and start the loop directly
+		return a.doStartLoop(prdName, prdDir)
+	}
+
+	var dialogCtx DialogContext
+	if isProtected {
+		dialogCtx = DialogProtectedBranch
+	} else {
+		dialogCtx = DialogAnotherPRDRunning
+	}
+
+	// Show the dialog only for protected branch or another PRD running
+	a.branchWarning.SetSize(a.width, a.height)
+	a.branchWarning.SetContext(branch, prdName, relWorktreePath)
+	a.branchWarning.SetDialogContext(dialogCtx)
+	a.branchWarning.Reset()
+	a.pendingStartPRD = prdName
+	a.pendingWorktreePath = worktreePath
+	a.viewMode = ViewBranchWarning
+	return a, nil
+}
+
+// isAnotherPRDRunningInSameDir checks if another PRD is running in the project root (no worktree).
+func (a *App) isAnotherPRDRunningInSameDir(prdName string) bool {
+	if a.manager == nil {
+		return false
+	}
+	for _, inst := range a.manager.GetAllInstances() {
+		if inst.Name != prdName && inst.State == loop.LoopStateRunning && inst.WorktreeDir == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // doStartLoop actually starts the loop (after branch check).
@@ -593,6 +768,8 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		a.logViewer.AddEvent(event)
 	}
 
+	var autoActionCmd tea.Cmd
+
 	switch event.Type {
 	case loop.EventIterationStart:
 		if isCurrentPRD {
@@ -623,6 +800,10 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		if isCurrentPRD {
 			a.state = StateComplete
 			a.lastActivity = "All stories complete!"
+			autoActionCmd = a.showCompletionScreen(prdName)
+		} else {
+			// For background PRDs, trigger auto-push/PR without showing completion screen
+			autoActionCmd = a.runBackgroundAutoActions(prdName)
 		}
 		// Trigger completion callback for any PRD
 		if a.onCompletion != nil {
@@ -659,7 +840,10 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		a.tabBar.Refresh()
 	}
 
-	// Continue listening for manager events
+	// Continue listening for manager events, plus any auto-action commands
+	if autoActionCmd != nil {
+		return a, tea.Batch(a.listenForManagerEvents(), autoActionCmd)
+	}
 	return a, a.listenForManagerEvents()
 }
 
@@ -708,6 +892,12 @@ func (a App) View() string {
 		return a.renderHelpView()
 	case ViewBranchWarning:
 		return a.renderBranchWarningView()
+	case ViewWorktreeSpinner:
+		return a.renderWorktreeSpinnerView()
+	case ViewCompletion:
+		return a.renderCompletionView()
+	case ViewSettings:
+		return a.renderSettingsView()
 	default:
 		return a.renderDashboard()
 	}
@@ -748,6 +938,7 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		a.viewMode = ViewDashboard
 		a.pendingStartPRD = ""
+		a.pendingWorktreePath = ""
 		a.lastActivity = "Cancelled"
 		return a, nil
 
@@ -760,8 +951,9 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case "e":
-		// Start editing branch name if on the create branch option
-		if a.branchWarning.GetSelectedOption() == BranchOptionCreateBranch {
+		// Start editing branch name if on an option that involves a branch
+		opt := a.branchWarning.GetSelectedOption()
+		if opt == BranchOptionCreateWorktree || opt == BranchOptionCreateBranch {
 			a.branchWarning.StartEditMode()
 		}
 		return a, nil
@@ -770,9 +962,34 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		prdName := a.pendingStartPRD
 		prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
 		a.pendingStartPRD = ""
+		a.pendingWorktreePath = ""
 		a.viewMode = ViewDashboard
 
 		switch a.branchWarning.GetSelectedOption() {
+		case BranchOptionCreateWorktree:
+			branchName := a.branchWarning.GetSuggestedBranch()
+			worktreePath := git.WorktreePathForPRD(a.baseDir, prdName)
+			relWorktreePath := fmt.Sprintf(".chief/worktrees/%s/", prdName)
+
+			// Detect default branch for display
+			defaultBranch := "main"
+			if db, err := git.GetDefaultBranch(a.baseDir); err == nil {
+				defaultBranch = db
+			}
+
+			// Configure and show the spinner
+			a.worktreeSpinner.Configure(prdName, branchName, defaultBranch, relWorktreePath, a.config.Worktree.Setup)
+			a.worktreeSpinner.SetSize(a.width, a.height)
+			a.pendingStartPRD = prdName
+			a.pendingWorktreePath = worktreePath
+			a.viewMode = ViewWorktreeSpinner
+
+			// Start the first async step (create worktree which includes branch creation)
+			return a, tea.Batch(
+				tickWorktreeSpinner(),
+				a.runWorktreeStep(SpinnerStepCreateBranch, a.baseDir, worktreePath, branchName),
+			)
+
 		case BranchOptionCreateBranch:
 			// Create the branch with (possibly edited) name
 			branchName := a.branchWarning.GetSuggestedBranch()
@@ -780,18 +997,615 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.lastActivity = "Error creating branch: " + err.Error()
 				return a, nil
 			}
+			// Track the branch on the manager instance
+			if instance := a.manager.GetInstance(prdName); instance != nil {
+				a.manager.UpdateWorktreeInfo(prdName, "", branchName)
+			}
 			a.lastActivity = "Created branch: " + branchName
 			// Now start the loop
 			return a.doStartLoop(prdName, prdDir)
 
 		case BranchOptionContinue:
-			// Continue on current branch
+			// Continue on current branch / run in same directory
 			return a.doStartLoop(prdName, prdDir)
 
 		case BranchOptionCancel:
 			a.lastActivity = "Cancelled"
 			return a, nil
 		}
+	}
+
+	return a, nil
+}
+
+// renderWorktreeSpinnerView renders the worktree setup spinner.
+func (a *App) renderWorktreeSpinnerView() string {
+	a.worktreeSpinner.SetSize(a.width, a.height)
+	return a.worktreeSpinner.Render()
+}
+
+// handleWorktreeSpinnerKeys handles keyboard input for the worktree spinner.
+func (a App) handleWorktreeSpinnerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Cancel setup and clean up
+		a.worktreeSpinner.Cancel()
+		a.cleanupWorktreeSetup()
+		a.viewMode = ViewDashboard
+		a.lastActivity = "Worktree setup cancelled"
+		a.pendingStartPRD = ""
+		a.pendingWorktreePath = ""
+		return a, nil
+	}
+	// Ignore all other keys during spinner
+	return a, nil
+}
+
+// cleanupWorktreeSetup cleans up a partially created worktree and branch.
+func (a *App) cleanupWorktreeSetup() {
+	if a.pendingWorktreePath != "" {
+		// Try to remove the worktree if it was created
+		if git.IsWorktree(a.pendingWorktreePath) {
+			_ = git.RemoveWorktree(a.baseDir, a.pendingWorktreePath)
+		}
+	}
+}
+
+// showCompletionScreen configures and shows the completion screen for a PRD.
+// Returns a tea.Cmd if auto-actions need to be started, nil otherwise.
+func (a *App) showCompletionScreen(prdName string) tea.Cmd {
+	// Count completed stories
+	completed := 0
+	total := len(a.prd.UserStories)
+	for _, story := range a.prd.UserStories {
+		if story.Passes {
+			completed++
+		}
+	}
+
+	// Get branch from manager
+	branch := ""
+	if instance := a.manager.GetInstance(prdName); instance != nil {
+		branch = instance.Branch
+	}
+
+	// Count commits on the branch
+	commitCount := 0
+	if branch != "" {
+		commitCount = git.CommitCount(a.baseDir, branch)
+	}
+
+	// Check if auto-actions are configured
+	hasAutoActions := a.config != nil && (a.config.OnComplete.Push || a.config.OnComplete.CreatePR)
+
+	a.completionScreen.Configure(prdName, completed, total, branch, commitCount, hasAutoActions)
+	a.completionScreen.SetSize(a.width, a.height)
+	a.viewMode = ViewCompletion
+
+	// Trigger auto-push if configured and branch is set
+	if a.config != nil && a.config.OnComplete.Push && branch != "" {
+		a.completionScreen.SetPushInProgress()
+		return tea.Batch(
+			tickCompletionSpinner(),
+			a.runAutoPush(),
+		)
+	}
+
+	// If only PR is configured (no push), we can't create a PR without pushing first
+	// So PR-only without push is a no-op (push is required for PR)
+	return nil
+}
+
+// backgroundAutoActionResultMsg is sent when a background PRD auto-action completes.
+type backgroundAutoActionResultMsg struct {
+	prdName string
+	action  string // "push" or "pr"
+	err     error
+}
+
+// runBackgroundAutoActions triggers auto-push/PR for a background PRD that just completed.
+func (a *App) runBackgroundAutoActions(prdName string) tea.Cmd {
+	if a.config == nil || !a.config.OnComplete.Push {
+		return nil
+	}
+
+	instance := a.manager.GetInstance(prdName)
+	if instance == nil || instance.Branch == "" {
+		return nil
+	}
+
+	branch := instance.Branch
+	dir := a.baseDir
+	if instance.WorktreeDir != "" {
+		dir = instance.WorktreeDir
+	}
+
+	return func() tea.Msg {
+		if err := git.PushBranch(dir, branch); err != nil {
+			return backgroundAutoActionResultMsg{prdName: prdName, action: "push", err: err}
+		}
+		return backgroundAutoActionResultMsg{prdName: prdName, action: "push"}
+	}
+}
+
+// handleAutoActionResult handles the result of an auto-action (push or PR creation).
+func (a App) handleAutoActionResult(msg autoActionResultMsg) (tea.Model, tea.Cmd) {
+	switch msg.action {
+	case "push":
+		if msg.err != nil {
+			a.completionScreen.SetPushError(msg.err.Error())
+			return a, nil
+		}
+		a.completionScreen.SetPushSuccess()
+
+		// If PR creation is configured, start it now
+		if a.config != nil && a.config.OnComplete.CreatePR && a.completionScreen.HasBranch() {
+			a.completionScreen.SetPRInProgress()
+			return a, tea.Batch(
+				tickCompletionSpinner(),
+				a.runAutoCreatePR(),
+			)
+		}
+		return a, nil
+
+	case "pr":
+		if msg.err != nil {
+			a.completionScreen.SetPRError(msg.err.Error())
+			return a, nil
+		}
+		a.completionScreen.SetPRSuccess(msg.prURL, msg.prTitle)
+		return a, nil
+	}
+	return a, nil
+}
+
+// handleBackgroundAutoAction handles auto-action results for background PRDs.
+func (a App) handleBackgroundAutoAction(msg backgroundAutoActionResultMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		// Log error but don't block - background action failed silently
+		return a, nil
+	}
+
+	if msg.action == "push" && a.config != nil && a.config.OnComplete.CreatePR {
+		// Chain PR creation after successful push
+		instance := a.manager.GetInstance(msg.prdName)
+		if instance != nil && instance.Branch != "" {
+			prdName := msg.prdName
+			branch := instance.Branch
+			dir := a.baseDir
+			prdPath := filepath.Join(a.baseDir, ".chief", "prds", prdName, "prd.json")
+			return a, func() tea.Msg {
+				p, err := prd.LoadPRD(prdPath)
+				if err != nil {
+					return backgroundAutoActionResultMsg{prdName: prdName, action: "pr", err: err}
+				}
+				title := git.PRTitleFromPRD(prdName, p)
+				body := git.PRBodyFromPRD(p)
+				_, err = git.CreatePR(dir, branch, title, body)
+				return backgroundAutoActionResultMsg{prdName: prdName, action: "pr", err: err}
+			}
+		}
+	}
+
+	return a, nil
+}
+
+// runAutoPush returns a tea.Cmd that pushes the branch in the background.
+func (a *App) runAutoPush() tea.Cmd {
+	branch := a.completionScreen.Branch()
+	// Use worktree dir if available, otherwise base dir
+	dir := a.baseDir
+	if instance := a.manager.GetInstance(a.completionScreen.PRDName()); instance != nil && instance.WorktreeDir != "" {
+		dir = instance.WorktreeDir
+	}
+	return func() tea.Msg {
+		err := git.PushBranch(dir, branch)
+		return autoActionResultMsg{action: "push", err: err}
+	}
+}
+
+// runAutoCreatePR returns a tea.Cmd that creates a PR in the background.
+func (a *App) runAutoCreatePR() tea.Cmd {
+	prdName := a.completionScreen.PRDName()
+	branch := a.completionScreen.Branch()
+	dir := a.baseDir
+
+	// Load the PRD to generate PR content
+	prdPath := filepath.Join(a.baseDir, ".chief", "prds", prdName, "prd.json")
+	return func() tea.Msg {
+		p, err := prd.LoadPRD(prdPath)
+		if err != nil {
+			return autoActionResultMsg{action: "pr", err: fmt.Errorf("failed to load PRD: %s", err.Error())}
+		}
+		title := git.PRTitleFromPRD(prdName, p)
+		body := git.PRBodyFromPRD(p)
+		url, err := git.CreatePR(dir, branch, title, body)
+		if err != nil {
+			return autoActionResultMsg{action: "pr", err: err}
+		}
+		return autoActionResultMsg{action: "pr", prURL: url, prTitle: title}
+	}
+}
+
+// renderCompletionView renders the completion screen.
+func (a *App) renderCompletionView() string {
+	a.completionScreen.SetSize(a.width, a.height)
+	return a.completionScreen.Render()
+}
+
+// renderSettingsView renders the settings overlay.
+func (a *App) renderSettingsView() string {
+	a.settingsOverlay.SetSize(a.width, a.height)
+	return a.settingsOverlay.Render()
+}
+
+// handleSettingsKeys handles keyboard input for the settings overlay.
+func (a App) handleSettingsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Dismiss GH error on any key
+	if a.settingsOverlay.HasGHError() {
+		a.settingsOverlay.DismissGHError()
+		return a, nil
+	}
+
+	// Handle inline text editing
+	if a.settingsOverlay.IsEditing() {
+		switch msg.String() {
+		case "enter":
+			a.settingsOverlay.ConfirmEdit()
+			a.settingsOverlay.ApplyToConfig(a.config)
+			_ = config.Save(a.baseDir, a.config)
+			return a, nil
+		case "esc":
+			a.settingsOverlay.CancelEdit()
+			return a, nil
+		case "backspace":
+			a.settingsOverlay.DeleteEditChar()
+			return a, nil
+		default:
+			if len(msg.String()) == 1 {
+				a.settingsOverlay.AddEditChar(rune(msg.String()[0]))
+			}
+			return a, nil
+		}
+	}
+
+	switch msg.String() {
+	case "esc":
+		a.viewMode = a.previousViewMode
+		return a, nil
+	case "q", "ctrl+c":
+		a.stopAllLoops()
+		a.stopWatcher()
+		return a, tea.Quit
+	case "up", "k":
+		a.settingsOverlay.MoveUp()
+		return a, nil
+	case "down", "j":
+		a.settingsOverlay.MoveDown()
+		return a, nil
+	case "enter":
+		item := a.settingsOverlay.GetSelectedItem()
+		if item == nil {
+			return a, nil
+		}
+		switch item.Type {
+		case SettingsItemBool:
+			key, newVal := a.settingsOverlay.ToggleBool()
+			if key == "onComplete.createPR" && newVal {
+				// Validate GH CLI asynchronously
+				return a, func() tea.Msg {
+					installed, authenticated, err := git.CheckGHCLI()
+					return settingsGHCheckResultMsg{installed: installed, authenticated: authenticated, err: err}
+				}
+			}
+			a.settingsOverlay.ApplyToConfig(a.config)
+			_ = config.Save(a.baseDir, a.config)
+			return a, nil
+		case SettingsItemString:
+			a.settingsOverlay.StartEditing()
+			return a, nil
+		}
+	}
+
+	return a, nil
+}
+
+// handleSettingsGHCheck handles the GH CLI check result from settings.
+func (a App) handleSettingsGHCheck(msg settingsGHCheckResultMsg) (tea.Model, tea.Cmd) {
+	if a.viewMode != ViewSettings {
+		return a, nil
+	}
+
+	if msg.err != nil || !msg.installed || !msg.authenticated {
+		// Validation failed - revert toggle and show error
+		a.settingsOverlay.RevertToggle()
+		errMsg := "GitHub CLI (gh) is not installed"
+		if msg.installed && !msg.authenticated {
+			errMsg = "GitHub CLI (gh) is not authenticated. Run: gh auth login"
+		}
+		if msg.err != nil {
+			errMsg = msg.err.Error()
+		}
+		a.settingsOverlay.SetGHError(errMsg)
+		return a, nil
+	}
+
+	// Validation passed - save the config
+	a.settingsOverlay.ApplyToConfig(a.config)
+	_ = config.Save(a.baseDir, a.config)
+	return a, nil
+}
+
+// handleCompletionKeys handles keyboard input for the completion screen.
+func (a App) handleCompletionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		a.stopAllLoops()
+		a.stopWatcher()
+		return a, tea.Quit
+
+	case "l":
+		// Switch to the picker
+		a.picker.Refresh()
+		a.picker.SetSize(a.width, a.height)
+		a.viewMode = ViewPicker
+		return a, nil
+
+	case "m":
+		// Merge the completed PRD's branch
+		if a.completionScreen.HasBranch() {
+			branch := a.completionScreen.Branch()
+			baseDir := a.baseDir
+			a.viewMode = ViewDashboard
+			return a, func() tea.Msg {
+				conflicts, err := git.MergeBranch(baseDir, branch)
+				if err != nil {
+					return mergeResultMsg{branch: branch, conflicts: conflicts, err: err}
+				}
+				output := parseMergeSuccessMessage(baseDir, branch)
+				return mergeResultMsg{branch: branch, output: output}
+			}
+		}
+		return a, nil
+
+	case "c":
+		// Clean the PRD's worktree - switch to picker with clean dialog
+		if a.completionScreen.HasBranch() {
+			prdName := a.completionScreen.PRDName()
+			a.picker.Refresh()
+			a.picker.SetSize(a.width, a.height)
+			// Select the completed PRD in the picker
+			for i, entry := range a.picker.entries {
+				if entry.Name == prdName {
+					a.picker.selectedIndex = i
+					break
+				}
+			}
+			if a.picker.CanClean() {
+				a.picker.StartCleanConfirmation()
+			}
+			a.viewMode = ViewPicker
+		}
+		return a, nil
+
+	case "esc":
+		a.viewMode = ViewDashboard
+		return a, nil
+	}
+
+	return a, nil
+}
+
+// tickCompletionSpinner returns a tea.Cmd that ticks the completion screen spinner.
+func tickCompletionSpinner() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return completionSpinnerTickMsg{}
+	})
+}
+
+// tickWorktreeSpinner returns a tea.Cmd that ticks the spinner animation.
+func tickWorktreeSpinner() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return worktreeSpinnerTickMsg{}
+	})
+}
+
+// runWorktreeStep runs a worktree setup step asynchronously.
+func (a *App) runWorktreeStep(step WorktreeSpinnerStep, baseDir, worktreePath, branchName string) tea.Cmd {
+	switch step {
+	case SpinnerStepCreateBranch:
+		return func() tea.Msg {
+			// CreateWorktree handles both branch creation and worktree addition
+			if err := git.CreateWorktree(baseDir, worktreePath, branchName); err != nil {
+				return worktreeStepResultMsg{step: SpinnerStepCreateBranch, err: err}
+			}
+			return worktreeStepResultMsg{step: SpinnerStepCreateBranch}
+		}
+
+	case SpinnerStepRunSetup:
+		setupCmd := a.config.Worktree.Setup
+		return func() tea.Msg {
+			cmd := exec.Command("sh", "-c", setupCmd)
+			cmd.Dir = worktreePath
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return worktreeStepResultMsg{
+					step: SpinnerStepRunSetup,
+					err:  fmt.Errorf("%s\n%s", err.Error(), strings.TrimSpace(string(out))),
+				}
+			}
+			return worktreeStepResultMsg{step: SpinnerStepRunSetup}
+		}
+	}
+	return nil
+}
+
+// handleWorktreeStepResult handles the result of a worktree setup step.
+func (a App) handleWorktreeStepResult(msg worktreeStepResultMsg) (tea.Model, tea.Cmd) {
+	// Ignore results if we've already cancelled or left the spinner view
+	if a.viewMode != ViewWorktreeSpinner || a.worktreeSpinner.IsCancelled() {
+		return a, nil
+	}
+
+	if msg.err != nil {
+		a.worktreeSpinner.SetError(msg.err.Error())
+		return a, nil
+	}
+
+	switch msg.step {
+	case SpinnerStepCreateBranch:
+		// Branch creation completed - advance through both branch and worktree steps
+		// (CreateWorktree does both in one call)
+		a.worktreeSpinner.AdvanceStep() // Complete "Creating branch"
+		a.worktreeSpinner.AdvanceStep() // Complete "Creating worktree"
+
+		// Check if we need to run setup
+		if a.worktreeSpinner.HasSetupCommand() {
+			return a, a.runWorktreeStep(SpinnerStepRunSetup, a.baseDir, a.pendingWorktreePath, "")
+		}
+
+		// No setup - we're done, transition to loop
+		return a.finishWorktreeSetup()
+
+	case SpinnerStepRunSetup:
+		a.worktreeSpinner.AdvanceStep() // Complete "Running setup"
+		return a.finishWorktreeSetup()
+	}
+
+	return a, nil
+}
+
+// finishWorktreeSetup completes the worktree setup and starts the loop.
+func (a App) finishWorktreeSetup() (tea.Model, tea.Cmd) {
+	prdName := a.pendingStartPRD
+	worktreePath := a.pendingWorktreePath
+	branchName := a.worktreeSpinner.branchName
+	prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
+
+	// Register or update with worktree info
+	prdPath := filepath.Join(prdDir, "prd.json")
+	if instance := a.manager.GetInstance(prdName); instance == nil {
+		a.manager.RegisterWithWorktree(prdName, prdPath, worktreePath, branchName)
+	} else {
+		a.manager.UpdateWorktreeInfo(prdName, worktreePath, branchName)
+	}
+
+	a.lastActivity = fmt.Sprintf("Created worktree at %s on branch %s", worktreePath, branchName)
+	a.viewMode = ViewDashboard
+	a.pendingStartPRD = ""
+	a.pendingWorktreePath = ""
+
+	return a.doStartLoop(prdName, prdDir)
+}
+
+// handleMergeResult handles the result of an async merge operation.
+func (a App) handleMergeResult(msg mergeResultMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		a.picker.SetMergeResult(&MergeResult{
+			Success:   false,
+			Message:   fmt.Sprintf("Failed to merge %s into current branch", msg.branch),
+			Conflicts: msg.conflicts,
+			Branch:    msg.branch,
+		})
+	} else {
+		a.picker.SetMergeResult(&MergeResult{
+			Success: true,
+			Message: msg.output,
+			Branch:  msg.branch,
+		})
+		a.lastActivity = fmt.Sprintf("Merged %s", msg.branch)
+	}
+	// Switch to picker to show the merge result if not already there
+	if a.viewMode != ViewPicker {
+		a.picker.Refresh()
+		a.picker.SetSize(a.width, a.height)
+		a.viewMode = ViewPicker
+	}
+	return a, nil
+}
+
+// handleCleanConfirmationKeys handles keyboard input for the clean confirmation dialog.
+func (a App) handleCleanConfirmationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		a.picker.CancelCleanConfirmation()
+		return a, nil
+	case "up", "k":
+		a.picker.CleanConfirmMoveUp()
+		return a, nil
+	case "down", "j":
+		a.picker.CleanConfirmMoveDown()
+		return a, nil
+	case "enter":
+		cc := a.picker.GetCleanConfirmation()
+		if cc == nil {
+			return a, nil
+		}
+
+		option := a.picker.GetCleanOption()
+		if option == CleanOptionCancel {
+			a.picker.CancelCleanConfirmation()
+			return a, nil
+		}
+
+		prdName := cc.EntryName
+		branch := cc.Branch
+		clearBranch := option == CleanOptionRemoveAll
+		baseDir := a.baseDir
+		worktreePath := git.WorktreePathForPRD(baseDir, prdName)
+
+		return a, func() tea.Msg {
+			// Remove the worktree
+			if err := git.RemoveWorktree(baseDir, worktreePath); err != nil {
+				return cleanResultMsg{
+					prdName: prdName,
+					success: false,
+					message: fmt.Sprintf("Failed to remove worktree: %s", err.Error()),
+				}
+			}
+
+			// Delete branch if requested
+			if clearBranch && branch != "" {
+				if err := git.DeleteBranch(baseDir, branch); err != nil {
+					return cleanResultMsg{
+						prdName:     prdName,
+						success:     true,
+						message:     fmt.Sprintf("Removed worktree but failed to delete branch: %s", err.Error()),
+						clearBranch: false,
+					}
+				}
+			}
+
+			msg := fmt.Sprintf("Removed worktree for %s", prdName)
+			if clearBranch && branch != "" {
+				msg = fmt.Sprintf("Removed worktree and deleted branch %s", branch)
+			}
+			return cleanResultMsg{
+				prdName:     prdName,
+				success:     true,
+				message:     msg,
+				clearBranch: clearBranch,
+			}
+		}
+	}
+
+	return a, nil
+}
+
+// handleCleanResult handles the result of an async clean operation.
+func (a App) handleCleanResult(msg cleanResultMsg) (tea.Model, tea.Cmd) {
+	a.picker.CancelCleanConfirmation()
+	a.picker.SetCleanResult(&CleanResult{
+		Success: msg.success,
+		Message: msg.message,
+	})
+
+	if msg.success {
+		// Clear worktree info from manager
+		if a.manager != nil {
+			a.manager.ClearWorktreeInfo(msg.prdName, msg.clearBranch)
+		}
+		a.picker.Refresh()
+		a.lastActivity = fmt.Sprintf("Cleaned worktree for %s", msg.prdName)
 	}
 
 	return a, nil
@@ -834,6 +1648,25 @@ func (a App) handlePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 		}
+	}
+
+	// Dismiss clean result on any key
+	if a.picker.HasCleanResult() {
+		a.picker.ClearCleanResult()
+		a.picker.Refresh()
+		return a, nil
+	}
+
+	// Handle clean confirmation dialog
+	if a.picker.HasCleanConfirmation() {
+		return a.handleCleanConfirmationKeys(msg)
+	}
+
+	// Dismiss merge result on any key
+	if a.picker.HasMergeResult() {
+		a.picker.ClearMergeResult()
+		a.picker.Refresh()
+		return a, nil
 	}
 
 	// Normal picker mode
@@ -906,9 +1739,44 @@ func (a App) handlePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, nil
+
+	case "m":
+		// Merge completed PRD's branch
+		if a.picker.CanMerge() {
+			entry := a.picker.GetSelectedEntry()
+			branch := entry.Branch
+			baseDir := a.baseDir
+			return a, func() tea.Msg {
+				conflicts, err := git.MergeBranch(baseDir, branch)
+				if err != nil {
+					return mergeResultMsg{branch: branch, conflicts: conflicts, err: err}
+				}
+				// Build success message with merge details
+				output := parseMergeSuccessMessage(baseDir, branch)
+				return mergeResultMsg{branch: branch, output: output}
+			}
+		}
+		return a, nil
+
+	case "c":
+		// Clean worktree for non-running PRD
+		if a.picker.CanClean() {
+			a.picker.StartCleanConfirmation()
+		}
+		return a, nil
 	}
 
 	return a, nil
+}
+
+// parseMergeSuccessMessage constructs a success message after a merge.
+func parseMergeSuccessMessage(repoDir, branch string) string {
+	// Try to get the default branch for display
+	defaultBranch := "current branch"
+	if db, err := git.GetDefaultBranch(repoDir); err == nil {
+		defaultBranch = db
+	}
+	return fmt.Sprintf("Merged %s into %s", branch, defaultBranch)
 }
 
 // switchToPRD switches to a different PRD (view only - does not stop other loops).

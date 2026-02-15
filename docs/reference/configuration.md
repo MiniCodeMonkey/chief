@@ -1,10 +1,83 @@
 ---
-description: Chief configuration reference. CLI flags and settings for customizing Chief's behavior.
+description: Chief configuration reference. Project config file, CLI flags, Settings TUI, and first-time setup flow.
 ---
 
 # Configuration
 
-Chief is designed to work with zero configuration. All state lives in `.chief/` and settings are passed via CLI flags.
+Chief uses a project-level configuration file at `.chief/config.yaml` for persistent settings, plus CLI flags for per-run options.
+
+## Config File (`.chief/config.yaml`)
+
+Chief stores project-level settings in `.chief/config.yaml`. This file is created automatically during first-time setup or when you change settings via the Settings TUI.
+
+### Format
+
+```yaml
+worktree:
+  setup: "npm install"
+onComplete:
+  push: true
+  createPR: true
+```
+
+### Config Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
+| `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
+| `onComplete.createPR` | bool | `false` | Automatically create a pull request when a PRD completes (requires `gh` CLI) |
+
+### Example Configurations
+
+**Minimal (defaults):**
+
+```yaml
+worktree:
+  setup: ""
+onComplete:
+  push: false
+  createPR: false
+```
+
+**Full automation:**
+
+```yaml
+worktree:
+  setup: "npm install && npm run build"
+onComplete:
+  push: true
+  createPR: true
+```
+
+## Settings TUI
+
+Press `,` from any view in the TUI to open the Settings overlay. This provides an interactive way to view and edit all config values.
+
+Settings are organized by section:
+
+- **Worktree** — Setup command (string, editable inline)
+- **On Complete** — Push to remote (toggle), Create pull request (toggle)
+
+Changes are saved immediately to `.chief/config.yaml` on every edit.
+
+When toggling "Create pull request" to Yes, Chief validates that the `gh` CLI is installed and authenticated. If validation fails, the toggle reverts and an error message is shown with installation instructions.
+
+Navigate with `j`/`k` or arrow keys. Press `Enter` to toggle booleans or edit strings. Press `Esc` to close.
+
+## First-Time Setup
+
+When you launch Chief for the first time in a project, you'll be prompted to configure:
+
+1. **Post-completion settings** — Whether to automatically push branches and create PRs when a PRD completes
+2. **Worktree setup command** — A shell command to run in new worktrees (e.g., installing dependencies)
+
+For the setup command, you can:
+- **Let Claude figure it out** (Recommended) — Claude analyzes your project and suggests appropriate setup commands
+- **Enter manually** — Type a custom command
+- **Skip** — Leave it empty
+
+These settings are saved to `.chief/config.yaml` and can be changed at any time via the Settings TUI (`,`).
 
 ## CLI Flags
 
@@ -39,11 +112,3 @@ Chief runs Claude with full permissions to modify your codebase. Only run Chief 
 
 For additional isolation, consider using [Claude Code's sandbox mode](https://docs.anthropic.com/en/docs/claude-code/sandboxing) or running Chief in a Docker container.
 :::
-
-## No Global Config
-
-Intentionally, Chief has no global configuration file. This ensures:
-
-1. **Portability**: Project works the same on any machine
-2. **Reproducibility**: No hidden state affecting behavior
-3. **Simplicity**: One place to look for all settings

@@ -1,0 +1,19 @@
+Analyze this project and determine what commands are needed to set up a new working copy (git worktree) for development.
+
+Look at:
+- Package manager files (package.json, go.mod, Cargo.toml, requirements.txt, Gemfile, etc.)
+- Build configuration files
+- Any setup scripts or Makefiles
+
+Return ONLY the shell command(s) needed to install dependencies and prepare the project for development. Multiple commands should be joined with `&&`.
+
+Examples:
+- Node.js project: `npm install`
+- Go project: `go mod download`
+- Python project: `pip install -r requirements.txt`
+- Rust project: `cargo build`
+- Mixed project: `npm install && go mod download`
+
+If no setup is needed, return: `echo "No setup needed"`
+
+IMPORTANT: Return ONLY the command string, nothing else. No explanation, no markdown, no code blocks. Just the raw command.

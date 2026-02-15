@@ -161,6 +161,91 @@ chief --no-sound
    - Missing quotes around keys
    - Unescaped characters in strings
 
+## Worktree Setup Failures
+
+**Symptom:** Worktree creation fails when starting a PRD.
+
+**Cause:** The branch already exists, the worktree path is in use, or git state is corrupted.
+
+**Solution:**
+
+1. Chief automatically handles common cases (reuses valid worktrees, cleans stale ones). If it still fails:
+
+2. Manually clean up:
+   ```bash
+   # Remove the worktree
+   git worktree remove .chief/worktrees/<prd-name> --force
+
+   # Delete the branch if needed
+   git branch -D chief/<prd-name>
+
+   # Prune git's worktree tracking
+   git worktree prune
+   ```
+
+3. Restart Chief and try again
+
+## PR Creation Failures
+
+**Symptom:** Auto-PR creation fails after a PRD completes.
+
+**Cause:** `gh` CLI not installed, not authenticated, or network issues.
+
+**Solution:**
+
+1. Verify `gh` is installed and authenticated:
+   ```bash
+   gh auth status
+   ```
+
+2. If not installed, get it from [cli.github.com](https://cli.github.com/)
+
+3. If not authenticated:
+   ```bash
+   gh auth login
+   ```
+
+4. You can also create the PR manually:
+   ```bash
+   git push -u origin chief/<prd-name>
+   gh pr create --title "feat: <prd-name>" --body "..."
+   ```
+
+5. Auto-PR can be disabled in Settings (`,`) — push-only mode still works
+
+## Orphaned Worktrees
+
+**Symptom:** The picker shows entries marked `[orphaned]` or `[orphaned worktree]`.
+
+**Cause:** A previous Chief session crashed or was terminated without cleaning up its worktree.
+
+**Solution:**
+
+1. Orphaned worktrees are harmless but take disk space
+2. Select the orphaned entry in the picker and press `c` to clean it up
+3. Choose "Remove worktree + delete branch" or "Remove worktree only" as appropriate
+
+Chief automatically prunes git's internal worktree tracking on startup, but does not auto-delete worktree directories to avoid data loss.
+
+## Merge Conflicts
+
+**Symptom:** Merging a completed branch fails with conflict list.
+
+**Cause:** The PRD's branch has changes that conflict with the target branch.
+
+**Solution:**
+
+1. Chief shows the list of conflicting files in the merge result dialog
+2. Resolve conflicts manually in a terminal:
+   ```bash
+   cd /path/to/project
+   git merge chief/<prd-name>
+   # Resolve conflicts in the listed files
+   git add .
+   git commit
+   ```
+3. Or push the branch and resolve via a pull request on GitHub
+
 ## Still Stuck?
 
 If none of these solutions help:
