@@ -422,7 +422,8 @@
         "Post-deploy instructions guide user through: SSH in, `chief login`, authenticate Claude Code, `sudo systemctl start chief`"
       ],
       "priority": 24,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-025",

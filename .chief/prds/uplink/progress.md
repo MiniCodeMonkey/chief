@@ -431,4 +431,34 @@
   - Startup version check runs in a goroutine (non-blocking) — print message asynchronously; may appear after other output
   - Serve version checker: immediate check on startup + `time.NewTicker(24 * time.Hour)` for periodic checks
   - `update.Options.ReleasesURL` field allows tests to point at mock server (same pattern as `auth.BaseURL`)
+- `handleMessage` returns `bool` — `true` signals the serve loop to exit cleanly (for remote update); all other handlers return `false`
+---
+
+## 2026-02-15 - US-023
+- **What was implemented:** Remote update via WebSocket — `trigger_update` handler that downloads and installs latest binary, sends confirmation, and exits cleanly for systemd restart
+- **Files changed:**
+  - `internal/cmd/remote_update.go` - New `handleTriggerUpdate()` function: checks for update, downloads/installs if available, sends `update_available` confirmation or `UPDATE_FAILED` error, returns bool indicating whether serve should exit
+  - `internal/cmd/remote_update_test.go` - 4 tests: already latest (unit), API error (unit), serve integration already latest, serve integration API error
+  - `internal/cmd/serve.go` - Added `trigger_update` routing in `handleMessage()`, changed `handleMessage` to return bool for exit signaling, main event loop handles exit cleanly after successful update
+  - `.chief/prds/uplink/prd.json` - Updated US-023 status
+- **Learnings for future iterations:**
+  - `handleMessage` now returns a `bool` — returning `true` signals the serve loop to exit cleanly (used for remote update)
+  - `handleTriggerUpdate` returns `true` only on successful update; errors and "already latest" return `false`
+  - Avoided `os.Exit(0)` in handler — instead, the serve loop performs clean shutdown and returns `nil` error, allowing systemd `Restart=always` to pick up the new binary
+  - Integration tests that need `ReleasesURL` cannot use `serveTestHelper` (it doesn't expose that field) — write them manually with the same hello/welcome/state_snapshot pattern
+  - Permission errors from `update.PerformUpdate` contain "Permission denied" text — matched via `strings.Contains` to send a descriptive `UPDATE_FAILED` error
+---
+
+## 2026-02-15 - US-024
+- **What was implemented:** Systemd service unit file and cloud-init setup script for VPS deployment
+- **Files changed:**
+  - `deploy/chief.service` - Systemd unit file with `ConditionPathExists` for credentials, `Type=simple`, `Restart=always`, `RestartSec=5`, `After=network-online.target`, security hardening directives
+  - `deploy/cloud-init.sh` - Idempotent cloud-init script that creates `chief` user, installs Chief binary (via existing `install.sh`), installs Claude Code CLI (via npm), creates workspace directory, writes and enables systemd service (but does NOT start it), prints post-deploy instructions
+- **Learnings for future iterations:**
+  - Deployment files live in `deploy/` directory at project root
+  - Systemd `ConditionPathExists` prevents service from start/restart-looping before auth — service won't start until credentials file exists
+  - Cloud-init script reuses the existing `install.sh` for binary installation (via `CHIEF_INSTALL_DIR` env var)
+  - Service is `enabled` but not `started` — user must first run `chief login` and authenticate Claude Code before starting
+  - Script handles multiple distros for Node.js installation (apt/dnf/yum)
+  - `ProtectSystem=strict` + `ReadWritePaths=/home/chief` limits write access to only the chief home directory
 ---
