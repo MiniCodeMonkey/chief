@@ -34,6 +34,8 @@
 - Serve command uses `ServeOptions.Ctx` (context) for testability — tests cancel ctx to stop serve loop
 - For handshake error tests (incompatible/auth_failed), call `srv.CloseClientConnections()` to prevent ws reconnection loops
 - Cancel context before `client.Close()` to avoid race where readLoop reconnects during Close()
+- Workspace scanner: `internal/workspace` package; `workspace.New(dir, wsClient)` creates scanner; `scanner.Run(ctx)` runs periodic scan loop; `scanner.Projects()` returns current list
+- `ws.Client.Send()` accepts `interface{}` — pass typed message structs directly, no need to marshal separately
 
 ---
 
@@ -178,4 +180,41 @@
   - The serve command passes `version` from build-time `Version` var in main.go through `ServeOptions.Version` to the handshake
   - Device name defaults to credential's device name, overridable via `--name` flag
   - Log output defaults to stdout; `--log-file` redirects `log.SetOutput()` to a file
+---
+
+## 2026-02-15 - US-010
+- **What was implemented:** Workspace scanner that discovers git repositories in the workspace directory
+- **Files changed:**
+  - `internal/workspace/scanner.go` - New `Scanner` struct with `Scan()`, `ScanAndUpdate()`, `Run()`, `Projects()` methods. Scans one level deep for `.git/` dirs, gathers branch/commit/PRD info, sends `project_list` over WebSocket on changes, re-scans every 60s
+  - `internal/workspace/scanner_test.go` - 12 tests: discover repos, detect .chief, discover PRDs, multiple projects, empty workspace, permission errors, detect add/remove, periodic scanning with WebSocket, context cancellation, projectsEqual, branch detection
+  - `internal/cmd/serve.go` - Integrated scanner: starts `workspace.New(opts.Workspace, client).Run(ctx)` in a goroutine after handshake
+  - `.chief/prds/uplink/prd.json` - Updated US-010 status
+- **Learnings for future iterations:**
+  - `ws.Client.Send()` accepts `interface{}` and marshals it internally — pass the message struct directly, don't double-marshal
+  - `os.Stat()` doesn't require read permission on a file, only traverse on parent — to test permission errors, remove perms on the parent directory
+  - `sendProjectList()` must guard against nil client (scanner can be used standalone in tests)
+  - `projectsEqual()` compares by building a name→project map — handles different ordering between scans
+  - Git info gathered via `git rev-parse --abbrev-ref HEAD` (branch) and `git log -1 --format=%H%n%s%n%an%n%aI` (commit hash, message, author, ISO timestamp)
+  - PRD completion status formatted as `"passed/total"` (e.g., `"2/3"`)
+  - Scanner uses `time.NewTicker` for periodic scans; tests set `scanner.interval` to small values for speed
+- File watcher: `workspace.NewWatcher(dir, scanner, client)` creates watcher; `watcher.Activate(name)` enables deep watching; `watcher.Run(ctx)` runs event loop
+- `fsnotify` does NOT recurse into subdirectories — must explicitly `Add()` each subdirectory (e.g., each PRD dir inside `.chief/prds/`)
+- Watcher `Activate()` is called by serve command when `get_project` message is received (or run started, session opened)
+- `watcher.inactiveTimeout` can be set to small values in tests for fast inactivity cleanup testing
+---
+
+## 2026-02-15 - US-011
+- **What was implemented:** Selective file watching using `fsnotify` for workspace root and active project deep watchers
+- **Files changed:**
+  - `internal/workspace/watcher.go` - New `Watcher` struct with `Activate()`, `Run()`, `Close()`, inactivity cleanup, deep watcher setup/teardown for `.chief/`, `.chief/prds/` (+ subdirs), `.git/`. Sends `project_state` updates on file changes.
+  - `internal/workspace/watcher_test.go` - 9 tests: workspace root changes, activate project, unknown project, activity refresh, inactivity cleanup, PRD change sends project_state, git HEAD change sends project_state, context cancellation, no deep watchers for inactive projects
+  - `internal/cmd/serve.go` - Integrated watcher: creates `NewWatcher()` after scanner, passes to `handleMessage()` and `serveShutdown()`, activates project on `get_project` message
+  - `.chief/prds/uplink/prd.json` - Updated US-011 status
+- **Learnings for future iterations:**
+  - `fsnotify` watches individual directories, not recursive trees — must add each subdir explicitly (e.g., `.chief/prds/feature/`)
+  - `activeProject` struct tracks `watching` bool to prevent duplicate watcher setup
+  - Inactivity cleanup runs on a 1-minute ticker; tests override `inactiveTimeout` to milliseconds
+  - `handleMessage()` now accepts `*workspace.Watcher` to activate projects on `get_project`
+  - `serveShutdown()` now accepts `*workspace.Watcher` to close it during shutdown
+  - For git HEAD changes, `fsnotify` sees `HEAD.lock` operations — matching `strings.Contains(subPath, "HEAD")` catches both direct HEAD writes and lock-based updates
 ---

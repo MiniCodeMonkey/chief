@@ -206,7 +206,8 @@
         "Watcher setup/teardown is logged at debug level"
       ],
       "priority": 11,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-012",

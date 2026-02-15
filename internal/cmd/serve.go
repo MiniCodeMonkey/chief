@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -129,6 +130,15 @@ func RunServe(opts ServeOptions) error {
 	go scanner.Run(ctx)
 	log.Println("Workspace scanner started")
 
+	// Start file watcher
+	watcher, err := workspace.NewWatcher(opts.Workspace, scanner, client)
+	if err != nil {
+		log.Printf("Warning: could not start file watcher: %v", err)
+	} else {
+		go watcher.Run(ctx)
+		log.Println("File watcher started")
+	}
+
 	// Set up signal handling
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -141,30 +151,38 @@ func RunServe(opts ServeOptions) error {
 		select {
 		case <-ctx.Done():
 			log.Println("Context cancelled, shutting down...")
-			return serveShutdown(client)
+			return serveShutdown(client, watcher)
 
 		case sig := <-sigCh:
 			log.Printf("Received signal %s, shutting down...", sig)
-			return serveShutdown(client)
+			return serveShutdown(client, watcher)
 
 		case msg, ok := <-client.Receive():
 			if !ok {
 				// Channel closed, connection lost permanently
 				log.Println("WebSocket connection closed permanently")
-				return serveShutdown(client)
+				return serveShutdown(client, watcher)
 			}
-			handleMessage(client, msg)
+			handleMessage(client, watcher, msg)
 		}
 	}
 }
 
 // handleMessage routes incoming WebSocket messages.
-func handleMessage(client *ws.Client, msg ws.Message) {
+func handleMessage(client *ws.Client, watcher *workspace.Watcher, msg ws.Message) {
 	switch msg.Type {
 	case ws.TypePing:
 		pong := ws.NewMessage(ws.TypePong)
 		if err := client.Send(pong); err != nil {
 			log.Printf("Error sending pong: %v", err)
+		}
+	case ws.TypeGetProject:
+		// Activate file watching for the requested project
+		if watcher != nil {
+			var getProj ws.GetProjectMessage
+			if err := json.Unmarshal(msg.Raw, &getProj); err == nil && getProj.Project != "" {
+				watcher.Activate(getProj.Project)
+			}
 		}
 	default:
 		log.Printf("Received message type: %s", msg.Type)
@@ -172,8 +190,15 @@ func handleMessage(client *ws.Client, msg ws.Message) {
 }
 
 // serveShutdown performs clean shutdown of the serve command.
-func serveShutdown(client *ws.Client) error {
+func serveShutdown(client *ws.Client, watcher *workspace.Watcher) error {
 	log.Println("Shutting down...")
+
+	// Close file watcher
+	if watcher != nil {
+		if err := watcher.Close(); err != nil {
+			log.Printf("Error closing file watcher: %v", err)
+		}
+	}
 
 	// Close WebSocket connection
 	if err := client.Close(); err != nil {
