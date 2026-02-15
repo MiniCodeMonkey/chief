@@ -222,7 +222,8 @@
         "Activates file watching for the requested project (US-011)"
       ],
       "priority": 12,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-013",

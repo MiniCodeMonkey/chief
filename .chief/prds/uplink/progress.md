@@ -36,6 +36,11 @@
 - Cancel context before `client.Close()` to avoid race where readLoop reconnects during Close()
 - Workspace scanner: `internal/workspace` package; `workspace.New(dir, wsClient)` creates scanner; `scanner.Run(ctx)` runs periodic scan loop; `scanner.Projects()` returns current list
 - `ws.Client.Send()` accepts `interface{}` — pass typed message structs directly, no need to marshal separately
+- Scanner now supports `SetClient()` for deferred client setup and `FindProject(name)` for single-project lookup
+- State snapshot is sent after handshake AND on reconnect; use `sendStateSnapshot(client, scanner)` helper
+- `sendError(client, code, message, requestID)` helper sends typed error messages over WebSocket
+- `serveTestHelper(t, workspacePath, serverFn)` encapsulates WS test boilerplate (hello/welcome/state_snapshot/cancel)
+- After handshake, server always receives a `state_snapshot` message — existing tests must account for this
 
 ---
 
@@ -217,4 +222,20 @@
   - `handleMessage()` now accepts `*workspace.Watcher` to activate projects on `get_project`
   - `serveShutdown()` now accepts `*workspace.Watcher` to close it during shutdown
   - For git HEAD changes, `fsnotify` sees `HEAD.lock` operations — matching `strings.Contains(subPath, "HEAD")` catches both direct HEAD writes and lock-based updates
+---
+
+## 2026-02-15 - US-012
+- **What was implemented:** State snapshot on connect/reconnect, `list_projects`, `get_project`, and `get_prd` handlers with proper error responses
+- **Files changed:**
+  - `internal/cmd/serve.go` - Added `sendStateSnapshot()`, `sendError()`, `handleListProjects()`, `handleGetProject()`, `handleGetPRD()` functions; refactored `RunServe` to create scanner before WebSocket connect for immediate scan availability; `handleMessage` now routes `list_projects`, `get_project`, `get_prd` messages; state snapshot sent after handshake and on reconnect via `WithOnReconnect` callback
+  - `internal/cmd/serve_test.go` - Added 7 new tests: `StateSnapshotOnConnect`, `ListProjects`, `GetProject`, `GetProjectNotFound`, `GetPRD`, `GetPRDNotFound`, `GetPRDProjectNotFound`; added `createGitRepo()` helper and `serveTestHelper()` for cleaner test setup; updated PingPong test to handle state_snapshot message
+  - `internal/workspace/scanner.go` - Added `SetClient()` to set client after creation and `FindProject()` for single-project lookup by name
+- **Learnings for future iterations:**
+  - Scanner is now created before WebSocket client (with nil client), then `SetClient()` is called after client creation — this allows initial scan to populate project list before handshake
+  - `sendStateSnapshot()` is reused for both initial handshake and reconnect (via `WithOnReconnect` callback)
+  - `sendError()` utility includes `request_id` field to help clients correlate errors to their requests
+  - `get_prd` reads both `prd.md` (markdown content, optional) and `prd.json` (state) — content can be empty if prd.md doesn't exist yet
+  - Test helper `serveTestHelper()` encapsulates the boilerplate: reads hello, sends welcome, reads state_snapshot, then calls custom server function
+  - Existing PingPong test needed updating because state_snapshot is now sent before pong — the server must read it first
+  - `FindProject()` uses read lock and linear scan — fine for typical workspace sizes (dozens of projects)
 ---
