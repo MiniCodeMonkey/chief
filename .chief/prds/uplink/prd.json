@@ -133,7 +133,8 @@
         "All subsequent messages include `type`, `id` (UUID), and `timestamp` (ISO8601) fields"
       ],
       "priority": 7,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-008",

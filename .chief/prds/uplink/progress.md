@@ -24,6 +24,9 @@
 - Use `gorilla/websocket` library for WebSocket connections
 - WebSocket test pattern: use `httptest.NewServer` + `websocket.Upgrader` for mock servers; `wsURL()` helper to convert HTTP to WS URL
 - `WithOnReconnect(fn)` option allows serve command to re-send state snapshot on reconnect
+- Protocol handshake: `client.Handshake(accessToken, version, deviceName)` after `Connect()` — sends `hello`, waits for `welcome`/`incompatible`/`auth_failed`
+- UUID generation: `ws.newUUID()` uses `crypto/rand` (no external dependency); `ws.NewMessage(type)` creates envelope with UUID + ISO8601 timestamp
+- Handshake errors: `*ErrIncompatible` (version mismatch, do NOT retry), `ErrAuthFailed` (deauthorized), `ErrHandshakeTimeout` (10s timeout)
 
 ---
 
@@ -120,4 +123,19 @@
   - Test pattern for WebSocket: `httptest.NewServer` with `websocket.Upgrader` in handler, convert URL with `strings.TrimPrefix(s.URL, "http")` → `"ws" + ...`
   - `atomic.Int32` useful for tracking connection counts in reconnection tests
   - Message struct uses `json.RawMessage` for `Raw` field to preserve the full original message for downstream consumers
+---
+
+## 2026-02-15 - US-007
+- **What was implemented:** Protocol handshake for WebSocket connections with authentication and version compatibility verification
+- **Files changed:**
+  - `internal/ws/handshake.go` - `Handshake()` method on `Client`, hello/welcome/incompatible/auth_failed message types, `newUUID()` v4 generator, `NewMessage()` envelope helper, `ErrIncompatible`/`ErrAuthFailed`/`ErrHandshakeTimeout` error types
+  - `internal/ws/handshake_test.go` - 8 tests: success, incompatible version, auth failure, timeout, correct hello contents verification, connection closed during handshake, UUID format, NewMessage helper
+  - `.chief/prds/uplink/prd.json` - Updated US-007 status
+- **Learnings for future iterations:**
+  - UUID v4 can be generated with `crypto/rand` + bit manipulation (set version=4, variant=RFC4122) — no need for external `google/uuid` dependency
+  - Handshake uses `client.Receive()` channel with `time.NewTimer` for timeout — clean select-based pattern
+  - `*ErrIncompatible` is a struct error (not sentinel) so it can carry the server's message; `ErrAuthFailed` and `ErrHandshakeTimeout` are sentinels
+  - Handshake must be called after `Connect()` — it sends the hello message and blocks until response or timeout
+  - When connection closes during handshake, the readLoop reconnects but handshake still times out (correct behavior — caller should retry)
+  - `runtime.GOOS` and `runtime.GOARCH` provide OS/architecture info for the hello message
 ---
