@@ -196,7 +196,11 @@ func RunServe(opts ServeOptions) error {
 				log.Println("WebSocket connection closed permanently")
 				return serveShutdown(client, watcher, sessions, runs)
 			}
-			handleMessage(client, scanner, watcher, sessions, runs, msg)
+			if shouldExit := handleMessage(client, scanner, watcher, sessions, runs, msg, version, opts.ReleasesURL); shouldExit {
+				log.Println("Update installed, exiting for restart...")
+				serveShutdown(client, watcher, sessions, runs)
+				return nil
+			}
 		}
 	}
 }
@@ -253,7 +257,8 @@ func sendError(client *ws.Client, code, message, requestID string) {
 }
 
 // handleMessage routes incoming WebSocket messages.
-func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *workspace.Watcher, sessions *sessionManager, runs *runManager, msg ws.Message) {
+// Returns true if the serve loop should exit (e.g., after a successful remote update).
+func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *workspace.Watcher, sessions *sessionManager, runs *runManager, msg ws.Message, version, releasesURL string) bool {
 	switch msg.Type {
 	case ws.TypePing:
 		pong := ws.NewMessage(ws.TypePong)
@@ -309,9 +314,13 @@ func handleMessage(client *ws.Client, scanner *workspace.Scanner, watcher *works
 	case ws.TypeCreateProject:
 		handleCreateProject(client, scanner, msg)
 
+	case ws.TypeTriggerUpdate:
+		return handleTriggerUpdate(client, msg, version, releasesURL)
+
 	default:
 		log.Printf("Received message type: %s", msg.Type)
 	}
+	return false
 }
 
 // handleListProjects handles a list_projects request.

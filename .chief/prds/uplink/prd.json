@@ -406,7 +406,8 @@
         "If already on latest version, returns informational message (not an error)"
       ],
       "priority": 23,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-024",
