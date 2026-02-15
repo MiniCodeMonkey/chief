@@ -604,13 +604,6 @@ func (p *PRDPicker) renderEntry(entry PRDEntry, selected bool, width int) string
 				infoStr := p.formatBranchPath(branchStr, pathStr, remaining)
 				line.WriteString(branchPathStyle.Render(infoStr))
 			}
-		} else if entry.Branch == "" && p.hasAnyBranch() {
-			// If other entries have branches, show "(current directory)" for alignment
-			branchPathStyle := lipgloss.NewStyle().Foreground(MutedColor)
-			remaining := width - 32
-			if remaining > 20 {
-				line.WriteString(branchPathStyle.Render("  (current directory)"))
-			}
 		}
 	}
 
@@ -671,16 +664,6 @@ func (p *PRDPicker) formatBranchPath(branch, path string, maxWidth int) string {
 		branchRunes = append(branchRunes[:availForBranch-1], '…')
 	}
 	return prefix + string(branchRunes)
-}
-
-// hasAnyBranch returns true if any entry has a branch set.
-func (p *PRDPicker) hasAnyBranch() bool {
-	for _, entry := range p.entries {
-		if entry.Branch != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // renderLoopStateIndicator renders a visual indicator for the loop state.

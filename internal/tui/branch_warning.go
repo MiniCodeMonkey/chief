@@ -84,15 +84,15 @@ func (b *BranchWarning) buildOptions() {
 	case DialogProtectedBranch:
 		b.options = []dialogOption{
 			{
-				label:       "Create worktree + branch",
-				hint:        b.worktreePath,
+				label:       "Create branch only",
+				hint:        "./ (current directory)",
 				recommended: true,
-				option:      BranchOptionCreateWorktree,
+				option:      BranchOptionCreateBranch,
 			},
 			{
-				label:  "Create branch only",
-				hint:   "./ (current directory)",
-				option: BranchOptionCreateBranch,
+				label:  "Create worktree + branch",
+				hint:   b.worktreePath,
+				option: BranchOptionCreateWorktree,
 			},
 			{
 				label:  fmt.Sprintf("Continue on %s", b.currentBranch),
@@ -289,7 +289,7 @@ func (b *BranchWarning) renderHeader(content *strings.Builder, modalWidth int) {
 		messageStyle := lipgloss.NewStyle().Foreground(TextColor)
 		content.WriteString(messageStyle.Render(fmt.Sprintf("You are on the '%s' branch.", b.currentBranch)))
 		content.WriteString("\n")
-		content.WriteString(messageStyle.Render("It's recommended to isolate work in a worktree."))
+		content.WriteString(messageStyle.Render("It's recommended to create a separate branch."))
 		content.WriteString("\n\n")
 
 	case DialogAnotherPRDRunning:

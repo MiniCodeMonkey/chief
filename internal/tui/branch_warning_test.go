@@ -16,22 +16,22 @@ func TestBranchWarningProtectedBranch(t *testing.T) {
 		t.Fatalf("expected 4 options for protected branch, got %d", len(bw.options))
 	}
 
-	// First option should be "Create worktree + branch" (recommended)
-	if bw.options[0].option != BranchOptionCreateWorktree {
-		t.Errorf("expected first option to be CreateWorktree, got %v", bw.options[0].option)
+	// First option should be "Create branch only" (recommended)
+	if bw.options[0].option != BranchOptionCreateBranch {
+		t.Errorf("expected first option to be CreateBranch, got %v", bw.options[0].option)
 	}
 	if !bw.options[0].recommended {
 		t.Error("expected first option to be recommended")
 	}
 
 	// Default selection should be first option
-	if bw.GetSelectedOption() != BranchOptionCreateWorktree {
-		t.Errorf("expected default selection to be CreateWorktree, got %v", bw.GetSelectedOption())
+	if bw.GetSelectedOption() != BranchOptionCreateBranch {
+		t.Errorf("expected default selection to be CreateBranch, got %v", bw.GetSelectedOption())
 	}
 
-	// Second option should be "Create branch only"
-	if bw.options[1].option != BranchOptionCreateBranch {
-		t.Errorf("expected second option to be CreateBranch, got %v", bw.options[1].option)
+	// Second option should be "Create worktree + branch"
+	if bw.options[1].option != BranchOptionCreateWorktree {
+		t.Errorf("expected second option to be CreateWorktree, got %v", bw.options[1].option)
 	}
 
 	// Third option should be "Continue on main"
@@ -209,11 +209,11 @@ func TestBranchWarningPathHints(t *testing.T) {
 	bw.SetDialogContext(DialogProtectedBranch)
 
 	// Check that options have correct path hints
-	if bw.options[0].hint != ".chief/worktrees/auth/" {
-		t.Errorf("expected worktree path hint, got %q", bw.options[0].hint)
+	if bw.options[0].hint != "./ (current directory)" {
+		t.Errorf("expected current dir hint for branch only, got %q", bw.options[0].hint)
 	}
-	if bw.options[1].hint != "./ (current directory)" {
-		t.Errorf("expected current dir hint for branch only, got %q", bw.options[1].hint)
+	if bw.options[1].hint != ".chief/worktrees/auth/" {
+		t.Errorf("expected worktree path hint, got %q", bw.options[1].hint)
 	}
 	if bw.options[2].hint != "./ (current directory)" {
 		t.Errorf("expected current dir hint for continue, got %q", bw.options[2].hint)

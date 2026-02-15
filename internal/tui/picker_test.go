@@ -64,7 +64,7 @@ func TestRenderEntryNoBranch(t *testing.T) {
 	}
 }
 
-func TestRenderEntryNoBranchShowsCurrentDirectoryWhenOthersHaveBranch(t *testing.T) {
+func TestRenderEntryNoBranchOmitsCurrentDirectoryLabel(t *testing.T) {
 	p := &PRDPicker{
 		basePath:   "/project",
 		currentPRD: "",
@@ -87,10 +87,10 @@ func TestRenderEntryNoBranchShowsCurrentDirectoryWhenOthersHaveBranch(t *testing
 		},
 	}
 
-	// Render the entry without a branch — should show "(current directory)" since another has a branch
+	// Render the entry without a branch — should NOT show "(current directory)" to keep worktrees low-key
 	result := p.renderEntry(p.entries[0], false, 80)
-	if !containsText(result, "(current directory)") {
-		t.Errorf("expected '(current directory)' for branchless entry when others have branches, got: %s", result)
+	if containsText(result, "(current directory)") {
+		t.Errorf("expected no '(current directory)' label for branchless entry, got: %s", result)
 	}
 }
 
@@ -173,28 +173,6 @@ func TestWorktreeDisplayPathWithoutWorktree(t *testing.T) {
 	result := p.worktreeDisplayPath(entry)
 	if result != "(current directory)" {
 		t.Errorf("expected '(current directory)', got %q", result)
-	}
-}
-
-func TestHasAnyBranch(t *testing.T) {
-	p := &PRDPicker{
-		entries: []PRDEntry{
-			{Name: "a", Branch: ""},
-			{Name: "b", Branch: "chief/b"},
-		},
-	}
-	if !p.hasAnyBranch() {
-		t.Error("expected hasAnyBranch() to return true when one entry has a branch")
-	}
-
-	p2 := &PRDPicker{
-		entries: []PRDEntry{
-			{Name: "a", Branch: ""},
-			{Name: "c", Branch: ""},
-		},
-	}
-	if p2.hasAnyBranch() {
-		t.Error("expected hasAnyBranch() to return false when no entries have branches")
 	}
 }
 

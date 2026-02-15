@@ -629,16 +629,19 @@ func (a App) startLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
 	isProtected := git.IsProtectedBranch(branch)
 	anotherRunningInSameDir := a.isAnotherPRDRunningInSameDir(prdName)
 
+	if !isProtected && !anotherRunningInSameDir {
+		// No conflicts: skip the dialog entirely and start the loop directly
+		return a.doStartLoop(prdName, prdDir)
+	}
+
 	var dialogCtx DialogContext
 	if isProtected {
 		dialogCtx = DialogProtectedBranch
-	} else if anotherRunningInSameDir {
-		dialogCtx = DialogAnotherPRDRunning
 	} else {
-		dialogCtx = DialogNoConflicts
+		dialogCtx = DialogAnotherPRDRunning
 	}
 
-	// Show the enhanced dialog
+	// Show the dialog only for protected branch or another PRD running
 	a.branchWarning.SetSize(a.width, a.height)
 	a.branchWarning.SetContext(branch, prdName, relWorktreePath)
 	a.branchWarning.SetDialogContext(dialogCtx)
