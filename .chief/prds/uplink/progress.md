@@ -432,6 +432,8 @@
   - Serve version checker: immediate check on startup + `time.NewTicker(24 * time.Hour)` for periodic checks
   - `update.Options.ReleasesURL` field allows tests to point at mock server (same pattern as `auth.BaseURL`)
 - `handleMessage` returns `bool` — `true` signals the serve loop to exit cleanly (for remote update); all other handlers return `false`
+- Setup token login: `chief login --setup-token <token>` exchanges via `POST /oauth/device/exchange`; cloud-init uses `CHIEF_SETUP_TOKEN` env var and a one-shot systemd service
+- Rate limiting: `ws.NewRateLimiter()` checks in main event loop before `handleMessage()`; `Reset()` on reconnect; ping is exempt; expensive ops (clone_repo, start_run, new_prd) have per-type 2/minute limits
 ---
 
 ## 2026-02-15 - US-023
@@ -461,4 +463,34 @@
   - Service is `enabled` but not `started` — user must first run `chief login` and authenticate Claude Code before starting
   - Script handles multiple distros for Node.js installation (apt/dnf/yum)
   - `ProtectSystem=strict` + `ReadWritePaths=/home/chief` limits write access to only the chief home directory
+---
+
+## 2026-02-15 - US-025
+- **What was implemented:** One-time setup token for automated Chief authentication during VPS provisioning
+- **Files changed:**
+  - `internal/cmd/login.go` - Added `SetupToken` field to `LoginOptions`, `exchangeSetupToken()` function that calls `POST /oauth/device/exchange` with the token and device name, returns credentials on success or falls back to manual login instructions on failure
+  - `internal/cmd/login_test.go` - Added 5 tests: setup token success, invalid token, expired token, server error, default device name with setup token
+  - `cmd/chief/main.go` - Added `--setup-token` flag to the `login` subcommand
+  - `deploy/cloud-init.sh` - Added `handle_setup_token()` function: writes token to `/tmp/chief-setup-token`, creates one-shot `chief-setup.service` that runs `chief login --setup-token` and starts the main service on success; updated usage docs and post-deploy instructions for token mode
+- **Learnings for future iterations:**
+  - Setup token flow is much simpler than device OAuth — single HTTP POST, no polling, no browser interaction
+  - `exchangeSetupToken()` is called early in `RunLogin()` (before the "already logged in" check) since it's non-interactive
+  - The one-shot systemd service (`chief-setup.service`) chains `chief login` → `rm token file` → `systemctl start chief` in a single ExecStart
+  - `ExecStartPost` cleans up the token file even if the login fails, ensuring the single-use token doesn't persist
+  - Cloud-init passes the token via `CHIEF_SETUP_TOKEN` environment variable — safer than command-line args which appear in process listings
+---
+
+## 2026-02-16 - US-026
+- **What was implemented:** WebSocket rate limiting with token bucket algorithm and per-type expensive operation limiting
+- **Files changed:**
+  - `internal/ws/ratelimit.go` - New `RateLimiter` struct with global token bucket (30 burst, 10/sec sustained), per-type `expensiveTracker` for expensive ops (2/minute for `clone_repo`, `start_run`, `new_prd`), ping exemption, `Reset()` for reconnection, `FormatRetryAfter()` helper
+  - `internal/ws/ratelimit_test.go` - 19 tests: burst allowance, burst exhaustion, token refill, ping exemption, expensive ops limiting, independent expensive trackers, window expiry, reset, expensive-consumes-global, concurrent access, FormatRetryAfter, IsExpensiveType, IsExemptType, tokenBucket retryAfter, expensiveTracker retryAfter
+  - `internal/cmd/serve.go` - Created `rateLimiter` before WebSocket client, `Reset()` on reconnect, rate limit check in main event loop before `handleMessage()`, sends `RATE_LIMITED` error with retry-after hint
+  - `internal/cmd/serve_test.go` - 3 integration tests: global rate limit exhaustion, ping exemption during rate limiting, expensive operation limiting
+- **Learnings for future iterations:**
+  - Token bucket is a good fit for global rate limiting: allows bursts while enforcing sustained rate
+  - Expensive operations need separate per-type tracking with a sliding window (not token bucket) since the limit is per-minute, not per-second
+  - Rate limit check is done in the main event loop (before `handleMessage`) rather than inside `handleMessage` — cleaner separation of concerns
+  - `rateLimiter.Reset()` is called in the `WithOnReconnect` callback alongside `sendStateSnapshot` — rate limiter state resets on reconnection
+  - Pre-existing race conditions exist in `runManager` tests (unrelated to rate limiting) — these fail with `-race` flag but pass without it
 ---

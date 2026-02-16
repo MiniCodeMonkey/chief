@@ -105,12 +105,16 @@ func RunServe(opts ServeOptions) error {
 	eng := engine.New(5)
 	defer eng.Shutdown()
 
+	// Create rate limiter for incoming messages
+	rateLimiter := ws.NewRateLimiter()
+
 	// Create WebSocket client with reconnect handler that re-sends state
 	var client *ws.Client
 	var sessions *sessionManager
 	var runs *runManager
 	client = ws.New(wsURL, ws.WithOnReconnect(func() {
 		log.Println("WebSocket reconnected, re-sending state snapshot")
+		rateLimiter.Reset()
 		sendStateSnapshot(client, scanner, sessions, runs)
 	}))
 
@@ -196,6 +200,16 @@ func RunServe(opts ServeOptions) error {
 				log.Println("WebSocket connection closed permanently")
 				return serveShutdown(client, watcher, sessions, runs)
 			}
+
+			// Check rate limit before processing
+			if result := rateLimiter.Allow(msg.Type); !result.Allowed {
+				log.Printf("Rate limited message type=%s, retry after %s", msg.Type, ws.FormatRetryAfter(result.RetryAfter))
+				sendError(client, ws.ErrCodeRateLimited,
+					fmt.Sprintf("Rate limited. Try again in %s.", ws.FormatRetryAfter(result.RetryAfter)),
+					msg.ID)
+				continue
+			}
+
 			if shouldExit := handleMessage(client, scanner, watcher, sessions, runs, msg, version, opts.ReleasesURL); shouldExit {
 				log.Println("Update installed, exiting for restart...")
 				serveShutdown(client, watcher, sessions, runs)

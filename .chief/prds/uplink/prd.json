@@ -456,7 +456,8 @@
         "Limits are hardcoded (not configurable) for V1"
       ],
       "priority": 26,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-027",

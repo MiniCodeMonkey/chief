@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1177,5 +1178,189 @@ func TestRunServe_GetPRDProjectNotFound(t *testing.T) {
 	}
 	if errorReceived["code"] != "PROJECT_NOT_FOUND" {
 		t.Errorf("expected code 'PROJECT_NOT_FOUND', got %v", errorReceived["code"])
+	}
+}
+
+func TestRunServe_RateLimitGlobal(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var rateLimitReceived bool
+	var mu sync.Mutex
+
+	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+		// Send more than globalBurst (30) messages rapidly to trigger rate limiting
+		for i := 0; i < 35; i++ {
+			msg := map[string]string{
+				"type":      "list_projects",
+				"id":        fmt.Sprintf("req-%d", i),
+				"timestamp": time.Now().UTC().Format(time.RFC3339),
+			}
+			conn.WriteJSON(msg)
+		}
+
+		// Read all responses — at least one should be a RATE_LIMITED error
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			var resp map[string]interface{}
+			json.Unmarshal(data, &resp)
+			if resp["type"] == "error" && resp["code"] == "RATE_LIMITED" {
+				mu.Lock()
+				rateLimitReceived = true
+				mu.Unlock()
+				break
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !rateLimitReceived {
+		t.Error("expected RATE_LIMITED error after burst exhaustion")
+	}
+}
+
+func TestRunServe_RateLimitPingExempt(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var pongReceived bool
+	var rateLimitSeen bool
+	var mu sync.Mutex
+
+	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+		// Exhaust the global rate limit with normal messages, interleaved with reading responses
+		for i := 0; i < 35; i++ {
+			msg := map[string]string{
+				"type":      "list_projects",
+				"id":        fmt.Sprintf("req-%d", i),
+				"timestamp": time.Now().UTC().Format(time.RFC3339),
+			}
+			conn.WriteJSON(msg)
+		}
+
+		// Now immediately send a ping — should bypass rate limiting
+		ping := map[string]string{
+			"type":      "ping",
+			"id":        "ping-1",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(ping)
+
+		// Read all responses — look for both RATE_LIMITED and pong
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			var resp map[string]interface{}
+			json.Unmarshal(data, &resp)
+			if resp["type"] == "pong" {
+				mu.Lock()
+				pongReceived = true
+				mu.Unlock()
+			}
+			if resp["type"] == "error" && resp["code"] == "RATE_LIMITED" {
+				mu.Lock()
+				rateLimitSeen = true
+				mu.Unlock()
+			}
+			// Stop once we've seen both
+			mu.Lock()
+			done := pongReceived && rateLimitSeen
+			mu.Unlock()
+			if done {
+				break
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !rateLimitSeen {
+		t.Error("expected RATE_LIMITED error to confirm rate limiting was active")
+	}
+	if !pongReceived {
+		t.Error("expected pong response even after rate limit exhaustion — ping should be exempt")
+	}
+}
+
+func TestRunServe_RateLimitExpensiveOps(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var rateLimitReceived bool
+	var mu sync.Mutex
+
+	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+		// Send 3 start_run messages (limit is 2/minute)
+		for i := 0; i < 3; i++ {
+			msg := map[string]interface{}{
+				"type":      "start_run",
+				"id":        fmt.Sprintf("req-%d", i),
+				"timestamp": time.Now().UTC().Format(time.RFC3339),
+				"project":   "nonexistent",
+				"prd_id":    "test",
+			}
+			conn.WriteJSON(msg)
+		}
+
+		// Read responses — the third should be RATE_LIMITED
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			var resp map[string]interface{}
+			json.Unmarshal(data, &resp)
+			if resp["type"] == "error" && resp["code"] == "RATE_LIMITED" {
+				mu.Lock()
+				rateLimitReceived = true
+				mu.Unlock()
+				break
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !rateLimitReceived {
+		t.Error("expected RATE_LIMITED error for excessive expensive operations")
 	}
 }
