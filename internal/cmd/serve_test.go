@@ -37,6 +37,23 @@ func setupServeCredentials(t *testing.T) {
 	}
 }
 
+func TestRunServe_WorkspaceDefaultsToCwd(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	setupServeCredentials(t)
+
+	// Empty workspace should default to "." and resolve to an absolute path.
+	// Cancel immediately — we only care that workspace validation passes.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := RunServe(ServeOptions{Ctx: ctx})
+	if err != nil && strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("empty workspace should default to cwd, got: %v", err)
+	}
+}
+
 func TestRunServe_WorkspaceDoesNotExist(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)

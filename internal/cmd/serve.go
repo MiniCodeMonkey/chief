@@ -35,6 +35,14 @@ type ServeOptions struct {
 // RunServe starts the headless serve daemon.
 func RunServe(opts ServeOptions) error {
 	// Validate workspace directory exists
+	if opts.Workspace == "" {
+		opts.Workspace = "."
+	}
+	absWorkspace, err := filepath.Abs(opts.Workspace)
+	if err != nil {
+		return fmt.Errorf("resolving workspace path: %w", err)
+	}
+	opts.Workspace = absWorkspace
 	info, err := os.Stat(opts.Workspace)
 	if err != nil {
 		if os.IsNotExist(err) {
