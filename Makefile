@@ -1,7 +1,7 @@
 # Chief - Autonomous PRD Agent
 # https://github.com/minicodemonkey/chief
 
-BINARY_NAME := chief
+BINARY_NAME := bin/chief
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BIN_DIR := ./bin
 BUILD_DIR := ./build
