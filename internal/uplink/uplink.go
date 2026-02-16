@@ -26,7 +26,7 @@ const (
 )
 
 // Uplink composes the HTTP client, message batcher, and Pusher client
-// into a unified Send/Receive interface that matches the ws.Client API.
+// into a unified Send/Receive interface.
 type Uplink struct {
 	client  *Client
 	batcher *Batcher
@@ -175,7 +175,7 @@ func (u *Uplink) Connect(ctx context.Context) error {
 }
 
 // Send enqueues a message into the batcher for batched delivery.
-// This replaces ws.Client.Send() — the batcher handles flush timing.
+// The batcher handles flush timing.
 // During reconnection, messages are buffered locally in the batcher.
 func (u *Uplink) Send(msg json.RawMessage, msgType string) {
 	u.mu.RLock()

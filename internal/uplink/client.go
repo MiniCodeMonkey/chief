@@ -309,7 +309,6 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body interface
 }
 
 // backoff returns a duration for the given attempt using exponential backoff + jitter.
-// This matches the pattern in ws.Client.
 func backoff(attempt int) time.Duration {
 	base := float64(initialBackoff) * math.Pow(2, float64(attempt-1))
 	if base > float64(maxBackoff) {

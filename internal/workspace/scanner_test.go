@@ -3,22 +3,57 @@ package workspace
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
-// wsURL converts an httptest.Server URL to a WebSocket URL.
-func wsURL(s *httptest.Server) string {
-	return "ws" + strings.TrimPrefix(s.URL, "http")
+// testSender is a mock MessageSender that captures sent messages.
+type testSender struct {
+	mu       sync.Mutex
+	messages []json.RawMessage
+}
+
+func (s *testSender) Send(msg interface{}) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.messages = append(s.messages, data)
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *testSender) getMessages() []json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]json.RawMessage, len(s.messages))
+	copy(cp, s.messages)
+	return cp
+}
+
+func (s *testSender) waitForType(msgType string, timeout time.Duration) (json.RawMessage, bool) {
+	deadline := time.After(timeout)
+	for {
+		msgs := s.getMessages()
+		for _, raw := range msgs {
+			var m struct{ Type string `json:"type"` }
+			if json.Unmarshal(raw, &m) == nil && m.Type == msgType {
+				return raw, true
+			}
+		}
+		select {
+		case <-deadline:
+			return nil, false
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 // initGitRepo initializes a git repo with an initial commit.
@@ -323,37 +358,7 @@ func TestScanAndUpdate_DetectsRemoval(t *testing.T) {
 func TestRun_SendsProjectListOnChange(t *testing.T) {
 	workspace := t.TempDir()
 
-	// Create a mock WebSocket server to receive project_list messages
-	receivedCh := make(chan ws.ProjectListMessage, 10)
-
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			var msg ws.ProjectListMessage
-			if json.Unmarshal(data, &msg) == nil && msg.Type == ws.TypeProjectList {
-				receivedCh <- msg
-			}
-		}
-	}))
-	defer srv.Close()
-
-	client := ws.New(wsURL(srv))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := client.Connect(ctx); err != nil {
-		t.Fatalf("connect failed: %v", err)
-	}
-	defer client.Close()
+	sender := &testSender{}
 
 	// Create a project before starting the scanner
 	repoDir := filepath.Join(workspace, "starter")
@@ -362,22 +367,29 @@ func TestRun_SendsProjectListOnChange(t *testing.T) {
 	}
 	initGitRepo(t, repoDir)
 
-	scanner := New(workspace, client)
+	scanner := New(workspace, sender)
 	scanner.interval = 100 * time.Millisecond // Speed up for testing
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Run scanner in background
 	go scanner.Run(ctx)
 
-	// Wait for initial scan message
-	select {
-	case first := <-receivedCh:
-		if len(first.Projects) != 1 {
-			t.Errorf("expected 1 project in initial scan, got %d", len(first.Projects))
-		} else if first.Projects[0].Name != "starter" {
-			t.Errorf("expected project name 'starter', got %q", first.Projects[0].Name)
-		}
-	case <-time.After(5 * time.Second):
+	// Wait for initial project_list message
+	raw, ok := sender.waitForType(ws.TypeProjectList, 5*time.Second)
+	if !ok {
 		t.Fatal("timed out waiting for initial project_list message")
+	}
+
+	var first ws.ProjectListMessage
+	if err := json.Unmarshal(raw, &first); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(first.Projects) != 1 {
+		t.Errorf("expected 1 project in initial scan, got %d", len(first.Projects))
+	} else if first.Projects[0].Name != "starter" {
+		t.Errorf("expected project name 'starter', got %q", first.Projects[0].Name)
 	}
 
 	// Add another project
@@ -388,16 +400,21 @@ func TestRun_SendsProjectListOnChange(t *testing.T) {
 	initGitRepo(t, newDir)
 
 	// Wait for periodic scan to detect the new project
-	select {
-	case second := <-receivedCh:
-		if len(second.Projects) != 2 {
-			t.Errorf("expected 2 projects after adding project, got %d", len(second.Projects))
+	deadline := time.After(5 * time.Second)
+	for {
+		msgs := sender.getMessages()
+		for _, raw := range msgs {
+			var msg ws.ProjectListMessage
+			if json.Unmarshal(raw, &msg) == nil && msg.Type == ws.TypeProjectList && len(msg.Projects) == 2 {
+				return // Success
+			}
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for updated project_list message")
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for updated project_list message")
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
-
-	cancel()
 }
 
 func TestRun_StopsOnContextCancel(t *testing.T) {

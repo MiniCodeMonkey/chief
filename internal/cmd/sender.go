@@ -9,7 +9,7 @@ import (
 )
 
 // messageSender is an interface for sending messages to the server.
-// Both ws.Client and the uplink adapter satisfy this interface.
+// The uplink adapter satisfies this interface.
 type messageSender interface {
 	Send(msg interface{}) error
 }

@@ -21,7 +21,6 @@ import (
 const ScanInterval = 60 * time.Second
 
 // MessageSender is an interface for sending messages to the server.
-// This abstracts over both the old ws.Client and the new uplink sender.
 type MessageSender interface {
 	Send(msg interface{}) error
 }

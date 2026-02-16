@@ -3,15 +3,12 @@ package workspace
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
@@ -25,38 +22,15 @@ func TestWatcher_WorkspaceRootChanges(t *testing.T) {
 	}
 	initGitRepo(t, repoDir)
 
-	// Set up mock WebSocket server
-	receivedCh := make(chan json.RawMessage, 10)
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			receivedCh <- data
-		}
-	}))
-	defer srv.Close()
+	sender := &testSender{}
 
-	client := ws.New(wsURL(srv))
+	scanner := New(workspace, sender)
+	scanner.ScanAndUpdate()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := client.Connect(ctx); err != nil {
-		t.Fatalf("connect failed: %v", err)
-	}
-	defer client.Close()
-
-	scanner := New(workspace, client)
-	scanner.ScanAndUpdate()
-
-	watcher, err := NewWatcher(workspace, scanner, client)
+	watcher, err := NewWatcher(workspace, scanner, sender)
 	if err != nil {
 		t.Fatalf("NewWatcher failed: %v", err)
 	}
@@ -73,25 +47,28 @@ func TestWatcher_WorkspaceRootChanges(t *testing.T) {
 	}
 	initGitRepo(t, newDir)
 
-	// Wait for the project_list message
+	// Wait for the project_list message with 2 projects
 	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case data := <-receivedCh:
+		msgs := sender.getMessages()
+		for _, raw := range msgs {
 			var msg struct {
 				Type string `json:"type"`
 			}
-			if json.Unmarshal(data, &msg) == nil && msg.Type == ws.TypeProjectList {
+			if json.Unmarshal(raw, &msg) == nil && msg.Type == ws.TypeProjectList {
 				var plMsg ws.ProjectListMessage
-				if err := json.Unmarshal(data, &plMsg); err != nil {
+				if err := json.Unmarshal(raw, &plMsg); err != nil {
 					t.Fatalf("unmarshal project_list: %v", err)
 				}
 				if len(plMsg.Projects) == 2 {
 					return // Success
 				}
 			}
+		}
+		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for project_list with new project")
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
 }
@@ -270,38 +247,15 @@ func TestWatcher_ChiefPRDChangeSendsProjectState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Set up mock WebSocket server
-	receivedCh := make(chan json.RawMessage, 10)
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			receivedCh <- data
-		}
-	}))
-	defer srv.Close()
+	sender := &testSender{}
 
-	client := ws.New(wsURL(srv))
+	scanner := New(workspace, sender)
+	scanner.ScanAndUpdate()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := client.Connect(ctx); err != nil {
-		t.Fatalf("connect failed: %v", err)
-	}
-	defer client.Close()
-
-	scanner := New(workspace, client)
-	scanner.ScanAndUpdate()
-
-	watcher, err := NewWatcher(workspace, scanner, client)
+	watcher, err := NewWatcher(workspace, scanner, sender)
 	if err != nil {
 		t.Fatalf("NewWatcher failed: %v", err)
 	}
@@ -325,22 +279,25 @@ func TestWatcher_ChiefPRDChangeSendsProjectState(t *testing.T) {
 	// Wait for project_state message
 	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case data := <-receivedCh:
+		msgs := sender.getMessages()
+		for _, raw := range msgs {
 			var msg struct {
 				Type string `json:"type"`
 			}
-			if json.Unmarshal(data, &msg) == nil && msg.Type == ws.TypeProjectState {
+			if json.Unmarshal(raw, &msg) == nil && msg.Type == ws.TypeProjectState {
 				var psMsg ws.ProjectStateMessage
-				if err := json.Unmarshal(data, &psMsg); err != nil {
+				if err := json.Unmarshal(raw, &psMsg); err != nil {
 					t.Fatalf("unmarshal: %v", err)
 				}
 				if psMsg.Project.Name == "proj" {
 					return // Success
 				}
 			}
+		}
+		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for project_state message after PRD change")
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
 }
@@ -354,38 +311,15 @@ func TestWatcher_GitHEADChangeSendsProjectState(t *testing.T) {
 	}
 	initGitRepo(t, repoDir)
 
-	// Set up mock WebSocket server
-	receivedCh := make(chan json.RawMessage, 10)
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			receivedCh <- data
-		}
-	}))
-	defer srv.Close()
+	sender := &testSender{}
 
-	client := ws.New(wsURL(srv))
+	scanner := New(workspace, sender)
+	scanner.ScanAndUpdate()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := client.Connect(ctx); err != nil {
-		t.Fatalf("connect failed: %v", err)
-	}
-	defer client.Close()
-
-	scanner := New(workspace, client)
-	scanner.ScanAndUpdate()
-
-	watcher, err := NewWatcher(workspace, scanner, client)
+	watcher, err := NewWatcher(workspace, scanner, sender)
 	if err != nil {
 		t.Fatalf("NewWatcher failed: %v", err)
 	}
@@ -407,22 +341,25 @@ func TestWatcher_GitHEADChangeSendsProjectState(t *testing.T) {
 	// Wait for project_state message
 	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case data := <-receivedCh:
+		msgs := sender.getMessages()
+		for _, raw := range msgs {
 			var msg struct {
 				Type string `json:"type"`
 			}
-			if json.Unmarshal(data, &msg) == nil && msg.Type == ws.TypeProjectState {
+			if json.Unmarshal(raw, &msg) == nil && msg.Type == ws.TypeProjectState {
 				var psMsg ws.ProjectStateMessage
-				if err := json.Unmarshal(data, &psMsg); err != nil {
+				if err := json.Unmarshal(raw, &psMsg); err != nil {
 					t.Fatalf("unmarshal: %v", err)
 				}
 				if psMsg.Project.Name == "proj" {
 					return // Success
 				}
 			}
+		}
+		select {
 		case <-deadline:
 			t.Fatal("timed out waiting for project_state message after branch switch")
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
 }

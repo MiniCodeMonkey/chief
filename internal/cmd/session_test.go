@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +11,42 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
+
+// captureSender is a mock messageSender that captures sent messages.
+type captureSender struct {
+	mu       sync.Mutex
+	messages []map[string]interface{}
+}
+
+func (c *captureSender) Send(msg interface{}) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.messages = append(c.messages, m)
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *captureSender) getMessages() []map[string]interface{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cp := make([]map[string]interface{}, len(c.messages))
+	copy(cp, c.messages)
+	return cp
+}
+
+// discardSender is a mock messageSender that discards all messages.
+type discardSender struct{}
+
+func (d *discardSender) Send(msg interface{}) error { return nil }
 
 // mockProjectFinder implements projectFinder for tests.
 type mockProjectFinder struct {
@@ -487,7 +518,6 @@ exit 0
 }
 
 func TestSessionManager_ActiveSessions(t *testing.T) {
-	// Create a mock ws client for session manager
 	home := t.TempDir()
 	setTestHome(t, home)
 
@@ -504,36 +534,7 @@ done
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	// Create a simple WebSocket server for the client
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
-
-	sm := newSessionManager(client)
+	sm := newSessionManager(&discardSender{})
 
 	// Initially no active sessions
 	sessions := sm.activeSessions()
@@ -593,48 +594,8 @@ done
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	upgrader := websocket.Upgrader{}
-	var receivedMessages []string
-	var mu sync.Mutex
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				if msg["type"] == "claude_output" {
-					if d, ok := msg["data"].(string); ok {
-						mu.Lock()
-						receivedMessages = append(receivedMessages, d)
-						mu.Unlock()
-					}
-				}
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
-
-	sm := newSessionManager(client)
+	sender := &captureSender{}
+	sm := newSessionManager(sender)
 
 	projectDir := filepath.Join(home, "testproject")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
@@ -662,19 +623,19 @@ done
 		t.Error("expected error for nonexistent session")
 	}
 
-	// Check that we received the echoed message
-	mu.Lock()
-	defer mu.Unlock()
-
+	// Check that we received the echoed message via captureSender
+	msgs := sender.getMessages()
 	hasEcho := false
-	for _, msg := range receivedMessages {
-		if strings.Contains(msg, "echo: hello world") {
-			hasEcho = true
-			break
+	for _, msg := range msgs {
+		if msg["type"] == "claude_output" {
+			if d, ok := msg["data"].(string); ok && strings.Contains(d, "echo: hello world") {
+				hasEcho = true
+				break
+			}
 		}
 	}
 	if !hasEcho {
-		t.Errorf("expected echoed message 'echo: hello world' in received messages: %v", receivedMessages)
+		t.Errorf("expected echoed message 'echo: hello world' in captured messages: %v", msgs)
 	}
 
 	// Clean up
@@ -685,35 +646,7 @@ func TestSessionManager_CloseSession_Errors(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)
 
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
-
-	sm := newSessionManager(client)
+	sm := newSessionManager(&discardSender{})
 
 	// Close nonexistent session
 	err := sm.closeSession("nonexistent", false)
@@ -738,35 +671,7 @@ func TestSessionManager_DuplicateSession(t *testing.T) {
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
-
-	sm := newSessionManager(client)
+	sm := newSessionManager(&discardSender{})
 
 	projectDir := filepath.Join(home, "testproject")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
@@ -793,7 +698,7 @@ func TestSessionManager_DuplicateSession(t *testing.T) {
 
 // newTestSessionManager creates a session manager with configurable timeouts for testing.
 // It does NOT start the timeout checker goroutine automatically.
-func newTestSessionManager(t *testing.T, timeout time.Duration, warningThresholds []int, checkInterval time.Duration) (*sessionManager, *ws.Client, func()) {
+func newTestSessionManager(t *testing.T, timeout time.Duration, warningThresholds []int, checkInterval time.Duration) (*sessionManager, *captureSender, func()) {
 	t.Helper()
 
 	home := t.TempDir()
@@ -812,33 +717,10 @@ done
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	// Create a WebSocket server that collects messages
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-		}
-	}))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		cancel()
-		srv.Close()
-		t.Fatal(err)
-	}
-
+	sender := &captureSender{}
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		sender:            client,
+		sender:            sender,
 		timeout:           timeout,
 		warningThresholds: warningThresholds,
 		checkInterval:     checkInterval,
@@ -847,12 +729,9 @@ done
 
 	cleanup := func() {
 		sm.killAll()
-		cancel()
-		client.Close()
-		srv.Close()
 	}
 
-	return sm, client, cleanup
+	return sm, sender, cleanup
 }
 
 func TestSessionManager_TimeoutExpiration(t *testing.T) {
@@ -872,47 +751,10 @@ done
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	// Set up WS server that tracks messages
-	var messages []map[string]interface{}
-	var mu sync.Mutex
-
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
-
+	sender := &captureSender{}
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		sender:            client,
+		sender:            sender,
 		timeout:           200 * time.Millisecond, // Very short for testing
 		warningThresholds: []int{},                // No warnings, just test expiry
 		checkInterval:     50 * time.Millisecond,  // Check frequently
@@ -944,11 +786,9 @@ done
 	}
 
 	// Check that session_expired message was sent
-	mu.Lock()
-	defer mu.Unlock()
-
+	msgs := sender.getMessages()
 	hasExpired := false
-	for _, msg := range messages {
+	for _, msg := range msgs {
 		if msg["type"] == "session_expired" && msg["session_id"] == "sess-timeout-1" {
 			hasExpired = true
 			break
@@ -978,48 +818,13 @@ done
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	var messages []map[string]interface{}
-	var mu sync.Mutex
-
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
+	sender := &captureSender{}
 
 	// Use a 3-minute timeout with thresholds at 1 and 2 minutes.
 	// We simulate time by setting lastActive in the past.
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		sender:            client,
+		sender:            sender,
 		timeout:           3 * time.Minute,
 		warningThresholds: []int{1, 2},           // Warn at 1min and 2min of inactivity
 		checkInterval:     50 * time.Millisecond,  // Check frequently
@@ -1049,15 +854,14 @@ done
 	// Wait for the checker to pick it up
 	time.Sleep(200 * time.Millisecond)
 
-	mu.Lock()
 	// Should have the 1-minute warning (2 remaining)
+	msgs := sender.getMessages()
 	var warningMessages []map[string]interface{}
-	for _, msg := range messages {
+	for _, msg := range msgs {
 		if msg["type"] == "session_timeout_warning" {
 			warningMessages = append(warningMessages, msg)
 		}
 	}
-	mu.Unlock()
 
 	if len(warningMessages) != 1 {
 		t.Fatalf("expected 1 warning message, got %d", len(warningMessages))
@@ -1075,14 +879,13 @@ done
 
 	time.Sleep(200 * time.Millisecond)
 
-	mu.Lock()
+	msgs = sender.getMessages()
 	warningMessages = nil
-	for _, msg := range messages {
+	for _, msg := range msgs {
 		if msg["type"] == "session_timeout_warning" {
 			warningMessages = append(warningMessages, msg)
 		}
 	}
-	mu.Unlock()
 
 	// Should now have 2 warnings (1 min and 2 min thresholds)
 	if len(warningMessages) != 2 {
@@ -1109,37 +912,9 @@ done
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
-
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		sender:            client,
+		sender:            &discardSender{},
 		timeout:           300 * time.Millisecond,
 		warningThresholds: []int{},
 		checkInterval:     50 * time.Millisecond,
@@ -1206,46 +981,10 @@ done
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	var messages []map[string]interface{}
-	var mu sync.Mutex
-
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
-
+	sender := &captureSender{}
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		sender:            client,
+		sender:            sender,
 		timeout:           300 * time.Millisecond,
 		warningThresholds: []int{},
 		checkInterval:     50 * time.Millisecond,
@@ -1290,15 +1029,14 @@ done
 	}
 
 	// Verify session_expired was sent for sess-a
-	mu.Lock()
+	msgs := sender.getMessages()
 	hasExpiredA := false
-	for _, msg := range messages {
+	for _, msg := range msgs {
 		if msg["type"] == "session_expired" && msg["session_id"] == "sess-a" {
 			hasExpiredA = true
 			break
 		}
 	}
-	mu.Unlock()
 
 	if !hasExpiredA {
 		t.Error("expected session_expired for sess-a")
@@ -1324,37 +1062,9 @@ done
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	upgrader := websocket.Upgrader{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-		}
-	}))
-	defer srv.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	client := ws.New(serveWsURL(srv))
-	if err := client.Connect(ctx); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		cancel()
-		client.Close()
-	}()
-
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		sender:            client,
+		sender:            &discardSender{},
 		timeout:           500 * time.Millisecond,
 		warningThresholds: []int{},
 		checkInterval:     50 * time.Millisecond,

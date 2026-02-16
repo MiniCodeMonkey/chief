@@ -1,5 +1,44 @@
 package ws
 
+import (
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// ProtocolVersion is the current protocol version.
+const ProtocolVersion = 1
+
+// Message represents a protocol message envelope.
+type Message struct {
+	Type      string          `json:"type"`
+	ID        string          `json:"id,omitempty"`
+	Timestamp string          `json:"timestamp,omitempty"`
+	Raw       json.RawMessage `json:"-"`
+}
+
+// NewMessage creates a new message envelope with type, UUID, and ISO8601 timestamp.
+func NewMessage(msgType string) Message {
+	return Message{
+		Type:      msgType,
+		ID:        newUUID(),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+// newUUID generates a random UUID v4 string.
+func newUUID() string {
+	var uuid [16]byte
+	_, _ = rand.Read(uuid[:])
+	// Set version 4 bits.
+	uuid[6] = (uuid[6] & 0x0f) | 0x40
+	// Set variant bits.
+	uuid[8] = (uuid[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
+}
+
 // Error codes for protocol error messages.
 const (
 	ErrCodeAuthFailed          = "AUTH_FAILED"
