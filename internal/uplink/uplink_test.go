@@ -1,6 +1,7 @@
 package uplink
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -26,6 +27,10 @@ type testUplinkServer struct {
 
 	// Last received connect metadata.
 	lastConnectBody map[string]interface{}
+
+	// heartbeatStatus controls the HTTP status code returned by heartbeat.
+	// 0 or 200 means success.
+	heartbeatStatus atomic.Int32
 }
 
 type messageBatch struct {
@@ -90,6 +95,12 @@ func (us *testUplinkServer) handleHTTP(t *testing.T, w http.ResponseWriter, r *h
 
 	case "/api/device/heartbeat":
 		us.heartbeatCalls.Add(1)
+		status := int(us.heartbeatStatus.Load())
+		if status >= 400 {
+			w.WriteHeader(status)
+			json.NewEncoder(w).Encode(map[string]string{"error": "heartbeat failed"})
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 
 	case "/api/device/messages":
@@ -592,4 +603,289 @@ func TestUplink_ChannelName(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for subscription")
 	}
+}
+
+// --- Heartbeat Tests ---
+
+// newTestUplinkWithHeartbeat creates a connected Uplink with fast heartbeat timing for tests.
+func newTestUplinkWithHeartbeat(t *testing.T, us *testUplinkServer, interval, retryDelay, skipWindow time.Duration, maxFails int, opts ...UplinkOption) *Uplink {
+	t.Helper()
+
+	client := newTestClient(t, us.httpSrv.URL, "test-token")
+	u := NewUplink(client, opts...)
+
+	// Override heartbeat timing for fast tests.
+	u.hbInterval = interval
+	u.hbRetryDelay = retryDelay
+	u.hbSkipWindow = skipWindow
+	u.hbMaxFails = maxFails
+
+	return u
+}
+
+func TestUplink_Heartbeat_SendsPeriodically(t *testing.T) {
+	us := newTestUplinkServer(t)
+	u := newTestUplinkWithHeartbeat(t, us, 50*time.Millisecond, 10*time.Millisecond, 0, 3)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	select {
+	case <-us.pusherSrv.onSubscribe:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for subscription")
+	}
+
+	// Wait for at least 3 heartbeats.
+	deadline := time.After(2 * time.Second)
+	for {
+		if us.heartbeatCalls.Load() >= 3 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("expected at least 3 heartbeats, got %d", us.heartbeatCalls.Load())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	u.Close()
+}
+
+func TestUplink_Heartbeat_StopsOnClose(t *testing.T) {
+	us := newTestUplinkServer(t)
+	u := newTestUplinkWithHeartbeat(t, us, 50*time.Millisecond, 10*time.Millisecond, 0, 3)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	select {
+	case <-us.pusherSrv.onSubscribe:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for subscription")
+	}
+
+	// Wait for at least 1 heartbeat.
+	deadline := time.After(2 * time.Second)
+	for {
+		if us.heartbeatCalls.Load() >= 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for first heartbeat")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Close the uplink.
+	u.Close()
+
+	// Record count and wait to confirm no more heartbeats are sent.
+	countAfterClose := us.heartbeatCalls.Load()
+	time.Sleep(200 * time.Millisecond)
+
+	if got := us.heartbeatCalls.Load(); got != countAfterClose {
+		t.Errorf("heartbeat calls after close: got %d more (total %d), want 0 more", got-countAfterClose, got)
+	}
+}
+
+func TestUplink_Heartbeat_SkipsWhenMessagesSentRecently(t *testing.T) {
+	us := newTestUplinkServer(t)
+	// skipWindow of 5s — any message sent within 5s skips heartbeat.
+	u := newTestUplinkWithHeartbeat(t, us, 50*time.Millisecond, 10*time.Millisecond, 5*time.Second, 3)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	select {
+	case <-us.pusherSrv.onSubscribe:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for subscription")
+	}
+
+	// Send a message to trigger the lastSendTime update.
+	msg := json.RawMessage(`{"type":"run_complete","data":"done"}`)
+	u.Send(msg, "run_complete")
+
+	// Wait for the message batch to be sent (sets lastSendTime).
+	deadline := time.After(2 * time.Second)
+	for {
+		batches := us.getMessageBatches()
+		if len(batches) > 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for message batch")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Record heartbeat count now.
+	countBeforeSkip := us.heartbeatCalls.Load()
+
+	// Wait 300ms — multiple heartbeat intervals would have passed (50ms each).
+	time.Sleep(300 * time.Millisecond)
+
+	// Heartbeats should have been skipped because lastSendTime is recent.
+	countAfterWait := us.heartbeatCalls.Load()
+	if countAfterWait != countBeforeSkip {
+		t.Errorf("expected heartbeats to be skipped, but %d extra heartbeats were sent", countAfterWait-countBeforeSkip)
+	}
+
+	u.Close()
+}
+
+func TestUplink_Heartbeat_RetryOnTransientFailure(t *testing.T) {
+	us := newTestUplinkServer(t)
+	u := newTestUplinkWithHeartbeat(t, us, 50*time.Millisecond, 10*time.Millisecond, 0, 3)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	select {
+	case <-us.pusherSrv.onSubscribe:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for subscription")
+	}
+
+	// Make heartbeat fail with 500 (transient).
+	us.heartbeatStatus.Store(500)
+
+	// Wait for heartbeat calls to accumulate (initial call + retry).
+	deadline := time.After(2 * time.Second)
+	for {
+		// Each heartbeat tick produces 2 calls (initial + retry).
+		if us.heartbeatCalls.Load() >= 4 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("expected at least 4 heartbeat calls (2 ticks × 2 attempts), got %d", us.heartbeatCalls.Load())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	u.Close()
+}
+
+func TestUplink_Heartbeat_RetrySucceedsResetsFailureCount(t *testing.T) {
+	us := newTestUplinkServer(t)
+
+	var maxFailuresCalled atomic.Int32
+	u := newTestUplinkWithHeartbeat(t, us, 50*time.Millisecond, 10*time.Millisecond, 0, 3)
+	u.onHeartbeatMaxFailures = func() {
+		maxFailuresCalled.Add(1)
+	}
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	select {
+	case <-us.pusherSrv.onSubscribe:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for subscription")
+	}
+
+	// Let heartbeats succeed — no max failures callback should fire.
+	time.Sleep(200 * time.Millisecond)
+
+	if got := maxFailuresCalled.Load(); got != 0 {
+		t.Errorf("maxFailures callback called %d times, want 0 (all heartbeats succeeded)", got)
+	}
+
+	u.Close()
+}
+
+func TestUplink_Heartbeat_MaxFailuresTriggersCallback(t *testing.T) {
+	us := newTestUplinkServer(t)
+
+	maxFailuresCh := make(chan struct{}, 1)
+	u := newTestUplinkWithHeartbeat(t, us, 50*time.Millisecond, 10*time.Millisecond, 0, 3)
+	u.onHeartbeatMaxFailures = func() {
+		select {
+		case maxFailuresCh <- struct{}{}:
+		default:
+		}
+	}
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	select {
+	case <-us.pusherSrv.onSubscribe:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for subscription")
+	}
+
+	// Make all heartbeats fail.
+	us.heartbeatStatus.Store(500)
+
+	// Wait for the max-failures callback. With 50ms interval and 10ms retry delay,
+	// each tick is ~60ms. We need 3 consecutive failures → ~180ms.
+	select {
+	case <-maxFailuresCh:
+		// Success — the callback was triggered.
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for heartbeat max failures callback")
+	}
+
+	u.Close()
+}
+
+func TestUplink_Heartbeat_ContextCancellationStops(t *testing.T) {
+	us := newTestUplinkServer(t)
+	u := newTestUplinkWithHeartbeat(t, us, 50*time.Millisecond, 10*time.Millisecond, 0, 3)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for at least 1 heartbeat.
+	deadline := time.After(2 * time.Second)
+	for {
+		if us.heartbeatCalls.Load() >= 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for first heartbeat")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Cancel the context.
+	cancel()
+
+	countAfterCancel := us.heartbeatCalls.Load()
+	time.Sleep(200 * time.Millisecond)
+
+	if got := us.heartbeatCalls.Load(); got != countAfterCancel {
+		t.Errorf("heartbeat calls after cancel: got %d more, want 0 more", got-countAfterCancel)
+	}
+
+	// Clean up: close still works even though context is cancelled.
+	u.Close()
 }

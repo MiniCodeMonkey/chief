@@ -6,6 +6,22 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
+)
+
+const (
+	// heartbeatInterval is how often heartbeats are sent.
+	heartbeatInterval = 30 * time.Second
+
+	// heartbeatRetryDelay is the delay before retrying a failed heartbeat.
+	heartbeatRetryDelay = 5 * time.Second
+
+	// heartbeatSkipWindow is the duration after a message send within which
+	// we skip the explicit heartbeat (server treats message receipt as implicit heartbeat).
+	heartbeatSkipWindow = 25 * time.Second
+
+	// heartbeatMaxFailures is the number of consecutive failures before triggering reconnection.
+	heartbeatMaxFailures = 3
 )
 
 // Uplink composes the HTTP client, message batcher, and Pusher client
@@ -20,8 +36,23 @@ type Uplink struct {
 	deviceID  int
 	connected bool
 
+	// lastSendTime records when the batcher last successfully sent a batch.
+	// Used by the heartbeat goroutine to skip heartbeats when messages
+	// were recently sent (implicit heartbeat optimization).
+	lastSendTime time.Time
+
+	// Heartbeat timing (overridable for tests, default to package constants).
+	hbInterval   time.Duration
+	hbRetryDelay time.Duration
+	hbSkipWindow time.Duration
+	hbMaxFails   int
+
 	// onReconnect is called after each successful reconnection.
 	onReconnect func()
+
+	// onHeartbeatMaxFailures is called when consecutive heartbeat failures
+	// reach hbMaxFails. Used for reconnection (US-020) and testing.
+	onHeartbeatMaxFailures func()
 
 	// cancel stops the batcher run loop and heartbeat goroutine.
 	cancel context.CancelFunc
@@ -43,7 +74,11 @@ func WithOnReconnect(fn func()) UplinkOption {
 // The Uplink does not connect until Connect is called.
 func NewUplink(client *Client, opts ...UplinkOption) *Uplink {
 	u := &Uplink{
-		client: client,
+		client:       client,
+		hbInterval:   heartbeatInterval,
+		hbRetryDelay: heartbeatRetryDelay,
+		hbSkipWindow: heartbeatSkipWindow,
+		hbMaxFails:   heartbeatMaxFailures,
 	}
 	for _, o := range opts {
 		o(u)
@@ -55,9 +90,7 @@ func NewUplink(client *Client, opts ...UplinkOption) *Uplink {
 //  1. HTTP connect (registers device, gets session ID + Reverb config)
 //  2. Pusher connect (subscribes to private command channel)
 //  3. Batcher start (begins background flush loop)
-//
-// Heartbeat is started by US-019 — the heartbeat goroutine will be added
-// to this lifecycle in a subsequent story.
+//  4. Heartbeat start (sends periodic heartbeats to server)
 func (u *Uplink) Connect(ctx context.Context) error {
 	// Step 1: HTTP connect to register the device.
 	welcome, err := u.client.Connect(ctx)
@@ -91,9 +124,17 @@ func (u *Uplink) Connect(ctx context.Context) error {
 
 	u.batcher = NewBatcher(func(batchID string, messages []json.RawMessage) error {
 		_, err := u.client.SendMessagesWithRetry(batchCtx, batchID, messages)
+		if err == nil {
+			u.mu.Lock()
+			u.lastSendTime = time.Now()
+			u.mu.Unlock()
+		}
 		return err
 	})
 	go u.batcher.Run(batchCtx)
+
+	// Step 4: Start the heartbeat goroutine.
+	go u.runHeartbeat(batchCtx)
 
 	log.Printf("Uplink connected (device=%d, session=%s)", welcome.DeviceID, welcome.SessionID)
 	return nil
@@ -159,6 +200,68 @@ func (u *Uplink) Close() error {
 
 	log.Printf("Uplink disconnected")
 	return pusherErr
+}
+
+// runHeartbeat sends periodic heartbeats to the server every heartbeatInterval.
+// It skips the heartbeat if a message batch was sent within heartbeatSkipWindow.
+// On transient failure, it retries once after heartbeatRetryDelay.
+// After heartbeatMaxFailures consecutive failures, it logs a reconnection trigger
+// (actual reconnection logic is implemented in US-020).
+func (u *Uplink) runHeartbeat(ctx context.Context) {
+	ticker := time.NewTicker(u.hbInterval)
+	defer ticker.Stop()
+
+	consecutiveFailures := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Skip heartbeat if a message batch was sent recently.
+			u.mu.RLock()
+			lastSend := u.lastSendTime
+			u.mu.RUnlock()
+
+			if !lastSend.IsZero() && time.Since(lastSend) < u.hbSkipWindow {
+				consecutiveFailures = 0
+				continue
+			}
+
+			// Send heartbeat.
+			err := u.client.Heartbeat(ctx)
+			if err == nil {
+				consecutiveFailures = 0
+				continue
+			}
+
+			// First failure — retry once after a short delay.
+			log.Printf("uplink: heartbeat failed: %v — retrying in %s", err, u.hbRetryDelay)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(u.hbRetryDelay):
+			}
+
+			err = u.client.Heartbeat(ctx)
+			if err == nil {
+				consecutiveFailures = 0
+				continue
+			}
+
+			// Retry also failed — count as a failure.
+			consecutiveFailures++
+			log.Printf("uplink: heartbeat retry failed (%d/%d consecutive): %v", consecutiveFailures, u.hbMaxFails, err)
+
+			if consecutiveFailures >= u.hbMaxFails {
+				log.Printf("uplink: %d consecutive heartbeat failures — triggering reconnection", consecutiveFailures)
+				if u.onHeartbeatMaxFailures != nil {
+					u.onHeartbeatMaxFailures()
+				}
+				consecutiveFailures = 0
+			}
+		}
+	}
 }
 
 // SessionID returns the current session ID from the connect response.
