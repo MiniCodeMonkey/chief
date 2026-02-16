@@ -164,14 +164,22 @@ func (c *Client) Close() error {
 func (c *Client) dial(ctx context.Context) (*websocket.Conn, error) {
 	attempt := 0
 	for {
-		conn, _, err := websocket.DefaultDialer.Dial(c.url, nil)
+		conn, resp, err := websocket.DefaultDialer.Dial(c.url, nil)
 		if err == nil {
 			return conn, nil
 		}
 
 		attempt++
 		delay := backoff(attempt)
-		log.Printf("WebSocket connection failed (attempt %d): %v — retrying in %s", attempt, err, delay)
+		if resp != nil {
+			body := make([]byte, 512)
+			n, _ := resp.Body.Read(body)
+			resp.Body.Close()
+			log.Printf("WebSocket connection failed (attempt %d): %v (HTTP %d: %s) — retrying in %s",
+				attempt, err, resp.StatusCode, string(body[:n]), delay.Round(time.Millisecond))
+		} else {
+			log.Printf("WebSocket connection failed (attempt %d): %v — retrying in %s", attempt, err, delay.Round(time.Millisecond))
+		}
 
 		select {
 		case <-ctx.Done():
