@@ -763,6 +763,136 @@ func TestRunManager_SendRunComplete(t *testing.T) {
 	rm.sendRunComplete(info, "myproject/feature")
 }
 
+func TestRunManager_MarkInterruptedStories(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil)
+
+	// Create a temp project with a PRD
+	projectDir := t.TempDir()
+	prdDir := filepath.Join(projectDir, ".chief", "prds", "feature")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prdPath := filepath.Join(prdDir, "prd.json")
+	prdState := `{"project": "Test", "userStories": [{"id": "US-001", "title": "Story 1", "passes": false}, {"id": "US-002", "title": "Story 2", "passes": true}]}`
+	if err := os.WriteFile(prdPath, []byte(prdState), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add a run with an active story
+	rm.mu.Lock()
+	rm.runs["test/feature"] = &runInfo{
+		project:   "test",
+		prdID:     "feature",
+		prdPath:   prdPath,
+		startTime: time.Now(),
+		storyID:   "US-001",
+	}
+	rm.mu.Unlock()
+
+	// Mark interrupted stories
+	rm.markInterruptedStories()
+
+	// Verify the PRD was updated
+	data, err := os.ReadFile(prdPath)
+	if err != nil {
+		t.Fatalf("failed to read PRD: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to parse PRD: %v", err)
+	}
+
+	stories := result["userStories"].([]interface{})
+	story1 := stories[0].(map[string]interface{})
+	if story1["inProgress"] != true {
+		t.Errorf("expected US-001 to have inProgress=true, got %v", story1["inProgress"])
+	}
+
+	// US-002 is already passing, should NOT be marked as inProgress
+	story2 := stories[1].(map[string]interface{})
+	if _, hasInProgress := story2["inProgress"]; hasInProgress && story2["inProgress"] == true {
+		t.Error("expected US-002 to NOT have inProgress=true (already passes)")
+	}
+}
+
+func TestRunManager_MarkInterruptedStoriesNoStoryID(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil)
+
+	// Create a temp project with a PRD
+	projectDir := t.TempDir()
+	prdDir := filepath.Join(projectDir, ".chief", "prds", "feature")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prdPath := filepath.Join(prdDir, "prd.json")
+	prdState := `{"project": "Test", "userStories": [{"id": "US-001", "title": "Story 1", "passes": false}]}`
+	if err := os.WriteFile(prdPath, []byte(prdState), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add a run WITHOUT a story ID (no story started yet)
+	rm.mu.Lock()
+	rm.runs["test/feature"] = &runInfo{
+		project:   "test",
+		prdID:     "feature",
+		prdPath:   prdPath,
+		startTime: time.Now(),
+		storyID:   "", // no story started
+	}
+	rm.mu.Unlock()
+
+	// Mark interrupted stories — should be a no-op
+	rm.markInterruptedStories()
+
+	// Verify the PRD was NOT modified
+	data, err := os.ReadFile(prdPath)
+	if err != nil {
+		t.Fatalf("failed to read PRD: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to parse PRD: %v", err)
+	}
+
+	stories := result["userStories"].([]interface{})
+	story1 := stories[0].(map[string]interface{})
+	if _, hasInProgress := story1["inProgress"]; hasInProgress && story1["inProgress"] == true {
+		t.Error("expected US-001 to NOT have inProgress=true when no story was started")
+	}
+}
+
+func TestRunManager_ActiveRunCount(t *testing.T) {
+	eng := engine.New(5)
+	defer eng.Shutdown()
+
+	rm := newRunManager(eng, nil)
+
+	if rm.activeRunCount() != 0 {
+		t.Errorf("expected 0 active runs, got %d", rm.activeRunCount())
+	}
+
+	rm.mu.Lock()
+	rm.runs["test/feature"] = &runInfo{
+		project: "test",
+		prdID:   "feature",
+	}
+	rm.mu.Unlock()
+
+	if rm.activeRunCount() != 1 {
+		t.Errorf("expected 1 active run, got %d", rm.activeRunCount())
+	}
+}
+
 func TestRunServe_RunProgressStreaming(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)

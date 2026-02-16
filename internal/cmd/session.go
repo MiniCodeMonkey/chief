@@ -76,6 +76,13 @@ func newSessionManager(client *ws.Client) *sessionManager {
 	return sm
 }
 
+// sessionCount returns the number of active sessions.
+func (sm *sessionManager) sessionCount() int {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return len(sm.sessions)
+}
+
 // getSession returns a session by ID, or nil if not found.
 func (sm *sessionManager) getSession(sessionID string) *claudeSession {
 	sm.mu.RLock()

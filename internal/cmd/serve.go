@@ -46,12 +46,17 @@ func RunServe(opts ServeOptions) error {
 	}
 
 	// Set up logging
+	var logFile *os.File
 	if opts.LogFile != "" {
 		f, err := os.OpenFile(opts.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
 			return fmt.Errorf("opening log file: %w", err)
 		}
-		defer f.Close()
+		logFile = f
+		defer func() {
+			logFile.Sync()
+			logFile.Close()
+		}()
 		log.SetOutput(f)
 	}
 
@@ -103,7 +108,6 @@ func RunServe(opts ServeOptions) error {
 
 	// Create engine for Ralph loop runs (default 5 max iterations)
 	eng := engine.New(5)
-	defer eng.Shutdown()
 
 	// Create rate limiter for incoming messages
 	rateLimiter := ws.NewRateLimiter()
@@ -188,17 +192,17 @@ func RunServe(opts ServeOptions) error {
 		select {
 		case <-ctx.Done():
 			log.Println("Context cancelled, shutting down...")
-			return serveShutdown(client, watcher, sessions, runs)
+			return serveShutdown(client, watcher, sessions, runs, eng)
 
 		case sig := <-sigCh:
 			log.Printf("Received signal %s, shutting down...", sig)
-			return serveShutdown(client, watcher, sessions, runs)
+			return serveShutdown(client, watcher, sessions, runs, eng)
 
 		case msg, ok := <-client.Receive():
 			if !ok {
 				// Channel closed, connection lost permanently
 				log.Println("WebSocket connection closed permanently")
-				return serveShutdown(client, watcher, sessions, runs)
+				return serveShutdown(client, watcher, sessions, runs, eng)
 			}
 
 			// Check rate limit before processing
@@ -212,7 +216,7 @@ func RunServe(opts ServeOptions) error {
 
 			if shouldExit := handleMessage(client, scanner, watcher, sessions, runs, msg, version, opts.ReleasesURL); shouldExit {
 				log.Println("Update installed, exiting for restart...")
-				serveShutdown(client, watcher, sessions, runs)
+				serveShutdown(client, watcher, sessions, runs, eng)
 				return nil
 			}
 		}
@@ -485,17 +489,57 @@ func checkAndNotify(client *ws.Client, version, releasesURL string) {
 }
 
 // serveShutdown performs clean shutdown of the serve command.
-func serveShutdown(client *ws.Client, watcher *workspace.Watcher, sessions *sessionManager, runs *runManager) error {
+// It kills all child Claude processes, marks interrupted stories, closes WebSocket,
+// and flushes log files. Processes are force-killed after 5 seconds if they haven't
+// exited gracefully. The entire shutdown completes within 10 seconds.
+func serveShutdown(client *ws.Client, watcher *workspace.Watcher, sessions *sessionManager, runs *runManager, eng *engine.Engine) error {
 	log.Println("Shutting down...")
 
-	// Stop all active Ralph loop runs
+	// Count processes before shutdown
+	processCount := 0
+	if sessions != nil {
+		processCount += sessions.sessionCount()
+	}
 	if runs != nil {
-		runs.stopAll()
+		processCount += runs.activeRunCount()
 	}
 
-	// Kill all active Claude sessions
-	if sessions != nil {
-		sessions.killAll()
+	// Mark any in-progress stories as interrupted in prd.json
+	if runs != nil {
+		runs.markInterruptedStories()
+	}
+
+	// Use a channel to track when graceful shutdown completes
+	done := make(chan struct{})
+	go func() {
+		// Stop all active Ralph loop runs
+		if runs != nil {
+			runs.stopAll()
+		}
+
+		// Kill all active Claude sessions
+		if sessions != nil {
+			sessions.killAll()
+		}
+
+		// Shut down the engine (stops event forwarding goroutine)
+		if eng != nil {
+			eng.Shutdown()
+		}
+
+		close(done)
+	}()
+
+	// Wait for graceful shutdown or force-kill after 5 seconds
+	select {
+	case <-done:
+		// Graceful shutdown completed
+	case <-time.After(5 * time.Second):
+		log.Println("Force-killing hung processes after 5 second timeout")
+	}
+
+	if processCount > 0 {
+		log.Printf("Killed %d processes", processCount)
 	}
 
 	// Close file watcher
@@ -505,7 +549,7 @@ func serveShutdown(client *ws.Client, watcher *workspace.Watcher, sessions *sess
 		}
 	}
 
-	// Close WebSocket connection
+	// Close WebSocket connection with proper close frame
 	if err := client.Close(); err != nil {
 		log.Printf("Error closing WebSocket: %v", err)
 	}

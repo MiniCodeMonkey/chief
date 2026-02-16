@@ -455,6 +455,44 @@ func (rm *runManager) cleanup(key string) {
 	rm.mu.Unlock()
 }
 
+// markInterruptedStories marks any in-progress stories as interrupted in prd.json
+// so that the next run resumes from where it left off.
+func (rm *runManager) markInterruptedStories() {
+	rm.mu.RLock()
+	runs := make([]*runInfo, 0, len(rm.runs))
+	for _, info := range rm.runs {
+		runs = append(runs, info)
+	}
+	rm.mu.RUnlock()
+
+	for _, info := range runs {
+		if info.storyID == "" {
+			continue
+		}
+		p, err := prd.LoadPRD(info.prdPath)
+		if err != nil {
+			log.Printf("Warning: could not load PRD %s to mark interrupted story: %v", info.prdPath, err)
+			continue
+		}
+		for i := range p.UserStories {
+			if p.UserStories[i].ID == info.storyID && !p.UserStories[i].Passes {
+				p.UserStories[i].InProgress = true
+				if err := p.Save(info.prdPath); err != nil {
+					log.Printf("Warning: could not save PRD %s: %v", info.prdPath, err)
+				}
+				break
+			}
+		}
+	}
+}
+
+// activeRunCount returns the number of currently tracked runs.
+func (rm *runManager) activeRunCount() int {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+	return len(rm.runs)
+}
+
 // stopAll stops all active runs (for shutdown).
 func (rm *runManager) stopAll() {
 	rm.eng.StopAll()

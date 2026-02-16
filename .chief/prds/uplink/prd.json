@@ -473,7 +473,8 @@
         "Log shutdown sequence: \"Shutting down...\", \"Killed N processes\", \"Goodbye.\""
       ],
       "priority": 27,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-028",

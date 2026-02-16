@@ -1364,3 +1364,306 @@ func TestRunServe_RateLimitExpensiveOps(t *testing.T) {
 		t.Error("expected RATE_LIMITED error for excessive expensive operations")
 	}
 }
+
+func TestRunServe_ShutdownLogsSequence(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	logFile := filepath.Join(home, "chief-shutdown.log")
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Read hello
+		conn.ReadMessage()
+
+		// Send welcome
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		// Read state_snapshot
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		conn.ReadMessage()
+		conn.SetReadDeadline(time.Time{})
+
+		// Cancel to trigger shutdown
+		cancel()
+
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		WSURL:     serveWsURL(srv),
+		LogFile:   logFile,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	// Verify log file contains shutdown sequence
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "Shutting down...") {
+		t.Error("log file missing 'Shutting down...' message")
+	}
+	if !strings.Contains(content, "Goodbye.") {
+		t.Error("log file missing 'Goodbye.' message")
+	}
+}
+
+func TestRunServe_ShutdownMarksInterruptedStories(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a git repo with a PRD
+	projectDir := filepath.Join(workspaceDir, "myproject")
+	createGitRepo(t, projectDir)
+
+	prdDir := filepath.Join(projectDir, ".chief", "prds", "feature")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prdPath := filepath.Join(prdDir, "prd.json")
+	prdState := `{"project": "My Feature", "userStories": [{"id": "US-001", "title": "Test Story", "passes": false}, {"id": "US-002", "title": "Done Story", "passes": true}]}`
+	if err := os.WriteFile(prdPath, []byte(prdState), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a mock claude that hangs until killed (simulates in-progress work)
+	mockDir := t.TempDir()
+	mockScript := `#!/bin/sh
+echo '{"type":"system","subtype":"init"}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Working on <ralph-status>US-001</ralph-status>"}]}}'
+sleep 300
+`
+	if err := os.WriteFile(filepath.Join(mockDir, "claude"), []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", mockDir+":"+origPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Read hello
+		conn.ReadMessage()
+
+		// Send welcome
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		// Read state_snapshot
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		conn.ReadMessage()
+		conn.SetReadDeadline(time.Time{})
+
+		// Send start_run to get a story in-progress
+		startReq := map[string]string{
+			"type":      "start_run",
+			"id":        "req-1",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"project":   "myproject",
+			"prd_id":    "feature",
+		}
+		conn.WriteJSON(startReq)
+
+		// Wait for run_progress with story_started so we know US-001 is tracked
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				cancel()
+				return
+			}
+			var msg map[string]interface{}
+			json.Unmarshal(data, &msg)
+			if msg["type"] == "run_progress" {
+				status, _ := msg["status"].(string)
+				if status == "story_started" {
+					break
+				}
+			}
+		}
+
+		// Now cancel to trigger shutdown while story is in-progress
+		cancel()
+
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	err := RunServe(ServeOptions{
+		Workspace: workspaceDir,
+		WSURL:     serveWsURL(srv),
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	// Verify the PRD was updated with inProgress: true for US-001
+	data, err := os.ReadFile(prdPath)
+	if err != nil {
+		t.Fatalf("failed to read PRD: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to parse PRD: %v", err)
+	}
+
+	stories := result["userStories"].([]interface{})
+	story1 := stories[0].(map[string]interface{})
+	if story1["inProgress"] != true {
+		t.Errorf("expected US-001 to have inProgress=true after shutdown, got %v", story1["inProgress"])
+	}
+
+	// US-002 is already passing, should NOT be marked as inProgress
+	story2 := stories[1].(map[string]interface{})
+	if _, hasInProgress := story2["inProgress"]; hasInProgress && story2["inProgress"] == true {
+		t.Error("expected US-002 to NOT have inProgress=true (already passes)")
+	}
+}
+
+func TestRunServe_ShutdownLogFileFlush(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	logFile := filepath.Join(home, "chief-flush.log")
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		conn.ReadMessage()
+
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		// Read state_snapshot
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		conn.ReadMessage()
+		conn.SetReadDeadline(time.Time{})
+
+		cancel()
+
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		WSURL:     serveWsURL(srv),
+		LogFile:   logFile,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	// Verify the log file was flushed and contains the final "Goodbye." message
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "Goodbye.") {
+		t.Error("log file missing 'Goodbye.' — may not have been flushed properly")
+	}
+}
+
+func TestSessionManager_SessionCount(t *testing.T) {
+	sm := &sessionManager{
+		sessions:    make(map[string]*claudeSession),
+		stopTimeout: make(chan struct{}),
+	}
+	// Manually close stopTimeout since we're not starting the timeout checker
+	close(sm.stopTimeout)
+
+	if sm.sessionCount() != 0 {
+		t.Errorf("expected 0 sessions, got %d", sm.sessionCount())
+	}
+
+	sm.sessions["sess1"] = &claudeSession{sessionID: "sess1"}
+	sm.sessions["sess2"] = &claudeSession{sessionID: "sess2"}
+
+	if sm.sessionCount() != 2 {
+		t.Errorf("expected 2 sessions, got %d", sm.sessionCount())
+	}
+}
