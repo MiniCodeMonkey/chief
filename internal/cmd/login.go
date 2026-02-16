@@ -101,7 +101,7 @@ func RunLogin(opts LoginOptions) error {
 	}
 
 	// Display the user code and URL
-	deviceURL := baseURL + "/device"
+	deviceURL := baseURL + "/oauth/device"
 	fmt.Println()
 	fmt.Println("To authenticate, open this URL in your browser:")
 	fmt.Printf("\n  %s\n\n", deviceURL)
