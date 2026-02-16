@@ -455,6 +455,278 @@ func TestBackoff(t *testing.T) {
 	}
 }
 
+func TestSendMessages_Success(t *testing.T) {
+	var receivedBody ingestRequest
+	var receivedAuth string
+	var receivedMethod string
+	var receivedPath string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMethod = r.Method
+		receivedPath = r.URL.Path
+		receivedAuth = r.Header.Get("Authorization")
+
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(IngestResponse{
+			Accepted:  2,
+			BatchID:   "batch-abc-123",
+			SessionID: "sess-xyz-789",
+		})
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "test-token")
+	ctx := testContext(t)
+
+	messages := []json.RawMessage{
+		json.RawMessage(`{"type":"project_state","id":"m1"}`),
+		json.RawMessage(`{"type":"claude_output","id":"m2"}`),
+	}
+
+	resp, err := client.SendMessages(ctx, "batch-abc-123", messages)
+	if err != nil {
+		t.Fatalf("SendMessages() failed: %v", err)
+	}
+
+	// Verify request format.
+	if receivedMethod != "POST" {
+		t.Errorf("method = %q, want POST", receivedMethod)
+	}
+	if receivedPath != "/api/device/messages" {
+		t.Errorf("path = %q, want /api/device/messages", receivedPath)
+	}
+	if receivedAuth != "Bearer test-token" {
+		t.Errorf("Authorization = %q, want %q", receivedAuth, "Bearer test-token")
+	}
+	if receivedBody.BatchID != "batch-abc-123" {
+		t.Errorf("batch_id = %q, want %q", receivedBody.BatchID, "batch-abc-123")
+	}
+	if len(receivedBody.Messages) != 2 {
+		t.Errorf("messages count = %d, want 2", len(receivedBody.Messages))
+	}
+
+	// Verify response parsing.
+	if resp.Accepted != 2 {
+		t.Errorf("Accepted = %d, want 2", resp.Accepted)
+	}
+	if resp.BatchID != "batch-abc-123" {
+		t.Errorf("BatchID = %q, want %q", resp.BatchID, "batch-abc-123")
+	}
+	if resp.SessionID != "sess-xyz-789" {
+		t.Errorf("SessionID = %q, want %q", resp.SessionID, "sess-xyz-789")
+	}
+}
+
+func TestSendMessages_AuthFailed401(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "bad-token")
+	ctx := testContext(t)
+
+	_, err := client.SendMessages(ctx, "batch-1", []json.RawMessage{json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("expected error for 401, got nil")
+	}
+	if !errors.Is(err, ErrAuthFailed) {
+		t.Errorf("error = %v, want ErrAuthFailed", err)
+	}
+}
+
+func TestSendMessages_DeviceRevoked403(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "revoked-token")
+	ctx := testContext(t)
+
+	_, err := client.SendMessages(ctx, "batch-1", []json.RawMessage{json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("expected error for 403, got nil")
+	}
+	if !errors.Is(err, ErrDeviceRevoked) {
+		t.Errorf("error = %v, want ErrDeviceRevoked", err)
+	}
+}
+
+func TestSendMessages_ServerError5xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "token")
+	ctx := testContext(t)
+
+	_, err := client.SendMessages(ctx, "batch-1", []json.RawMessage{json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("expected error for 500, got nil")
+	}
+	if isAuthError(err) {
+		t.Error("5xx error should not be classified as auth error")
+	}
+}
+
+func TestSendMessagesWithRetry_SuccessAfterRetry(t *testing.T) {
+	var attempt atomic.Int32
+	var receivedBatchIDs []string
+	var mu sync.Mutex
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body ingestRequest
+		data, _ := io.ReadAll(r.Body)
+		json.Unmarshal(data, &body)
+
+		mu.Lock()
+		receivedBatchIDs = append(receivedBatchIDs, body.BatchID)
+		mu.Unlock()
+
+		n := attempt.Add(1)
+		if n <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(IngestResponse{
+			Accepted:  1,
+			BatchID:   body.BatchID,
+			SessionID: "sess-1",
+		})
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "token")
+	ctx := testContext(t)
+
+	resp, err := client.SendMessagesWithRetry(ctx, "batch-retry-123", []json.RawMessage{json.RawMessage(`{"type":"log_lines"}`)})
+	if err != nil {
+		t.Fatalf("SendMessagesWithRetry() failed: %v", err)
+	}
+
+	if resp.Accepted != 1 {
+		t.Errorf("Accepted = %d, want 1", resp.Accepted)
+	}
+	if attempt.Load() != 3 {
+		t.Errorf("attempts = %d, want 3", attempt.Load())
+	}
+
+	// Verify same batch_id was used on all retries (for server-side deduplication).
+	mu.Lock()
+	defer mu.Unlock()
+	for i, id := range receivedBatchIDs {
+		if id != "batch-retry-123" {
+			t.Errorf("attempt %d batch_id = %q, want %q", i+1, id, "batch-retry-123")
+		}
+	}
+}
+
+func TestSendMessagesWithRetry_NoRetryOnAuthError(t *testing.T) {
+	var attempt atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "bad-token")
+	ctx := testContext(t)
+
+	_, err := client.SendMessagesWithRetry(ctx, "batch-1", []json.RawMessage{json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrAuthFailed) {
+		t.Errorf("error = %v, want ErrAuthFailed", err)
+	}
+	if attempt.Load() != 1 {
+		t.Errorf("attempts = %d, want 1 (no retry on auth error)", attempt.Load())
+	}
+}
+
+func TestSendMessagesWithRetry_NoRetryOnRevoked(t *testing.T) {
+	var attempt atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "revoked-token")
+	ctx := testContext(t)
+
+	_, err := client.SendMessagesWithRetry(ctx, "batch-1", []json.RawMessage{json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrDeviceRevoked) {
+		t.Errorf("error = %v, want ErrDeviceRevoked", err)
+	}
+	if attempt.Load() != 1 {
+		t.Errorf("attempts = %d, want 1 (no retry on revoked)", attempt.Load())
+	}
+}
+
+func TestSendMessagesWithRetry_ContextCancellation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "token")
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	_, err := client.SendMessagesWithRetry(ctx, "batch-1", []json.RawMessage{json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("expected error from cancelled context, got nil")
+	}
+}
+
+func TestSendMessages_RequestBodyFormat(t *testing.T) {
+	var receivedRaw json.RawMessage
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		receivedRaw = data
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(IngestResponse{Accepted: 1, BatchID: "b1", SessionID: "s1"})
+	}))
+	defer srv.Close()
+
+	client := newTestClient(t, srv.URL, "token")
+	ctx := testContext(t)
+
+	messages := []json.RawMessage{
+		json.RawMessage(`{"type":"project_state","id":"msg-1","timestamp":"2026-02-16T00:00:00Z"}`),
+	}
+	_, err := client.SendMessages(ctx, "batch-format-test", messages)
+	if err != nil {
+		t.Fatalf("SendMessages() failed: %v", err)
+	}
+
+	// Verify the raw JSON structure matches what the server expects.
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(receivedRaw, &parsed); err != nil {
+		t.Fatalf("failed to parse request body: %v", err)
+	}
+	if _, ok := parsed["batch_id"]; !ok {
+		t.Error("request body missing batch_id field")
+	}
+	if _, ok := parsed["messages"]; !ok {
+		t.Error("request body missing messages field")
+	}
+}
+
 func TestIsAuthError(t *testing.T) {
 	if isAuthError(nil) {
 		t.Error("nil should not be auth error")

@@ -173,6 +173,62 @@ func (c *Client) Connect(ctx context.Context) (*WelcomeResponse, error) {
 	return &welcome, nil
 }
 
+// IngestResponse is the response from POST /api/device/messages.
+type IngestResponse struct {
+	Accepted  int    `json:"accepted"`
+	BatchID   string `json:"batch_id"`
+	SessionID string `json:"session_id"`
+}
+
+// ingestRequest is the JSON body sent to POST /api/device/messages.
+type ingestRequest struct {
+	BatchID  string            `json:"batch_id"`
+	Messages []json.RawMessage `json:"messages"`
+}
+
+// SendMessages sends a batch of messages via POST /api/device/messages.
+// It does NOT retry on failure — use SendMessagesWithRetry for retry behavior.
+func (c *Client) SendMessages(ctx context.Context, batchID string, messages []json.RawMessage) (*IngestResponse, error) {
+	body := ingestRequest{
+		BatchID:  batchID,
+		Messages: messages,
+	}
+
+	var resp IngestResponse
+	if err := c.doJSON(ctx, "POST", "/api/device/messages", body, &resp); err != nil {
+		return nil, fmt.Errorf("send messages: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// SendMessagesWithRetry sends a message batch with exponential backoff retry on transient failures.
+// It does not retry on 401/403 auth errors. Retries use the same batchID for server-side deduplication.
+func (c *Client) SendMessagesWithRetry(ctx context.Context, batchID string, messages []json.RawMessage) (*IngestResponse, error) {
+	attempt := 0
+	for {
+		resp, err := c.SendMessages(ctx, batchID, messages)
+		if err == nil {
+			return resp, nil
+		}
+
+		// Don't retry auth errors.
+		if isAuthError(err) {
+			return nil, err
+		}
+
+		attempt++
+		delay := backoff(attempt)
+		log.Printf("SendMessages failed (attempt %d, batch %s): %v — retrying in %s", attempt, batchID, err, delay.Round(time.Millisecond))
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+}
+
 // Disconnect calls POST /api/device/disconnect to notify the server the device is going offline.
 func (c *Client) Disconnect(ctx context.Context) error {
 	var resp json.RawMessage
