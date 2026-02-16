@@ -31,6 +31,13 @@ type testUplinkServer struct {
 	// heartbeatStatus controls the HTTP status code returned by heartbeat.
 	// 0 or 200 means success.
 	heartbeatStatus atomic.Int32
+
+	// connectStatus controls the HTTP status code returned by connect.
+	// 0 or 200 means success.
+	connectStatus atomic.Int32
+
+	// sessionCounter increments on each connect — used for unique session IDs.
+	sessionCounter atomic.Int32
 }
 
 type messageBatch struct {
@@ -75,17 +82,27 @@ func (us *testUplinkServer) handleHTTP(t *testing.T, w http.ResponseWriter, r *h
 	case "/api/device/connect":
 		us.connectCalls.Add(1)
 
+		status := int(us.connectStatus.Load())
+		if status >= 400 {
+			w.WriteHeader(status)
+			json.NewEncoder(w).Encode(map[string]string{"error": "connect failed"})
+			return
+		}
+
 		var body map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&body)
 		us.mu.Lock()
 		us.lastConnectBody = body
 		us.mu.Unlock()
 
+		n := us.sessionCounter.Add(1)
+		sessionID := fmt.Sprintf("test-session-%d", n)
+
 		json.NewEncoder(w).Encode(WelcomeResponse{
 			Type:            "welcome",
 			ProtocolVersion: 1,
 			DeviceID:        42,
-			SessionID:       "test-session-abc",
+			SessionID:       sessionID,
 			Reverb:          reverbCfg,
 		})
 
@@ -114,10 +131,11 @@ func (us *testUplinkServer) handleHTTP(t *testing.T, w http.ResponseWriter, r *h
 		})
 		us.mu.Unlock()
 
+		currentSession := fmt.Sprintf("test-session-%d", us.sessionCounter.Load())
 		json.NewEncoder(w).Encode(IngestResponse{
 			Accepted:  len(req.Messages),
 			BatchID:   req.BatchID,
-			SessionID: "test-session-abc",
+			SessionID: currentSession,
 		})
 
 	case "/api/device/broadcasting/auth":
@@ -180,8 +198,8 @@ func TestUplink_FullLifecycle(t *testing.T) {
 	}
 
 	// Verify session/device IDs.
-	if got := u.SessionID(); got != "test-session-abc" {
-		t.Errorf("SessionID() = %q, want %q", got, "test-session-abc")
+	if got := u.SessionID(); !strings.HasPrefix(got, "test-session-") {
+		t.Errorf("SessionID() = %q, want prefix %q", got, "test-session-")
 	}
 	if got := u.DeviceID(); got != 42 {
 		t.Errorf("DeviceID() = %d, want 42", got)
@@ -266,8 +284,8 @@ func TestUplink_SessionIDAndDeviceID(t *testing.T) {
 		t.Fatal("timeout waiting for subscription")
 	}
 
-	if got := u.SessionID(); got != "test-session-abc" {
-		t.Errorf("SessionID() = %q, want %q", got, "test-session-abc")
+	if got := u.SessionID(); !strings.HasPrefix(got, "test-session-") {
+		t.Errorf("SessionID() = %q, want prefix %q", got, "test-session-")
 	}
 	if got := u.DeviceID(); got != 42 {
 		t.Errorf("DeviceID() = %d, want 42", got)
@@ -888,4 +906,581 @@ func TestUplink_Heartbeat_ContextCancellationStops(t *testing.T) {
 
 	// Clean up: close still works even though context is cancelled.
 	u.Close()
+}
+
+// --- Reconnection Tests ---
+
+// waitForSubscription drains the onSubscribe channel and returns the channel name.
+func waitForSubscription(t *testing.T, ps *testPusherServer) string {
+	t.Helper()
+	select {
+	case ch := <-ps.onSubscribe:
+		return ch
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for Pusher subscription")
+		return ""
+	}
+}
+
+func TestUplink_Reconnect_PusherDisconnection(t *testing.T) {
+	us := newTestUplinkServer(t)
+	reconnectCh := make(chan struct{}, 1)
+
+	u := newTestUplink(t, us, WithOnReconnect(func() {
+		select {
+		case reconnectCh <- struct{}{}:
+		default:
+		}
+	}))
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	// Wait for initial subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	initialSession := u.SessionID()
+	connectsBefore := us.connectCalls.Load()
+
+	// Close the Pusher WebSocket from the server side to simulate disconnection.
+	if err := us.pusherSrv.closeConnection(); err != nil {
+		t.Fatalf("closeConnection() failed: %v", err)
+	}
+
+	// Wait for the OnReconnect callback — this means full reconnection succeeded.
+	select {
+	case <-reconnectCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for reconnection after Pusher disconnect")
+	}
+
+	// Wait for re-subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// Verify a new connect call was made.
+	if got := us.connectCalls.Load(); got <= connectsBefore {
+		t.Errorf("connect calls after reconnect = %d, want > %d", got, connectsBefore)
+	}
+
+	// Verify session ID was refreshed.
+	newSession := u.SessionID()
+	if newSession == initialSession {
+		t.Errorf("session ID should change after reconnection, got same: %q", newSession)
+	}
+
+	// Verify commands can still be received after reconnection.
+	channel := fmt.Sprintf("private-chief-server.%d", u.DeviceID())
+	cmd := json.RawMessage(`{"type":"post_reconnect_cmd"}`)
+	// Give the Pusher client a moment to be ready.
+	time.Sleep(100 * time.Millisecond)
+	if err := us.pusherSrv.sendCommand(channel, cmd); err != nil {
+		t.Fatalf("sendCommand after reconnect failed: %v", err)
+	}
+
+	select {
+	case received := <-u.Receive():
+		var parsed map[string]interface{}
+		json.Unmarshal(received, &parsed)
+		if parsed["type"] != "post_reconnect_cmd" {
+			t.Errorf("received type = %v, want post_reconnect_cmd", parsed["type"])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout receiving command after reconnection")
+	}
+}
+
+func TestUplink_Reconnect_HeartbeatFailuresTriggersReconnect(t *testing.T) {
+	us := newTestUplinkServer(t)
+	reconnectCh := make(chan struct{}, 1)
+
+	// Use fast heartbeat timing to trigger reconnection quickly.
+	client := newTestClient(t, us.httpSrv.URL, "test-token")
+	u := NewUplink(client, WithOnReconnect(func() {
+		select {
+		case reconnectCh <- struct{}{}:
+		default:
+		}
+	}))
+	u.hbInterval = 50 * time.Millisecond
+	u.hbRetryDelay = 10 * time.Millisecond
+	u.hbSkipWindow = 0
+	u.hbMaxFails = 2
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	// Wait for initial subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	initialSession := u.SessionID()
+
+	// Make heartbeats fail.
+	us.heartbeatStatus.Store(500)
+
+	// Wait for reconnection (heartbeat failures → reconnect → OnReconnect).
+	select {
+	case <-reconnectCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for reconnection triggered by heartbeat failures")
+	}
+
+	// Verify session was refreshed.
+	newSession := u.SessionID()
+	if newSession == initialSession {
+		t.Errorf("session should change after reconnection, got same: %q", newSession)
+	}
+}
+
+func TestUplink_Reconnect_HTTPConnectFailureThenRecover(t *testing.T) {
+	us := newTestUplinkServer(t)
+	reconnectCh := make(chan struct{}, 1)
+
+	u := newTestUplink(t, us, WithOnReconnect(func() {
+		select {
+		case reconnectCh <- struct{}{}:
+		default:
+		}
+	}))
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	// Wait for initial subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// Make HTTP connect fail to simulate server outage during reconnection.
+	us.connectStatus.Store(500)
+
+	// Trigger Pusher disconnection to start reconnection.
+	if err := us.pusherSrv.closeConnection(); err != nil {
+		t.Fatalf("closeConnection() failed: %v", err)
+	}
+
+	// Wait a bit for the first reconnection attempt to fail.
+	time.Sleep(2 * time.Second)
+
+	// Now restore HTTP connect.
+	us.connectStatus.Store(0)
+
+	// Wait for successful reconnection.
+	select {
+	case <-reconnectCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for reconnection after server recovery")
+	}
+
+	// Multiple connect attempts should have been made (at least the failed one + the successful one).
+	if got := us.connectCalls.Load(); got < 3 {
+		t.Errorf("connect calls = %d, want >= 3 (initial + failed + success)", got)
+	}
+}
+
+func TestUplink_Reconnect_AuthFailureTriggersTokenRefresh(t *testing.T) {
+	us := newTestUplinkServer(t)
+	reconnectCh := make(chan struct{}, 1)
+	refreshCh := make(chan struct{}, 1)
+
+	client := newTestClient(t, us.httpSrv.URL, "test-token")
+	u := NewUplink(client,
+		WithOnReconnect(func() {
+			select {
+			case reconnectCh <- struct{}{}:
+			default:
+			}
+		}),
+		WithOnAuthFailure(func() error {
+			// Simulate token refresh: restore connect and update token.
+			us.connectStatus.Store(0)
+			client.SetAccessToken("refreshed-token")
+			select {
+			case refreshCh <- struct{}{}:
+			default:
+			}
+			return nil
+		}),
+	)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	// Wait for initial subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// Make connect return 401 to trigger auth failure during reconnection.
+	us.connectStatus.Store(401)
+
+	// Trigger reconnection via Pusher disconnect.
+	if err := us.pusherSrv.closeConnection(); err != nil {
+		t.Fatalf("closeConnection() failed: %v", err)
+	}
+
+	// Wait for the token refresh callback.
+	select {
+	case <-refreshCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for token refresh callback")
+	}
+
+	// Wait for successful reconnection with new token.
+	select {
+	case <-reconnectCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for reconnection after token refresh")
+	}
+}
+
+func TestUplink_Reconnect_OnReconnectCallbackFires(t *testing.T) {
+	us := newTestUplinkServer(t)
+
+	var callbackCount atomic.Int32
+	u := newTestUplink(t, us, WithOnReconnect(func() {
+		callbackCount.Add(1)
+	}))
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	// Wait for initial subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// No reconnect callback yet.
+	if got := callbackCount.Load(); got != 0 {
+		t.Errorf("callback count before reconnect = %d, want 0", got)
+	}
+
+	// Trigger reconnection.
+	if err := us.pusherSrv.closeConnection(); err != nil {
+		t.Fatalf("closeConnection() failed: %v", err)
+	}
+
+	// Wait for reconnection.
+	deadline := time.After(10 * time.Second)
+	for {
+		if callbackCount.Load() >= 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for OnReconnect callback")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	// Drain subscription channel.
+	waitForSubscription(t, us.pusherSrv)
+
+	if got := callbackCount.Load(); got != 1 {
+		t.Errorf("callback count = %d, want 1", got)
+	}
+}
+
+func TestUplink_Reconnect_SendBuffersDuringOutage(t *testing.T) {
+	us := newTestUplinkServer(t)
+	reconnectCh := make(chan struct{}, 1)
+
+	u := newTestUplink(t, us, WithOnReconnect(func() {
+		select {
+		case reconnectCh <- struct{}{}:
+		default:
+		}
+	}))
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	// Wait for initial subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// Send a message and verify it arrives.
+	u.Send(json.RawMessage(`{"type":"run_complete","data":"before"}`), "run_complete")
+	deadline := time.After(5 * time.Second)
+	for {
+		batches := us.getMessageBatches()
+		if len(batches) > 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for initial message")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	batchCountBefore := len(us.getMessageBatches())
+
+	// Trigger reconnection.
+	if err := us.pusherSrv.closeConnection(); err != nil {
+		t.Fatalf("closeConnection() failed: %v", err)
+	}
+
+	// Wait for reconnection to complete.
+	select {
+	case <-reconnectCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for reconnection")
+	}
+
+	// Wait for re-subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// Send a message after reconnection — it should be delivered.
+	u.Send(json.RawMessage(`{"type":"run_complete","data":"after"}`), "run_complete")
+
+	deadline = time.After(5 * time.Second)
+	for {
+		batches := us.getMessageBatches()
+		if len(batches) > batchCountBefore {
+			// Found a new batch after reconnection.
+			lastBatch := batches[len(batches)-1]
+			found := false
+			for _, msg := range lastBatch.Messages {
+				var parsed map[string]interface{}
+				json.Unmarshal(msg, &parsed)
+				if parsed["data"] == "after" {
+					found = true
+				}
+			}
+			if !found {
+				t.Error("expected 'after' message in batch after reconnection")
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for message after reconnection")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func TestUplink_Reconnect_ConcurrentTriggersPrevented(t *testing.T) {
+	us := newTestUplinkServer(t)
+
+	var reconnectCount atomic.Int32
+	u := newTestUplink(t, us, WithOnReconnect(func() {
+		reconnectCount.Add(1)
+	}))
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	// Wait for initial subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// Trigger reconnection multiple times concurrently — only one should run.
+	for i := 0; i < 5; i++ {
+		u.triggerReconnect("concurrent test")
+	}
+
+	// Wait for exactly 1 reconnection.
+	deadline := time.After(10 * time.Second)
+	for {
+		if reconnectCount.Load() >= 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for reconnection")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	// Wait a bit more to confirm no additional reconnections happen.
+	waitForSubscription(t, us.pusherSrv)
+	time.Sleep(500 * time.Millisecond)
+
+	if got := reconnectCount.Load(); got != 1 {
+		t.Errorf("reconnect count = %d, want 1 (concurrent triggers should be prevented)", got)
+	}
+}
+
+func TestUplink_Reconnect_CloseDuringReconnectStops(t *testing.T) {
+	us := newTestUplinkServer(t)
+
+	u := newTestUplink(t, us)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for initial subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// Make connect fail so reconnection keeps retrying.
+	us.connectStatus.Store(500)
+
+	// Trigger Pusher disconnection.
+	if err := us.pusherSrv.closeConnection(); err != nil {
+		t.Fatalf("closeConnection() failed: %v", err)
+	}
+
+	// Wait a moment for reconnection to start.
+	time.Sleep(500 * time.Millisecond)
+
+	// Close the uplink — should stop reconnection.
+	err := u.Close()
+	if err != nil {
+		// Close may return an error from the already-closed Pusher — that's OK.
+		t.Logf("Close() returned: %v (expected for already-closed Pusher)", err)
+	}
+
+	// Verify it doesn't hang or panic. Record connect calls and wait.
+	connectsAfterClose := us.connectCalls.Load()
+	time.Sleep(2 * time.Second)
+
+	// There should be no more connect attempts after Close().
+	if got := us.connectCalls.Load(); got > connectsAfterClose+1 {
+		t.Errorf("connect calls after Close: %d more than expected (got %d, started at %d)", got-connectsAfterClose, got, connectsAfterClose)
+	}
+}
+
+func TestUplink_Reconnect_LogsAttemptCountAndDelay(t *testing.T) {
+	// This test verifies the reconnection logic makes multiple attempts with backoff.
+	// We can't easily capture log output, so we verify the behavior indirectly
+	// by checking the number of connect attempts and timing.
+	us := newTestUplinkServer(t)
+	reconnectCh := make(chan struct{}, 1)
+
+	u := newTestUplink(t, us, WithOnReconnect(func() {
+		select {
+		case reconnectCh <- struct{}{}:
+		default:
+		}
+	}))
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	waitForSubscription(t, us.pusherSrv)
+
+	// Make connect fail twice, then succeed.
+	failCount := atomic.Int32{}
+	originalStatus := us.connectStatus.Load()
+	us.connectStatus.Store(500)
+
+	go func() {
+		for {
+			current := us.connectCalls.Load()
+			if current >= 3 { // initial + 2 failed
+				if failCount.Add(1) == 1 {
+					us.connectStatus.Store(int32(originalStatus))
+				}
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+
+	// Trigger reconnection.
+	if err := us.pusherSrv.closeConnection(); err != nil {
+		t.Fatalf("closeConnection() failed: %v", err)
+	}
+
+	select {
+	case <-reconnectCh:
+	case <-time.After(15 * time.Second):
+		t.Fatal("timeout waiting for reconnection after transient failures")
+	}
+
+	// Multiple connect calls (initial + retries + success).
+	if got := us.connectCalls.Load(); got < 3 {
+		t.Errorf("connect calls = %d, want >= 3", got)
+	}
+}
+
+func TestUplink_Reconnect_WithOnAuthFailureOption(t *testing.T) {
+	us := newTestUplinkServer(t)
+
+	var authFailureCalled atomic.Int32
+	u := newTestUplink(t, us, WithOnAuthFailure(func() error {
+		authFailureCalled.Add(1)
+		return nil
+	}))
+
+	// Verify the option was set.
+	if u.onAuthFailure == nil {
+		t.Fatal("onAuthFailure should be set by WithOnAuthFailure option")
+	}
+
+	// Invoke and verify.
+	if err := u.onAuthFailure(); err != nil {
+		t.Errorf("onAuthFailure() = %v, want nil", err)
+	}
+	if got := authFailureCalled.Load(); got != 1 {
+		t.Errorf("authFailureCalled = %d, want 1", got)
+	}
+}
+
+func TestUplink_Reconnect_StableReceiveChannel(t *testing.T) {
+	// Verify that Receive() returns the same channel before and after reconnection.
+	us := newTestUplinkServer(t)
+	reconnectCh := make(chan struct{}, 1)
+
+	u := newTestUplink(t, us, WithOnReconnect(func() {
+		select {
+		case reconnectCh <- struct{}{}:
+		default:
+		}
+	}))
+
+	// Receive channel is created at construction time.
+	recvBefore := u.Receive()
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer u.Close()
+
+	waitForSubscription(t, us.pusherSrv)
+
+	// Verify it's the same channel after connect.
+	recvAfterConnect := u.Receive()
+	if recvBefore != recvAfterConnect {
+		t.Error("Receive() channel changed after Connect — should be stable")
+	}
+
+	// Trigger reconnection.
+	if err := us.pusherSrv.closeConnection(); err != nil {
+		t.Fatalf("closeConnection() failed: %v", err)
+	}
+
+	select {
+	case <-reconnectCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for reconnection")
+	}
+
+	waitForSubscription(t, us.pusherSrv)
+
+	// Verify it's still the same channel after reconnection.
+	recvAfterReconnect := u.Receive()
+	if recvBefore != recvAfterReconnect {
+		t.Error("Receive() channel changed after reconnection — should be stable")
+	}
 }

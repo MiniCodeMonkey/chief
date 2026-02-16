@@ -181,6 +181,20 @@ func (ps *testPusherServer) sendCommand(channel string, command json.RawMessage)
 	return conn.WriteJSON(msg)
 }
 
+// closeConnection closes the WebSocket connection from the server side,
+// simulating a Pusher disconnection.
+func (ps *testPusherServer) closeConnection() error {
+	ps.mu.Lock()
+	conn := ps.conn
+	ps.mu.Unlock()
+
+	if conn == nil {
+		return fmt.Errorf("no client connected")
+	}
+
+	return conn.Close()
+}
+
 // sendPing sends a pusher:ping to the connected client.
 func (ps *testPusherServer) sendPing() error {
 	ps.mu.Lock()
