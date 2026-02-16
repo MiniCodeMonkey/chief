@@ -25,12 +25,12 @@ func TestRunLogin_Success(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/oauth/device/code":
+		case "/api/oauth/device/code":
 			json.NewEncoder(w).Encode(deviceCodeResponse{
 				DeviceCode: "test-device-code",
 				UserCode:   "ABCD-1234",
 			})
-		case "/oauth/device/token":
+		case "/api/oauth/device/token":
 			count := pollCount.Add(1)
 			if count < 2 {
 				// First poll: authorization pending
@@ -110,12 +110,12 @@ func TestRunLogin_AuthorizationDenied(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/oauth/device/code":
+		case "/api/oauth/device/code":
 			json.NewEncoder(w).Encode(deviceCodeResponse{
 				DeviceCode: "test-device-code",
 				UserCode:   "ABCD-1234",
 			})
-		case "/oauth/device/token":
+		case "/api/oauth/device/token":
 			json.NewEncoder(w).Encode(tokenResponse{
 				Error: "access_denied",
 			})
@@ -140,7 +140,7 @@ func TestRunLogin_DefaultDeviceName(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/oauth/device/code":
+		case "/api/oauth/device/code":
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
 			receivedDeviceName = body["device_name"]
@@ -148,7 +148,7 @@ func TestRunLogin_DefaultDeviceName(t *testing.T) {
 				DeviceCode: "test-device-code",
 				UserCode:   "TEST-CODE",
 			})
-		case "/oauth/device/token":
+		case "/api/oauth/device/token":
 			json.NewEncoder(w).Encode(tokenResponse{
 				AccessToken:  "token",
 				RefreshToken: "refresh",
@@ -227,7 +227,7 @@ func TestRunLogin_SetupToken_Success(t *testing.T) {
 	var receivedDeviceName string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/oauth/device/exchange" {
+		if r.URL.Path != "/api/oauth/device/exchange" {
 			http.NotFound(w, r)
 			return
 		}
@@ -284,7 +284,7 @@ func TestRunLogin_SetupToken_InvalidToken(t *testing.T) {
 	setTestHome(t, home)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/oauth/device/exchange" {
+		if r.URL.Path != "/api/oauth/device/exchange" {
 			http.NotFound(w, r)
 			return
 		}
@@ -319,7 +319,7 @@ func TestRunLogin_SetupToken_ExpiredToken(t *testing.T) {
 	setTestHome(t, home)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/oauth/device/exchange" {
+		if r.URL.Path != "/api/oauth/device/exchange" {
 			http.NotFound(w, r)
 			return
 		}
@@ -369,7 +369,7 @@ func TestRunLogin_SetupToken_DefaultDeviceName(t *testing.T) {
 	var receivedDeviceName string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/oauth/device/exchange" {
+		if r.URL.Path != "/api/oauth/device/exchange" {
 			http.NotFound(w, r)
 			return
 		}

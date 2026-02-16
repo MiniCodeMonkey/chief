@@ -538,7 +538,7 @@ func TestRunServe_TokenRefresh(t *testing.T) {
 	mux := http.NewServeMux()
 	upgrader := websocket.Upgrader{}
 
-	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token":  "new-refreshed-token",

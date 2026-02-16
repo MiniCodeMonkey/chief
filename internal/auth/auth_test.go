@@ -283,7 +283,7 @@ func TestRefreshToken_Success(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/oauth/token" {
+		if r.URL.Path == "/api/oauth/token" {
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
 			if body["refresh_token"] != "test-refresh-token" {
@@ -370,7 +370,7 @@ func TestRefreshToken_SessionExpired(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/oauth/token" {
+		if r.URL.Path == "/api/oauth/token" {
 			json.NewEncoder(w).Encode(refreshResponse{
 				Error: "invalid_grant",
 			})
@@ -413,7 +413,7 @@ func TestRefreshToken_ThreadSafe(t *testing.T) {
 	var callCount int
 	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/oauth/token" {
+		if r.URL.Path == "/api/oauth/token" {
 			mu.Lock()
 			callCount++
 			mu.Unlock()
@@ -455,7 +455,7 @@ func TestRefreshToken_ThreadSafe(t *testing.T) {
 func TestRevokeDevice_Success(t *testing.T) {
 	var receivedToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/oauth/revoke" {
+		if r.URL.Path == "/api/oauth/revoke" {
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
 			receivedToken = body["access_token"]

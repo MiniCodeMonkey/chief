@@ -188,7 +188,7 @@ func RefreshToken(baseURL string) (*Credentials, error) {
 	})
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(baseURL+"/oauth/token", "application/json", bytes.NewReader(reqBody))
+	resp, err := client.Post(baseURL+"/api/oauth/token", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("refreshing token: %w", err)
 	}
@@ -228,7 +228,7 @@ func RevokeDevice(accessToken, baseURL string) error {
 	})
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(baseURL+"/oauth/revoke", "application/json", bytes.NewReader(reqBody))
+	resp, err := client.Post(baseURL+"/api/oauth/revoke", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("revoking device: %w", err)
 	}

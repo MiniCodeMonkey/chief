@@ -28,7 +28,7 @@ func TestRunLogout_Success(t *testing.T) {
 
 	var revokedToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/oauth/revoke" {
+		if r.URL.Path == "/api/oauth/revoke" {
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
 			revokedToken = body["access_token"]

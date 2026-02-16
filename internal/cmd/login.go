@@ -85,7 +85,7 @@ func RunLogin(opts LoginOptions) error {
 		"device_name": deviceName,
 	})
 
-	resp, err := http.Post(baseURL+"/oauth/device/code", "application/json", bytes.NewReader(codeReqBody))
+	resp, err := http.Post(baseURL+"/api/oauth/device/code", "application/json", bytes.NewReader(codeReqBody))
 	if err != nil {
 		return fmt.Errorf("requesting device code: %w", err)
 	}
@@ -136,7 +136,7 @@ func exchangeSetupToken(baseURL, token, deviceName string) error {
 	})
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(baseURL+"/oauth/device/exchange", "application/json", bytes.NewReader(reqBody))
+	resp, err := client.Post(baseURL+"/api/oauth/device/exchange", "application/json", bytes.NewReader(reqBody))
 	if err != nil {
 		return fmt.Errorf("exchanging setup token: %w", err)
 	}
@@ -189,7 +189,7 @@ func pollForToken(baseURL, deviceCode, deviceName string) (*auth.Credentials, er
 			"device_code": deviceCode,
 		})
 
-		resp, err := client.Post(baseURL+"/oauth/device/token", "application/json", bytes.NewReader(reqBody))
+		resp, err := client.Post(baseURL+"/api/oauth/device/token", "application/json", bytes.NewReader(reqBody))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Network error while polling (will retry): %v\n", err)
 			continue
