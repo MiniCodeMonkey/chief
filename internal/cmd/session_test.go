@@ -40,10 +40,7 @@ func TestSessionManager_NewPRD(t *testing.T) {
 	projectDir := filepath.Join(workspaceDir, "myproject")
 	createGitRepo(t, projectDir)
 
-	var messages []map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send new_prd request
 		newPRDReq := map[string]string{
 			"type":            "new_prd",
@@ -53,48 +50,34 @@ func TestSessionManager_NewPRD(t *testing.T) {
 			"session_id":      "sess-123",
 			"initial_message": "Build a todo app",
 		}
-		conn.WriteJSON(newPRDReq)
+		ms.sendCommand(newPRDReq)
 
 		// We should receive claude_output messages.
 		// Since we can't actually run claude in tests, expect an error response
 		// (claude binary not available in test) — this tests the error path.
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		for {
-			_, data, err := conn.ReadMessage()
+		// Wait for first message with 3 second timeout.
+		raw, err := ms.waitForMessageType("error", 3*time.Second)
+		if err != nil {
+			// If not an error, might be claude_output
+			raw, err = ms.waitForMessageType("claude_output", 3*time.Second)
 			if err != nil {
-				break
+				t.Fatal("expected error or claude_output message")
 			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
-				// If we get an error or claude_output done, stop
-				if msg["type"] == "error" || (msg["type"] == "claude_output" && msg["done"] == true) {
-					break
-				}
-			}
+		}
+
+		var msg map[string]interface{}
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+
+		// Check that we got some kind of response
+		msgType := msg["type"].(string)
+		if msgType != "error" && msgType != "claude_output" {
+			t.Errorf("expected error or claude_output message, got %s", msgType)
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Since claude binary isn't available in test, we expect either:
-	// 1. An error message about failing to start Claude, OR
-	// 2. A claude_output done=true message if the process started but exited immediately
-	if len(messages) == 0 {
-		t.Fatal("expected at least one response message")
-	}
-
-	// Check that we got some kind of response
-	lastMsg := messages[len(messages)-1]
-	msgType := lastMsg["type"].(string)
-	if msgType != "error" && msgType != "claude_output" {
-		t.Errorf("expected error or claude_output message, got %s", msgType)
 	}
 }
 
@@ -108,10 +91,7 @@ func TestSessionManager_NewPRD_ProjectNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var errorReceived map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send new_prd for nonexistent project
 		newPRDReq := map[string]string{
 			"type":            "new_prd",
@@ -121,32 +101,28 @@ func TestSessionManager_NewPRD_ProjectNotFound(t *testing.T) {
 			"session_id":      "sess-123",
 			"initial_message": "Build a todo app",
 		}
-		conn.WriteJSON(newPRDReq)
+		ms.sendCommand(newPRDReq)
 
 		// Read error response
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
-			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
-			mu.Unlock()
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
+		if err != nil {
+			t.Fatalf("expected error message: %v", err)
+		}
+
+		var errorReceived map[string]interface{}
+		if err := json.Unmarshal(raw, &errorReceived); err != nil {
+			t.Fatalf("failed to unmarshal error: %v", err)
+		}
+
+		if errorReceived["type"] != "error" {
+			t.Errorf("expected type 'error', got %v", errorReceived["type"])
+		}
+		if errorReceived["code"] != "PROJECT_NOT_FOUND" {
+			t.Errorf("expected code 'PROJECT_NOT_FOUND', got %v", errorReceived["code"])
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if errorReceived == nil {
-		t.Fatal("error message was not received")
-	}
-	if errorReceived["type"] != "error" {
-		t.Errorf("expected type 'error', got %v", errorReceived["type"])
-	}
-	if errorReceived["code"] != "PROJECT_NOT_FOUND" {
-		t.Errorf("expected code 'PROJECT_NOT_FOUND', got %v", errorReceived["code"])
 	}
 }
 
@@ -160,10 +136,7 @@ func TestSessionManager_PRDMessage_SessionNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var errorReceived map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send prd_message for nonexistent session
 		prdMsg := map[string]string{
 			"type":       "prd_message",
@@ -172,32 +145,28 @@ func TestSessionManager_PRDMessage_SessionNotFound(t *testing.T) {
 			"session_id": "nonexistent-session",
 			"content":    "hello",
 		}
-		conn.WriteJSON(prdMsg)
+		ms.sendCommand(prdMsg)
 
 		// Read error response
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
-			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
-			mu.Unlock()
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
+		if err != nil {
+			t.Fatalf("expected error message: %v", err)
+		}
+
+		var errorReceived map[string]interface{}
+		if err := json.Unmarshal(raw, &errorReceived); err != nil {
+			t.Fatalf("failed to unmarshal error: %v", err)
+		}
+
+		if errorReceived["type"] != "error" {
+			t.Errorf("expected type 'error', got %v", errorReceived["type"])
+		}
+		if errorReceived["code"] != "SESSION_NOT_FOUND" {
+			t.Errorf("expected code 'SESSION_NOT_FOUND', got %v", errorReceived["code"])
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if errorReceived == nil {
-		t.Fatal("error message was not received")
-	}
-	if errorReceived["type"] != "error" {
-		t.Errorf("expected type 'error', got %v", errorReceived["type"])
-	}
-	if errorReceived["code"] != "SESSION_NOT_FOUND" {
-		t.Errorf("expected code 'SESSION_NOT_FOUND', got %v", errorReceived["code"])
 	}
 }
 
@@ -211,10 +180,7 @@ func TestSessionManager_ClosePRDSession_SessionNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var errorReceived map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send close_prd_session for nonexistent session
 		closeMsg := map[string]interface{}{
 			"type":       "close_prd_session",
@@ -223,32 +189,28 @@ func TestSessionManager_ClosePRDSession_SessionNotFound(t *testing.T) {
 			"session_id": "nonexistent-session",
 			"save":       false,
 		}
-		conn.WriteJSON(closeMsg)
+		ms.sendCommand(closeMsg)
 
 		// Read error response
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
-			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
-			mu.Unlock()
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
+		if err != nil {
+			t.Fatalf("expected error message: %v", err)
+		}
+
+		var errorReceived map[string]interface{}
+		if err := json.Unmarshal(raw, &errorReceived); err != nil {
+			t.Fatalf("failed to unmarshal error: %v", err)
+		}
+
+		if errorReceived["type"] != "error" {
+			t.Errorf("expected type 'error', got %v", errorReceived["type"])
+		}
+		if errorReceived["code"] != "SESSION_NOT_FOUND" {
+			t.Errorf("expected code 'SESSION_NOT_FOUND', got %v", errorReceived["code"])
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if errorReceived == nil {
-		t.Fatal("error message was not received")
-	}
-	if errorReceived["type"] != "error" {
-		t.Errorf("expected type 'error', got %v", errorReceived["type"])
-	}
-	if errorReceived["code"] != "SESSION_NOT_FOUND" {
-		t.Errorf("expected code 'SESSION_NOT_FOUND', got %v", errorReceived["code"])
 	}
 }
 
@@ -282,34 +244,24 @@ echo "Session complete"
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	var messages []map[string]interface{}
-	var mu sync.Mutex
-
 	ctx, cancel := context.WithCancel(context.Background())
-	upgrader := websocket.Upgrader{}
+	ms := newMockUplinkServer(t)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
+	go func() {
+		if err := ms.waitForPusherSubscribe(10 * time.Second); err != nil {
+			t.Logf("waitForPusherSubscribe: %v", err)
+			cancel()
 			return
 		}
-		defer conn.Close()
 
-		// Handshake
-		conn.ReadMessage()
-		welcome := map[string]string{
-			"type":      "welcome",
-			"id":        "test-id",
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		// Wait for initial state_snapshot
+		if _, err := ms.waitForMessageType("state_snapshot", 5*time.Second); err != nil {
+			t.Logf("waitForMessageType(state_snapshot): %v", err)
+			cancel()
+			return
 		}
-		conn.WriteJSON(welcome)
 
-		// Read state_snapshot
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.ReadMessage()
-		conn.SetReadDeadline(time.Time{})
-
-		// Send new_prd request
+		// Send new_prd request via Pusher
 		newPRDReq := map[string]string{
 			"type":            "new_prd",
 			"id":              "req-1",
@@ -318,7 +270,7 @@ echo "Session complete"
 			"session_id":      "sess-mock-1",
 			"initial_message": "Build a todo app",
 		}
-		conn.WriteJSON(newPRDReq)
+		ms.sendCommand(newPRDReq)
 
 		// Wait a bit for process to start and produce output
 		time.Sleep(500 * time.Millisecond)
@@ -331,7 +283,7 @@ echo "Session complete"
 			"session_id": "sess-mock-1",
 			"content":    "Add user authentication",
 		}
-		conn.WriteJSON(prdMsg)
+		ms.sendCommand(prdMsg)
 
 		// Wait for output
 		time.Sleep(500 * time.Millisecond)
@@ -344,30 +296,32 @@ echo "Session complete"
 			"session_id": "sess-mock-1",
 			"save":       false,
 		}
-		conn.WriteJSON(closeMsg)
+		ms.sendCommand(closeMsg)
 
-		// Collect all claude_output messages
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		// Wait for a claude_output message with done=true
+		deadline := time.After(5 * time.Second)
 		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
+			msgs := ms.getMessages()
+			for _, raw := range msgs {
+				var msg map[string]interface{}
+				json.Unmarshal(raw, &msg)
+				if msg["type"] == "claude_output" && msg["done"] == true {
+					cancel()
+					return
+				}
 			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
+			select {
+			case <-deadline:
+				cancel()
+				return
+			case <-time.After(50 * time.Millisecond):
 			}
 		}
-
-		cancel()
-	}))
-	defer srv.Close()
+	}()
 
 	err := RunServe(ServeOptions{
 		Workspace: workspaceDir,
-		WSURL:     serveWsURL(srv),
+		ServerURL: ms.httpSrv.URL,
 		Version:   "1.0.0",
 		Ctx:       ctx,
 	})
@@ -375,13 +329,12 @@ echo "Session complete"
 		t.Fatalf("RunServe returned error: %v", err)
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Verify we received claude_output messages
+	// Collect all claude_output messages
+	allMsgs := ms.getMessages()
 	var claudeOutputs []map[string]interface{}
-	for _, msg := range messages {
-		if msg["type"] == "claude_output" {
+	for _, raw := range allMsgs {
+		var msg map[string]interface{}
+		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "claude_output" {
 			claudeOutputs = append(claudeOutputs, msg)
 		}
 	}
@@ -447,34 +400,24 @@ exit 0
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", home+":"+origPath)
 
-	var messages []map[string]interface{}
-	var mu sync.Mutex
-
 	ctx, cancel := context.WithCancel(context.Background())
-	upgrader := websocket.Upgrader{}
+	ms := newMockUplinkServer(t)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
+	go func() {
+		if err := ms.waitForPusherSubscribe(10 * time.Second); err != nil {
+			t.Logf("waitForPusherSubscribe: %v", err)
+			cancel()
 			return
 		}
-		defer conn.Close()
 
-		// Handshake
-		conn.ReadMessage()
-		welcome := map[string]string{
-			"type":      "welcome",
-			"id":        "test-id",
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		// Wait for initial state_snapshot
+		if _, err := ms.waitForMessageType("state_snapshot", 5*time.Second); err != nil {
+			t.Logf("waitForMessageType(state_snapshot): %v", err)
+			cancel()
+			return
 		}
-		conn.WriteJSON(welcome)
 
-		// Read state_snapshot
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.ReadMessage()
-		conn.SetReadDeadline(time.Time{})
-
-		// Send new_prd
+		// Send new_prd via Pusher
 		newPRDReq := map[string]string{
 			"type":            "new_prd",
 			"id":              "req-1",
@@ -483,7 +426,7 @@ exit 0
 			"session_id":      "sess-save-1",
 			"initial_message": "Build an API",
 		}
-		conn.WriteJSON(newPRDReq)
+		ms.sendCommand(newPRDReq)
 
 		time.Sleep(500 * time.Millisecond)
 
@@ -495,30 +438,32 @@ exit 0
 			"session_id": "sess-save-1",
 			"save":       true,
 		}
-		conn.WriteJSON(closeMsg)
+		ms.sendCommand(closeMsg)
 
-		// Collect messages
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		// Wait for a claude_output with done=true
+		deadline := time.After(5 * time.Second)
 		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
+			msgs := ms.getMessages()
+			for _, raw := range msgs {
+				var msg map[string]interface{}
+				json.Unmarshal(raw, &msg)
+				if msg["type"] == "claude_output" && msg["done"] == true {
+					cancel()
+					return
+				}
 			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
+			select {
+			case <-deadline:
+				cancel()
+				return
+			case <-time.After(50 * time.Millisecond):
 			}
 		}
-
-		cancel()
-	}))
-	defer srv.Close()
+	}()
 
 	err := RunServe(ServeOptions{
 		Workspace: workspaceDir,
-		WSURL:     serveWsURL(srv),
+		ServerURL: ms.httpSrv.URL,
 		Version:   "1.0.0",
 		Ctx:       ctx,
 	})
@@ -526,13 +471,12 @@ exit 0
 		t.Fatalf("RunServe returned error: %v", err)
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-
 	// Verify we received a done=true message
+	allMsgs := ms.getMessages()
 	hasDone := false
-	for _, msg := range messages {
-		if msg["type"] == "claude_output" && msg["done"] == true {
+	for _, raw := range allMsgs {
+		var msg map[string]interface{}
+		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "claude_output" && msg["done"] == true {
 			hasDone = true
 			break
 		}
@@ -894,7 +838,7 @@ done
 
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		client:            client,
+		sender:            client,
 		timeout:           timeout,
 		warningThresholds: warningThresholds,
 		checkInterval:     checkInterval,
@@ -968,7 +912,7 @@ done
 
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		client:            client,
+		sender:            client,
 		timeout:           200 * time.Millisecond, // Very short for testing
 		warningThresholds: []int{},                // No warnings, just test expiry
 		checkInterval:     50 * time.Millisecond,  // Check frequently
@@ -1075,7 +1019,7 @@ done
 	// We simulate time by setting lastActive in the past.
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		client:            client,
+		sender:            client,
 		timeout:           3 * time.Minute,
 		warningThresholds: []int{1, 2},           // Warn at 1min and 2min of inactivity
 		checkInterval:     50 * time.Millisecond,  // Check frequently
@@ -1195,7 +1139,7 @@ done
 
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		client:            client,
+		sender:            client,
 		timeout:           300 * time.Millisecond,
 		warningThresholds: []int{},
 		checkInterval:     50 * time.Millisecond,
@@ -1301,7 +1245,7 @@ done
 
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		client:            client,
+		sender:            client,
 		timeout:           300 * time.Millisecond,
 		warningThresholds: []int{},
 		checkInterval:     50 * time.Millisecond,
@@ -1410,7 +1354,7 @@ done
 
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		client:            client,
+		sender:            client,
 		timeout:           500 * time.Millisecond,
 		warningThresholds: []int{},
 		checkInterval:     50 * time.Millisecond,

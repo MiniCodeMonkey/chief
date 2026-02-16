@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/config"
 )
 
@@ -27,20 +26,22 @@ func TestRunServe_GetSettings_Defaults(t *testing.T) {
 	var settingsReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		req := map[string]string{
 			"type":      "get_settings",
 			"id":        "req-1",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 			"project":   "myproject",
 		}
-		conn.WriteJSON(req)
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("settings", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &settingsReceived)
+			json.Unmarshal(raw, &settingsReceived)
 			mu.Unlock()
 		}
 	})
@@ -93,20 +94,22 @@ func TestRunServe_GetSettings_ProjectNotFound(t *testing.T) {
 	var errorReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		req := map[string]string{
 			"type":      "get_settings",
 			"id":        "req-1",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 			"project":   "nonexistent",
 		}
-		conn.WriteJSON(req)
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
+			json.Unmarshal(raw, &errorReceived)
 			mu.Unlock()
 		}
 	})
@@ -157,20 +160,22 @@ func TestRunServe_GetSettings_WithExistingConfig(t *testing.T) {
 	var settingsReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		req := map[string]string{
 			"type":      "get_settings",
 			"id":        "req-1",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 			"project":   "myproject",
 		}
-		conn.WriteJSON(req)
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("settings", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &settingsReceived)
+			json.Unmarshal(raw, &settingsReceived)
 			mu.Unlock()
 		}
 	})
@@ -217,7 +222,7 @@ func TestRunServe_UpdateSettings(t *testing.T) {
 	var settingsReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		maxIter := 8
 		autoCommit := false
 		commitPrefix := "chore:"
@@ -235,13 +240,15 @@ func TestRunServe_UpdateSettings(t *testing.T) {
 			"claude_model":   claudeModel,
 			"test_command":   testCommand,
 		}
-		conn.WriteJSON(req)
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("settings", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &settingsReceived)
+			json.Unmarshal(raw, &settingsReceived)
 			mu.Unlock()
 		}
 	})
@@ -315,7 +322,7 @@ func TestRunServe_UpdateSettings_PartialUpdate(t *testing.T) {
 	var settingsReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Only update test_command — other fields should be preserved
 		req := map[string]interface{}{
 			"type":         "update_settings",
@@ -324,13 +331,15 @@ func TestRunServe_UpdateSettings_PartialUpdate(t *testing.T) {
 			"project":      "myproject",
 			"test_command": "go test ./...",
 		}
-		conn.WriteJSON(req)
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("settings", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &settingsReceived)
+			json.Unmarshal(raw, &settingsReceived)
 			mu.Unlock()
 		}
 	})
@@ -373,7 +382,7 @@ func TestRunServe_UpdateSettings_ProjectNotFound(t *testing.T) {
 	var errorReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		req := map[string]interface{}{
 			"type":           "update_settings",
 			"id":             "req-1",
@@ -381,13 +390,15 @@ func TestRunServe_UpdateSettings_ProjectNotFound(t *testing.T) {
 			"project":        "nonexistent",
 			"max_iterations": 3,
 		}
-		conn.WriteJSON(req)
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
+			json.Unmarshal(raw, &errorReceived)
 			mu.Unlock()
 		}
 	})
@@ -424,7 +435,7 @@ func TestRunServe_UpdateSettings_InvalidMaxIterations(t *testing.T) {
 	var errorReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		req := map[string]interface{}{
 			"type":           "update_settings",
 			"id":             "req-1",
@@ -432,13 +443,15 @@ func TestRunServe_UpdateSettings_InvalidMaxIterations(t *testing.T) {
 			"project":        "myproject",
 			"max_iterations": 0,
 		}
-		conn.WriteJSON(req)
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
+			json.Unmarshal(raw, &errorReceived)
 			mu.Unlock()
 		}
 	})

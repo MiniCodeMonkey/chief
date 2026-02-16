@@ -22,7 +22,7 @@ const InactivityTimeout = 10 * time.Minute
 type Watcher struct {
 	workspace string
 	scanner   *Scanner
-	client    *ws.Client
+	sender    MessageSender
 	watcher   *fsnotify.Watcher
 
 	mu              sync.Mutex
@@ -39,7 +39,7 @@ type activeProject struct {
 }
 
 // NewWatcher creates a new Watcher for the given workspace directory.
-func NewWatcher(workspace string, scanner *Scanner, client *ws.Client) (*Watcher, error) {
+func NewWatcher(workspace string, scanner *Scanner, sender MessageSender) (*Watcher, error) {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func NewWatcher(workspace string, scanner *Scanner, client *ws.Client) (*Watcher
 	return &Watcher{
 		workspace:       workspace,
 		scanner:         scanner,
-		client:          client,
+		sender:          sender,
 		watcher:         fsw,
 		activeProjects:  make(map[string]*activeProject),
 		inactiveTimeout: InactivityTimeout,
@@ -265,7 +265,7 @@ func (w *Watcher) projectForPath(path string) string {
 
 // sendProjectState re-scans a single project and sends a project_state update.
 func (w *Watcher) sendProjectState(projectName string) {
-	if w.client == nil {
+	if w.sender == nil {
 		return
 	}
 
@@ -282,7 +282,7 @@ func (w *Watcher) sendProjectState(projectName string) {
 				Timestamp: msg.Timestamp,
 				Project:   p,
 			}
-			if err := w.client.Send(psMsg); err != nil {
+			if err := w.sender.Send(psMsg); err != nil {
 				log.Printf("Error sending project_state for %q: %v", projectName, err)
 			}
 			return

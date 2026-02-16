@@ -274,7 +274,7 @@ func newServeCmd() *cobra.Command {
 	serveCmd.Flags().StringVar(&serveOpts.Workspace, "workspace", ".", "Path to workspace directory (default: current directory)")
 	serveCmd.Flags().StringVar(&serveOpts.DeviceName, "name", "", "Override device name for this session")
 	serveCmd.Flags().StringVar(&serveOpts.LogFile, "log-file", "", "Path to log file (default: stdout)")
-	serveCmd.Flags().StringVar(&serveOpts.WSURL, "ws-url", "", "Override WebSocket URL (default: wss://chiefloop.com/ws/server)")
+	serveCmd.Flags().StringVar(&serveOpts.ServerURL, "server-url", "", "Override server URL (default: https://chiefloop.com)")
 
 	return serveCmd
 }

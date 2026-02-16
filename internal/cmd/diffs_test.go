@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/engine"
 )
 
@@ -217,7 +216,7 @@ func TestRunServe_GetDiff(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		getDiffReq := map[string]interface{}{
 			"type":      "get_diff",
 			"id":        "req-1",
@@ -226,13 +225,15 @@ func TestRunServe_GetDiff(t *testing.T) {
 			"prd_id":    "feature",
 			"story_id":  "US-001",
 		}
-		conn.WriteJSON(getDiffReq)
+		if err := ms.sendCommand(getDiffReq); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("diff", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})
@@ -294,7 +295,7 @@ func TestRunServe_GetDiffProjectNotFound(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		getDiffReq := map[string]interface{}{
 			"type":      "get_diff",
 			"id":        "req-2",
@@ -303,13 +304,15 @@ func TestRunServe_GetDiffProjectNotFound(t *testing.T) {
 			"prd_id":    "feature",
 			"story_id":  "US-001",
 		}
-		conn.WriteJSON(getDiffReq)
+		if err := ms.sendCommand(getDiffReq); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})
@@ -347,7 +350,7 @@ func TestRunServe_GetDiffPRDNotFound(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		getDiffReq := map[string]interface{}{
 			"type":      "get_diff",
 			"id":        "req-3",
@@ -356,13 +359,15 @@ func TestRunServe_GetDiffPRDNotFound(t *testing.T) {
 			"prd_id":    "nonexistent",
 			"story_id":  "US-001",
 		}
-		conn.WriteJSON(getDiffReq)
+		if err := ms.sendCommand(getDiffReq); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})
@@ -410,7 +415,7 @@ func TestRunServe_GetDiffNoCommit(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		getDiffReq := map[string]interface{}{
 			"type":      "get_diff",
 			"id":        "req-4",
@@ -419,13 +424,15 @@ func TestRunServe_GetDiffNoCommit(t *testing.T) {
 			"prd_id":    "feature",
 			"story_id":  "US-001",
 		}
-		conn.WriteJSON(getDiffReq)
+		if err := ms.sendCommand(getDiffReq); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})

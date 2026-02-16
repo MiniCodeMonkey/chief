@@ -176,61 +176,44 @@ func TestRunServe_TriggerUpdateAlreadyLatest(t *testing.T) {
 	var mu sync.Mutex
 
 	ctx, cancel := context.WithCancel(context.Background())
-	upgrader := websocket.Upgrader{}
+	ms := newMockUplinkServer(t)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
+	go func() {
+		if err := ms.waitForPusherSubscribe(10 * time.Second); err != nil {
+			t.Logf("waitForPusherSubscribe: %v", err)
+			cancel()
 			return
 		}
-		defer conn.Close()
 
-		// Read hello
-		conn.ReadMessage()
-
-		// Send welcome
-		welcome := map[string]string{
-			"type":      "welcome",
-			"id":        "test-id",
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		// Wait for initial state_snapshot
+		if _, err := ms.waitForMessageType("state_snapshot", 5*time.Second); err != nil {
+			t.Logf("waitForMessageType(state_snapshot): %v", err)
+			cancel()
+			return
 		}
-		conn.WriteJSON(welcome)
 
-		// Read state_snapshot
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.ReadMessage()
-		conn.SetReadDeadline(time.Time{})
-
-		// Send trigger_update
+		// Send trigger_update command via Pusher
 		triggerReq := map[string]string{
 			"type":      "trigger_update",
 			"id":        "req-1",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		}
-		conn.WriteJSON(triggerReq)
+		ms.sendCommand(triggerReq)
 
-		// Read response
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		// Wait for update_available response
+		raw, err := ms.waitForMessageType("update_available", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &responseReceived)
+			json.Unmarshal(raw, &responseReceived)
 			mu.Unlock()
 		}
 
 		cancel()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-		}
-	}))
-	defer srv.Close()
+	}()
 
 	err := RunServe(ServeOptions{
 		Workspace:   workspaceDir,
-		WSURL:       serveWsURL(srv),
+		ServerURL:   ms.httpSrv.URL,
 		Version:     "1.0.0",
 		ReleasesURL: releaseSrv.URL,
 		Ctx:         ctx,
@@ -273,61 +256,44 @@ func TestRunServe_TriggerUpdateAPIError(t *testing.T) {
 	var mu sync.Mutex
 
 	ctx, cancel := context.WithCancel(context.Background())
-	upgrader := websocket.Upgrader{}
+	ms := newMockUplinkServer(t)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
+	go func() {
+		if err := ms.waitForPusherSubscribe(10 * time.Second); err != nil {
+			t.Logf("waitForPusherSubscribe: %v", err)
+			cancel()
 			return
 		}
-		defer conn.Close()
 
-		// Read hello
-		conn.ReadMessage()
-
-		// Send welcome
-		welcome := map[string]string{
-			"type":      "welcome",
-			"id":        "test-id",
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		// Wait for initial state_snapshot
+		if _, err := ms.waitForMessageType("state_snapshot", 5*time.Second); err != nil {
+			t.Logf("waitForMessageType(state_snapshot): %v", err)
+			cancel()
+			return
 		}
-		conn.WriteJSON(welcome)
 
-		// Read state_snapshot
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		conn.ReadMessage()
-		conn.SetReadDeadline(time.Time{})
-
-		// Send trigger_update
+		// Send trigger_update command via Pusher
 		triggerReq := map[string]string{
 			"type":      "trigger_update",
 			"id":        "req-1",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		}
-		conn.WriteJSON(triggerReq)
+		ms.sendCommand(triggerReq)
 
-		// Read error response
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		// Wait for error response
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
+			json.Unmarshal(raw, &errorReceived)
 			mu.Unlock()
 		}
 
 		cancel()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-		}
-	}))
-	defer srv.Close()
+	}()
 
 	err := RunServe(ServeOptions{
 		Workspace:   workspaceDir,
-		WSURL:       serveWsURL(srv),
+		ServerURL:   ms.httpSrv.URL,
 		Version:     "1.0.0",
 		ReleasesURL: releaseSrv.URL,
 		Ctx:         ctx,

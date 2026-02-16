@@ -75,7 +75,7 @@ func (sl *storyLogger) Close() {
 }
 
 // handleGetLogs handles a get_logs request.
-func handleGetLogs(client *ws.Client, finder projectFinder, msg ws.Message) {
+func handleGetLogs(sender messageSender, finder projectFinder, msg ws.Message) {
 	var req ws.GetLogsMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing get_logs message: %v", err)
@@ -84,14 +84,14 @@ func handleGetLogs(client *ws.Client, finder projectFinder, msg ws.Message) {
 
 	project, found := finder.FindProject(req.Project)
 	if !found {
-		sendError(client, ws.ErrCodeProjectNotFound,
+		sendError(sender, ws.ErrCodeProjectNotFound,
 			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
 		return
 	}
 
 	prdDir := filepath.Join(project.Path, ".chief", "prds", req.PRDID)
 	if _, err := os.Stat(prdDir); os.IsNotExist(err) {
-		sendError(client, ws.ErrCodePRDNotFound,
+		sendError(sender, ws.ErrCodePRDNotFound,
 			fmt.Sprintf("PRD %q not found in project %q", req.PRDID, req.Project), msg.ID)
 		return
 	}
@@ -102,24 +102,24 @@ func handleGetLogs(client *ws.Client, finder projectFinder, msg ws.Message) {
 	if req.StoryID != "" {
 		lines, err := readLogFile(filepath.Join(logDir, req.StoryID+".log"), req.Lines)
 		if err != nil {
-			sendError(client, ws.ErrCodeFilesystemError,
+			sendError(sender, ws.ErrCodeFilesystemError,
 				fmt.Sprintf("Failed to read logs for story %q: %v", req.StoryID, err), msg.ID)
 			return
 		}
 
-		sendLogLines(client, req.Project, req.PRDID, req.StoryID, lines)
+		sendLogLines(sender, req.Project, req.PRDID, req.StoryID, lines)
 		return
 	}
 
 	// If story_id is omitted, return the most recent log activity for the PRD
 	storyID, lines, err := readMostRecentLog(logDir, req.Lines)
 	if err != nil {
-		sendError(client, ws.ErrCodeFilesystemError,
+		sendError(sender, ws.ErrCodeFilesystemError,
 			fmt.Sprintf("Failed to read logs: %v", err), msg.ID)
 		return
 	}
 
-	sendLogLines(client, req.Project, req.PRDID, storyID, lines)
+	sendLogLines(sender, req.Project, req.PRDID, storyID, lines)
 }
 
 // readLogFile reads lines from a log file. If maxLines is 0, reads all lines.
@@ -188,7 +188,7 @@ func readMostRecentLog(logDir string, maxLines int) (string, []string, error) {
 }
 
 // sendLogLines sends a log_lines message over WebSocket.
-func sendLogLines(client *ws.Client, project, prdID, storyID string, lines []string) {
+func sendLogLines(sender messageSender, project, prdID, storyID string, lines []string) {
 	if lines == nil {
 		lines = []string{}
 	}
@@ -204,7 +204,7 @@ func sendLogLines(client *ws.Client, project, prdID, storyID string, lines []str
 		Lines:     lines,
 		Level:     "info",
 	}
-	if err := client.Send(msg); err != nil {
+	if err := sender.Send(msg); err != nil {
 		log.Printf("Error sending log_lines: %v", err)
 	}
 }

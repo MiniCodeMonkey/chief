@@ -10,7 +10,7 @@ import (
 )
 
 // handleGetSettings handles a get_settings request.
-func handleGetSettings(client *ws.Client, finder projectFinder, msg ws.Message) {
+func handleGetSettings(sender messageSender, finder projectFinder, msg ws.Message) {
 	var req ws.GetSettingsMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing get_settings message: %v", err)
@@ -19,14 +19,14 @@ func handleGetSettings(client *ws.Client, finder projectFinder, msg ws.Message) 
 
 	project, found := finder.FindProject(req.Project)
 	if !found {
-		sendError(client, ws.ErrCodeProjectNotFound,
+		sendError(sender, ws.ErrCodeProjectNotFound,
 			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
 		return
 	}
 
 	cfg, err := config.Load(project.Path)
 	if err != nil {
-		sendError(client, ws.ErrCodeFilesystemError,
+		sendError(sender, ws.ErrCodeFilesystemError,
 			fmt.Sprintf("Failed to load settings: %v", err), msg.ID)
 		return
 	}
@@ -43,13 +43,13 @@ func handleGetSettings(client *ws.Client, finder projectFinder, msg ws.Message) 
 		ClaudeModel:   cfg.ClaudeModel,
 		TestCommand:   cfg.TestCommand,
 	}
-	if err := client.Send(settingsMsg); err != nil {
+	if err := sender.Send(settingsMsg); err != nil {
 		log.Printf("Error sending settings: %v", err)
 	}
 }
 
 // handleUpdateSettings handles an update_settings request.
-func handleUpdateSettings(client *ws.Client, finder projectFinder, msg ws.Message) {
+func handleUpdateSettings(sender messageSender, finder projectFinder, msg ws.Message) {
 	var req ws.UpdateSettingsMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing update_settings message: %v", err)
@@ -58,14 +58,14 @@ func handleUpdateSettings(client *ws.Client, finder projectFinder, msg ws.Messag
 
 	project, found := finder.FindProject(req.Project)
 	if !found {
-		sendError(client, ws.ErrCodeProjectNotFound,
+		sendError(sender, ws.ErrCodeProjectNotFound,
 			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
 		return
 	}
 
 	cfg, err := config.Load(project.Path)
 	if err != nil {
-		sendError(client, ws.ErrCodeFilesystemError,
+		sendError(sender, ws.ErrCodeFilesystemError,
 			fmt.Sprintf("Failed to load settings: %v", err), msg.ID)
 		return
 	}
@@ -73,7 +73,7 @@ func handleUpdateSettings(client *ws.Client, finder projectFinder, msg ws.Messag
 	// Merge provided fields
 	if req.MaxIterations != nil {
 		if *req.MaxIterations < 1 {
-			sendError(client, ws.ErrCodeFilesystemError,
+			sendError(sender, ws.ErrCodeFilesystemError,
 				"max_iterations must be at least 1", msg.ID)
 			return
 		}
@@ -93,7 +93,7 @@ func handleUpdateSettings(client *ws.Client, finder projectFinder, msg ws.Messag
 	}
 
 	if err := config.Save(project.Path, cfg); err != nil {
-		sendError(client, ws.ErrCodeFilesystemError,
+		sendError(sender, ws.ErrCodeFilesystemError,
 			fmt.Sprintf("Failed to save settings: %v", err), msg.ID)
 		return
 	}
@@ -111,7 +111,7 @@ func handleUpdateSettings(client *ws.Client, finder projectFinder, msg ws.Messag
 		ClaudeModel:   cfg.ClaudeModel,
 		TestCommand:   cfg.TestCommand,
 	}
-	if err := client.Send(settingsMsg); err != nil {
+	if err := sender.Send(settingsMsg); err != nil {
 		log.Printf("Error sending settings: %v", err)
 	}
 }

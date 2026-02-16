@@ -7,11 +7,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
@@ -56,10 +54,7 @@ func TestHandleCloneRepo_Success(t *testing.T) {
 		t.Fatalf("git init --bare failed: %v\n%s", err, out)
 	}
 
-	var messages []map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send clone_repo request
 		cloneReq := map[string]interface{}{
 			"type":      "clone_repo",
@@ -67,49 +62,30 @@ func TestHandleCloneRepo_Success(t *testing.T) {
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 			"url":       bareRepo,
 		}
-		conn.WriteJSON(cloneReq)
+		if err := ms.sendCommand(cloneReq); err != nil {
+			t.Fatalf("failed to send clone command: %v", err)
+		}
 
-		// Read messages until we get clone_complete
-		for i := 0; i < 20; i++ {
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-			var msg map[string]interface{}
-			json.Unmarshal(data, &msg)
-			mu.Lock()
-			messages = append(messages, msg)
-			mu.Unlock()
-			if msg["type"] == "clone_complete" {
-				break
-			}
+		// Wait for clone_complete message
+		raw, err := ms.waitForMessageType("clone_complete", 5*time.Second)
+		if err != nil {
+			t.Fatalf("failed to receive clone_complete: %v", err)
+		}
+
+		var cloneComplete map[string]interface{}
+		if err := json.Unmarshal(raw, &cloneComplete); err != nil {
+			t.Fatalf("failed to unmarshal clone_complete: %v", err)
+		}
+
+		if cloneComplete["success"] != true {
+			t.Errorf("expected success=true, got %v (error: %v)", cloneComplete["success"], cloneComplete["error"])
+		}
+		if cloneComplete["project"] != "bare-repo" {
+			t.Errorf("expected project 'bare-repo', got %v", cloneComplete["project"])
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Find clone_complete message
-	var cloneComplete map[string]interface{}
-	for _, msg := range messages {
-		if msg["type"] == "clone_complete" {
-			cloneComplete = msg
-			break
-		}
-	}
-
-	if cloneComplete == nil {
-		t.Fatal("clone_complete message was not received")
-	}
-	if cloneComplete["success"] != true {
-		t.Errorf("expected success=true, got %v (error: %v)", cloneComplete["success"], cloneComplete["error"])
-	}
-	if cloneComplete["project"] != "bare-repo" {
-		t.Errorf("expected project 'bare-repo', got %v", cloneComplete["project"])
 	}
 
 	// Verify the directory was created
@@ -137,10 +113,7 @@ func TestHandleCloneRepo_CustomDirectoryName(t *testing.T) {
 		t.Fatalf("git init --bare failed: %v\n%s", err, out)
 	}
 
-	var cloneComplete map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		cloneReq := map[string]interface{}{
 			"type":           "clone_repo",
 			"id":             "req-clone-2",
@@ -148,39 +121,30 @@ func TestHandleCloneRepo_CustomDirectoryName(t *testing.T) {
 			"url":            bareRepo,
 			"directory_name": "my-custom-name",
 		}
-		conn.WriteJSON(cloneReq)
+		if err := ms.sendCommand(cloneReq); err != nil {
+			t.Fatalf("failed to send clone command: %v", err)
+		}
 
-		for i := 0; i < 20; i++ {
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-			var msg map[string]interface{}
-			json.Unmarshal(data, &msg)
-			if msg["type"] == "clone_complete" {
-				mu.Lock()
-				cloneComplete = msg
-				mu.Unlock()
-				break
-			}
+		// Wait for clone_complete message
+		raw, err := ms.waitForMessageType("clone_complete", 5*time.Second)
+		if err != nil {
+			t.Fatalf("failed to receive clone_complete: %v", err)
+		}
+
+		var cloneComplete map[string]interface{}
+		if err := json.Unmarshal(raw, &cloneComplete); err != nil {
+			t.Fatalf("failed to unmarshal clone_complete: %v", err)
+		}
+
+		if cloneComplete["success"] != true {
+			t.Errorf("expected success=true, got %v", cloneComplete["success"])
+		}
+		if cloneComplete["project"] != "my-custom-name" {
+			t.Errorf("expected project 'my-custom-name', got %v", cloneComplete["project"])
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if cloneComplete == nil {
-		t.Fatal("clone_complete not received")
-	}
-	if cloneComplete["success"] != true {
-		t.Errorf("expected success=true, got %v", cloneComplete["success"])
-	}
-	if cloneComplete["project"] != "my-custom-name" {
-		t.Errorf("expected project 'my-custom-name', got %v", cloneComplete["project"])
 	}
 
 	// Verify directory exists under custom name
@@ -204,41 +168,37 @@ func TestHandleCloneRepo_DirectoryExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var errorReceived map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		cloneReq := map[string]interface{}{
 			"type":      "clone_repo",
 			"id":        "req-clone-3",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 			"url":       "https://github.com/user/existing-repo.git",
 		}
-		conn.WriteJSON(cloneReq)
+		if err := ms.sendCommand(cloneReq); err != nil {
+			t.Fatalf("failed to send clone command: %v", err)
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
-			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
-			mu.Unlock()
+		// Wait for error message
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
+		if err != nil {
+			t.Fatalf("failed to receive error message: %v", err)
+		}
+
+		var errorReceived map[string]interface{}
+		if err := json.Unmarshal(raw, &errorReceived); err != nil {
+			t.Fatalf("failed to unmarshal error: %v", err)
+		}
+
+		if errorReceived["code"] != "CLONE_FAILED" {
+			t.Errorf("expected code CLONE_FAILED, got %v", errorReceived["code"])
+		}
+		if !strings.Contains(errorReceived["message"].(string), "already exists") {
+			t.Errorf("expected 'already exists' in message, got %v", errorReceived["message"])
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if errorReceived == nil {
-		t.Fatal("error message not received")
-	}
-	if errorReceived["code"] != "CLONE_FAILED" {
-		t.Errorf("expected code CLONE_FAILED, got %v", errorReceived["code"])
-	}
-	if !strings.Contains(errorReceived["message"].(string), "already exists") {
-		t.Errorf("expected 'already exists' in message, got %v", errorReceived["message"])
 	}
 }
 
@@ -252,50 +212,38 @@ func TestHandleCloneRepo_InvalidURL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var cloneComplete map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		cloneReq := map[string]interface{}{
 			"type":      "clone_repo",
 			"id":        "req-clone-4",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 			"url":       "/nonexistent/invalid-repo",
 		}
-		conn.WriteJSON(cloneReq)
+		if err := ms.sendCommand(cloneReq); err != nil {
+			t.Fatalf("failed to send clone command: %v", err)
+		}
 
-		for i := 0; i < 20; i++ {
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-			var msg map[string]interface{}
-			json.Unmarshal(data, &msg)
-			if msg["type"] == "clone_complete" {
-				mu.Lock()
-				cloneComplete = msg
-				mu.Unlock()
-				break
-			}
+		// Wait for clone_complete message
+		raw, err := ms.waitForMessageType("clone_complete", 5*time.Second)
+		if err != nil {
+			t.Fatalf("failed to receive clone_complete: %v", err)
+		}
+
+		var cloneComplete map[string]interface{}
+		if err := json.Unmarshal(raw, &cloneComplete); err != nil {
+			t.Fatalf("failed to unmarshal clone_complete: %v", err)
+		}
+
+		if cloneComplete["success"] != false {
+			t.Errorf("expected success=false, got %v", cloneComplete["success"])
+		}
+		errMsg, ok := cloneComplete["error"].(string)
+		if !ok || errMsg == "" {
+			t.Error("expected non-empty error message for failed clone")
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if cloneComplete == nil {
-		t.Fatal("clone_complete not received")
-	}
-	if cloneComplete["success"] != false {
-		t.Errorf("expected success=false, got %v", cloneComplete["success"])
-	}
-	errMsg, ok := cloneComplete["error"].(string)
-	if !ok || errMsg == "" {
-		t.Error("expected non-empty error message for failed clone")
 	}
 }
 
@@ -309,10 +257,7 @@ func TestHandleCreateProject_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var response map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		createReq := map[string]interface{}{
 			"type":      "create_project",
 			"id":        "req-create-1",
@@ -320,14 +265,23 @@ func TestHandleCreateProject_Success(t *testing.T) {
 			"name":      "new-project",
 			"git_init":  false,
 		}
-		conn.WriteJSON(createReq)
+		if err := ms.sendCommand(createReq); err != nil {
+			t.Fatalf("failed to send create command: %v", err)
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
-			mu.Lock()
-			json.Unmarshal(data, &response)
-			mu.Unlock()
+		// Wait for project_list message (without git_init, project won't show up in scanner)
+		raw, err := ms.waitForMessageType("project_list", 2*time.Second)
+		if err != nil {
+			t.Fatalf("failed to receive project_list: %v", err)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(raw, &response); err != nil {
+			t.Fatalf("failed to unmarshal project_list: %v", err)
+		}
+
+		if response["type"] != "project_list" {
+			t.Errorf("expected type 'project_list', got %v", response["type"])
 		}
 	})
 	if err != nil {
@@ -343,18 +297,6 @@ func TestHandleCreateProject_Success(t *testing.T) {
 	if !info.IsDir() {
 		t.Error("expected project path to be a directory")
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if response == nil {
-		t.Fatal("no response received")
-	}
-	// Without git_init, project won't show up in scanner (no .git),
-	// so we get a project_list response
-	if response["type"] != "project_list" {
-		t.Errorf("expected type 'project_list', got %v", response["type"])
-	}
 }
 
 func TestHandleCreateProject_WithGitInit(t *testing.T) {
@@ -367,10 +309,7 @@ func TestHandleCreateProject_WithGitInit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var response map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		createReq := map[string]interface{}{
 			"type":      "create_project",
 			"id":        "req-create-2",
@@ -378,14 +317,30 @@ func TestHandleCreateProject_WithGitInit(t *testing.T) {
 			"name":      "git-project",
 			"git_init":  true,
 		}
-		conn.WriteJSON(createReq)
+		if err := ms.sendCommand(createReq); err != nil {
+			t.Fatalf("failed to send create command: %v", err)
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
-			mu.Lock()
-			json.Unmarshal(data, &response)
-			mu.Unlock()
+		// Wait for project_state message (with git_init, scanner finds the project)
+		raw, err := ms.waitForMessageType("project_state", 2*time.Second)
+		if err != nil {
+			t.Fatalf("failed to receive project_state: %v", err)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(raw, &response); err != nil {
+			t.Fatalf("failed to unmarshal project_state: %v", err)
+		}
+
+		if response["type"] != "project_state" {
+			t.Errorf("expected type 'project_state', got %v", response["type"])
+		}
+		project, ok := response["project"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected project object in response")
+		}
+		if project["name"] != "git-project" {
+			t.Errorf("expected project name 'git-project', got %v", project["name"])
 		}
 	})
 	if err != nil {
@@ -397,24 +352,6 @@ func TestHandleCreateProject_WithGitInit(t *testing.T) {
 	gitDir := filepath.Join(projectDir, ".git")
 	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 		t.Error("expected .git directory to be created")
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if response == nil {
-		t.Fatal("no response received")
-	}
-	// With git_init, scanner finds the project, so we get project_state
-	if response["type"] != "project_state" {
-		t.Errorf("expected type 'project_state', got %v", response["type"])
-	}
-	project, ok := response["project"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected project object in response")
-	}
-	if project["name"] != "git-project" {
-		t.Errorf("expected project name 'git-project', got %v", project["name"])
 	}
 }
 
@@ -433,10 +370,7 @@ func TestHandleCreateProject_AlreadyExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var errorReceived map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		createReq := map[string]interface{}{
 			"type":      "create_project",
 			"id":        "req-create-3",
@@ -444,31 +378,30 @@ func TestHandleCreateProject_AlreadyExists(t *testing.T) {
 			"name":      "existing",
 			"git_init":  false,
 		}
-		conn.WriteJSON(createReq)
+		if err := ms.sendCommand(createReq); err != nil {
+			t.Fatalf("failed to send create command: %v", err)
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
-			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
-			mu.Unlock()
+		// Wait for error message
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
+		if err != nil {
+			t.Fatalf("failed to receive error message: %v", err)
+		}
+
+		var errorReceived map[string]interface{}
+		if err := json.Unmarshal(raw, &errorReceived); err != nil {
+			t.Fatalf("failed to unmarshal error: %v", err)
+		}
+
+		if errorReceived["type"] != "error" {
+			t.Errorf("expected type 'error', got %v", errorReceived["type"])
+		}
+		if errorReceived["code"] != "FILESYSTEM_ERROR" {
+			t.Errorf("expected code FILESYSTEM_ERROR, got %v", errorReceived["code"])
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if errorReceived == nil {
-		t.Fatal("error message not received")
-	}
-	if errorReceived["type"] != "error" {
-		t.Errorf("expected type 'error', got %v", errorReceived["type"])
-	}
-	if errorReceived["code"] != "FILESYSTEM_ERROR" {
-		t.Errorf("expected code FILESYSTEM_ERROR, got %v", errorReceived["code"])
 	}
 }
 
@@ -482,10 +415,7 @@ func TestHandleCreateProject_EmptyName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var errorReceived map[string]interface{}
-	var mu sync.Mutex
-
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		createReq := map[string]interface{}{
 			"type":      "create_project",
 			"id":        "req-create-4",
@@ -493,28 +423,27 @@ func TestHandleCreateProject_EmptyName(t *testing.T) {
 			"name":      "",
 			"git_init":  false,
 		}
-		conn.WriteJSON(createReq)
+		if err := ms.sendCommand(createReq); err != nil {
+			t.Fatalf("failed to send create command: %v", err)
+		}
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
-			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
-			mu.Unlock()
+		// Wait for error message
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
+		if err != nil {
+			t.Fatalf("failed to receive error message: %v", err)
+		}
+
+		var errorReceived map[string]interface{}
+		if err := json.Unmarshal(raw, &errorReceived); err != nil {
+			t.Fatalf("failed to unmarshal error: %v", err)
+		}
+
+		if errorReceived["code"] != "FILESYSTEM_ERROR" {
+			t.Errorf("expected code FILESYSTEM_ERROR, got %v", errorReceived["code"])
 		}
 	})
 	if err != nil {
 		t.Fatalf("RunServe returned error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if errorReceived == nil {
-		t.Fatal("error message not received")
-	}
-	if errorReceived["code"] != "FILESYSTEM_ERROR" {
-		t.Errorf("expected code FILESYSTEM_ERROR, got %v", errorReceived["code"])
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/engine"
 )
 
@@ -319,7 +318,7 @@ func TestRunServe_GetLogs(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send get_logs request with story_id
 		getLogsReq := map[string]interface{}{
 			"type":      "get_logs",
@@ -329,13 +328,12 @@ func TestRunServe_GetLogs(t *testing.T) {
 			"prd_id":    "feature",
 			"story_id":  "US-001",
 		}
-		conn.WriteJSON(getLogsReq)
+		ms.sendCommand(getLogsReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("log_lines", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})
@@ -403,7 +401,7 @@ func TestRunServe_GetLogsNoStoryID(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		getLogsReq := map[string]interface{}{
 			"type":      "get_logs",
 			"id":        "req-2",
@@ -411,13 +409,12 @@ func TestRunServe_GetLogsNoStoryID(t *testing.T) {
 			"project":   "myproject",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(getLogsReq)
+		ms.sendCommand(getLogsReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("log_lines", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})
@@ -452,7 +449,7 @@ func TestRunServe_GetLogsProjectNotFound(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		getLogsReq := map[string]interface{}{
 			"type":      "get_logs",
 			"id":        "req-3",
@@ -461,13 +458,12 @@ func TestRunServe_GetLogsProjectNotFound(t *testing.T) {
 			"prd_id":    "feature",
 			"story_id":  "US-001",
 		}
-		conn.WriteJSON(getLogsReq)
+		ms.sendCommand(getLogsReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})
@@ -505,7 +501,7 @@ func TestRunServe_GetLogsPRDNotFound(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		getLogsReq := map[string]interface{}{
 			"type":      "get_logs",
 			"id":        "req-4",
@@ -514,13 +510,12 @@ func TestRunServe_GetLogsPRDNotFound(t *testing.T) {
 			"prd_id":    "nonexistent",
 			"story_id":  "US-001",
 		}
-		conn.WriteJSON(getLogsReq)
+		ms.sendCommand(getLogsReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})
@@ -575,7 +570,7 @@ func TestRunServe_GetLogsWithLineLimit(t *testing.T) {
 	var response map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Request only 2 lines
 		getLogsReq := map[string]interface{}{
 			"type":      "get_logs",
@@ -586,13 +581,12 @@ func TestRunServe_GetLogsWithLineLimit(t *testing.T) {
 			"story_id":  "US-001",
 			"lines":     2,
 		}
-		conn.WriteJSON(getLogsReq)
+		ms.sendCommand(getLogsReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("log_lines", 5*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &response)
+			json.Unmarshal(raw, &response)
 			mu.Unlock()
 		}
 	})
@@ -669,7 +663,7 @@ exit 0
 	var messages []map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send start_run request
 		startReq := map[string]string{
 			"type":      "start_run",
@@ -678,21 +672,19 @@ exit 0
 			"project":   "myproject",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(startReq)
+		ms.sendCommand(startReq)
 
-		// Read messages for a while
-		for i := 0; i < 15; i++ {
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
+		// Wait for multiple messages (expecting at least some stream messages)
+		rawMessages, err := ms.waitForMessages(15, 5*time.Second)
+		if err == nil {
+			mu.Lock()
+			for _, raw := range rawMessages {
+				var msg map[string]interface{}
+				if json.Unmarshal(raw, &msg) == nil {
+					messages = append(messages, msg)
+				}
 			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
-			}
+			mu.Unlock()
 		}
 	})
 	if err != nil {

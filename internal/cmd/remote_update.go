@@ -10,9 +10,9 @@ import (
 )
 
 // handleTriggerUpdate handles a trigger_update request from the web app.
-// It downloads and installs the latest binary, sends confirmation over WebSocket,
+// It downloads and installs the latest binary, sends confirmation,
 // and returns true if the process should exit (so systemd Restart=always picks up the new binary).
-func handleTriggerUpdate(client *ws.Client, msg ws.Message, version, releasesURL string) bool {
+func handleTriggerUpdate(sender messageSender, msg ws.Message, version, releasesURL string) bool {
 	log.Println("Received trigger_update request")
 
 	// Check for update
@@ -20,7 +20,7 @@ func handleTriggerUpdate(client *ws.Client, msg ws.Message, version, releasesURL
 		ReleasesURL: releasesURL,
 	})
 	if err != nil {
-		sendError(client, ws.ErrCodeUpdateFailed,
+		sendError(sender, ws.ErrCodeUpdateFailed,
 			fmt.Sprintf("checking for updates: %v", err), msg.ID)
 		return false
 	}
@@ -35,7 +35,7 @@ func handleTriggerUpdate(client *ws.Client, msg ws.Message, version, releasesURL
 			CurrentVersion: result.CurrentVersion,
 			LatestVersion:  result.LatestVersion,
 		}
-		if err := client.Send(infoMsg); err != nil {
+		if err := sender.Send(infoMsg); err != nil {
 			log.Printf("Error sending update_available: %v", err)
 		}
 		log.Printf("Already on latest version (v%s)", result.CurrentVersion)
@@ -50,10 +50,10 @@ func handleTriggerUpdate(client *ws.Client, msg ws.Message, version, releasesURL
 	if err != nil {
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "Permission denied") {
-			sendError(client, ws.ErrCodeUpdateFailed,
+			sendError(sender, ws.ErrCodeUpdateFailed,
 				"Permission denied. The chief binary is not writable. Ensure the service user has write permissions to the binary path.", msg.ID)
 		} else {
-			sendError(client, ws.ErrCodeUpdateFailed,
+			sendError(sender, ws.ErrCodeUpdateFailed,
 				fmt.Sprintf("update failed: %v", err), msg.ID)
 		}
 		return false
@@ -69,7 +69,7 @@ func handleTriggerUpdate(client *ws.Client, msg ws.Message, version, releasesURL
 		CurrentVersion: result.CurrentVersion,
 		LatestVersion:  result.LatestVersion,
 	}
-	if err := client.Send(confirmMsg); err != nil {
+	if err := sender.Send(confirmMsg); err != nil {
 		log.Printf("Error sending update confirmation: %v", err)
 	}
 

@@ -19,7 +19,7 @@ import (
 type runManager struct {
 	mu     sync.RWMutex
 	eng    *engine.Engine
-	client *ws.Client
+	sender messageSender
 	// tracks which engine registration key maps to which project/prd
 	runs    map[string]*runInfo
 	loggers map[string]*storyLogger
@@ -40,10 +40,10 @@ func runKey(project, prdID string) string {
 }
 
 // newRunManager creates a new run manager.
-func newRunManager(eng *engine.Engine, client *ws.Client) *runManager {
+func newRunManager(eng *engine.Engine, sender messageSender) *runManager {
 	return &runManager{
 		eng:     eng,
-		client:  client,
+		sender:  sender,
 		runs:    make(map[string]*runInfo),
 		loggers: make(map[string]*storyLogger),
 	}
@@ -135,7 +135,7 @@ func (rm *runManager) handleEvent(event engine.ManagerEvent) {
 
 // sendRunProgress sends a run_progress message over WebSocket.
 func (rm *runManager) sendRunProgress(info *runInfo, status string, event loop.Event) {
-	if rm.client == nil {
+	if rm.sender == nil {
 		return
 	}
 
@@ -160,14 +160,14 @@ func (rm *runManager) sendRunProgress(info *runInfo, status string, event loop.E
 		Iteration: event.Iteration,
 		Attempt:   event.RetryCount,
 	}
-	if err := rm.client.Send(msg); err != nil {
+	if err := rm.sender.Send(msg); err != nil {
 		log.Printf("Error sending run_progress: %v", err)
 	}
 }
 
 // sendRunComplete sends a run_complete message over WebSocket.
 func (rm *runManager) sendRunComplete(info *runInfo, prdName string) {
-	if rm.client == nil {
+	if rm.sender == nil {
 		return
 	}
 
@@ -202,14 +202,14 @@ func (rm *runManager) sendRunComplete(info *runInfo, prdName string) {
 		PassCount:        passCount,
 		FailCount:        failCount,
 	}
-	if err := rm.client.Send(msg); err != nil {
+	if err := rm.sender.Send(msg); err != nil {
 		log.Printf("Error sending run_complete: %v", err)
 	}
 }
 
 // sendClaudeOutput sends a claude_output message for an active run over WebSocket.
 func (rm *runManager) sendClaudeOutput(info *runInfo, data string, done bool) {
-	if rm.client == nil {
+	if rm.sender == nil {
 		return
 	}
 
@@ -228,14 +228,14 @@ func (rm *runManager) sendClaudeOutput(info *runInfo, data string, done bool) {
 		Data:      data,
 		Done:      done,
 	}
-	if err := rm.client.Send(msg); err != nil {
+	if err := rm.sender.Send(msg); err != nil {
 		log.Printf("Error sending claude_output: %v", err)
 	}
 }
 
 // sendStoryDiff sends a proactive diff message when a story completes during a run.
 func (rm *runManager) sendStoryDiff(info *runInfo, event loop.Event) {
-	if rm.client == nil {
+	if rm.sender == nil {
 		return
 	}
 
@@ -259,7 +259,7 @@ func (rm *runManager) sendStoryDiff(info *runInfo, event loop.Event) {
 		return
 	}
 
-	sendDiffMessage(rm.client, info.project, info.prdID, storyID, files, diffText)
+	sendDiffMessage(rm.sender, info.project, info.prdID, storyID, files, diffText)
 }
 
 // handleQuotaExhausted handles a quota exhaustion event for a specific run.
@@ -275,7 +275,7 @@ func (rm *runManager) handleQuotaExhausted(prdName string) {
 
 	log.Printf("Quota exhausted for %s/%s, auto-pausing", info.project, info.prdID)
 
-	if rm.client == nil {
+	if rm.sender == nil {
 		return
 	}
 
@@ -289,7 +289,7 @@ func (rm *runManager) handleQuotaExhausted(prdName string) {
 		PRDID:     info.prdID,
 		Reason:    "quota_exhausted",
 	}
-	if err := rm.client.Send(pausedMsg); err != nil {
+	if err := rm.sender.Send(pausedMsg); err != nil {
 		log.Printf("Error sending run_paused: %v", err)
 	}
 
@@ -299,7 +299,7 @@ func (rm *runManager) handleQuotaExhausted(prdName string) {
 
 // sendQuotaExhausted sends a quota_exhausted message over WebSocket.
 func (rm *runManager) sendQuotaExhausted(project, prdID string) {
-	if rm.client == nil {
+	if rm.sender == nil {
 		return
 	}
 	envelope := ws.NewMessage(ws.TypeQuotaExhausted)
@@ -310,7 +310,7 @@ func (rm *runManager) sendQuotaExhausted(project, prdID string) {
 		Runs:      []string{runKey(project, prdID)},
 		Sessions:  []string{},
 	}
-	if err := rm.client.Send(msg); err != nil {
+	if err := rm.sender.Send(msg); err != nil {
 		log.Printf("Error sending quota_exhausted: %v", err)
 	}
 }
@@ -527,7 +527,7 @@ func loopStateToString(state loop.LoopState) string {
 }
 
 // handleStartRun handles a start_run WebSocket message.
-func handleStartRun(client *ws.Client, scanner projectFinder, runs *runManager, watcher activator, msg ws.Message) {
+func handleStartRun(sender messageSender, scanner projectFinder, runs *runManager, watcher activator, msg ws.Message) {
 	var req ws.StartRunMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing start_run message: %v", err)
@@ -536,17 +536,17 @@ func handleStartRun(client *ws.Client, scanner projectFinder, runs *runManager, 
 
 	project, found := scanner.FindProject(req.Project)
 	if !found {
-		sendError(client, ws.ErrCodeProjectNotFound,
+		sendError(sender, ws.ErrCodeProjectNotFound,
 			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
 		return
 	}
 
 	if err := runs.startRun(req.Project, req.PRDID, project.Path); err != nil {
 		if err.Error() == "RUN_ALREADY_ACTIVE" {
-			sendError(client, ws.ErrCodeRunAlreadyActive,
+			sendError(sender, ws.ErrCodeRunAlreadyActive,
 				fmt.Sprintf("Run already active for %s/%s", req.Project, req.PRDID), msg.ID)
 		} else {
-			sendError(client, ws.ErrCodeClaudeError,
+			sendError(sender, ws.ErrCodeClaudeError,
 				fmt.Sprintf("Failed to start run: %v", err), msg.ID)
 		}
 		return
@@ -561,7 +561,7 @@ func handleStartRun(client *ws.Client, scanner projectFinder, runs *runManager, 
 }
 
 // handlePauseRun handles a pause_run WebSocket message.
-func handlePauseRun(client *ws.Client, runs *runManager, msg ws.Message) {
+func handlePauseRun(sender messageSender, runs *runManager, msg ws.Message) {
 	var req ws.PauseRunMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing pause_run message: %v", err)
@@ -570,10 +570,10 @@ func handlePauseRun(client *ws.Client, runs *runManager, msg ws.Message) {
 
 	if err := runs.pauseRun(req.Project, req.PRDID); err != nil {
 		if err.Error() == "RUN_NOT_ACTIVE" {
-			sendError(client, ws.ErrCodeRunNotActive,
+			sendError(sender, ws.ErrCodeRunNotActive,
 				fmt.Sprintf("No active run for %s/%s", req.Project, req.PRDID), msg.ID)
 		} else {
-			sendError(client, ws.ErrCodeClaudeError,
+			sendError(sender, ws.ErrCodeClaudeError,
 				fmt.Sprintf("Failed to pause run: %v", err), msg.ID)
 		}
 		return
@@ -583,7 +583,7 @@ func handlePauseRun(client *ws.Client, runs *runManager, msg ws.Message) {
 }
 
 // handleResumeRun handles a resume_run WebSocket message.
-func handleResumeRun(client *ws.Client, runs *runManager, msg ws.Message) {
+func handleResumeRun(sender messageSender, runs *runManager, msg ws.Message) {
 	var req ws.ResumeRunMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing resume_run message: %v", err)
@@ -592,10 +592,10 @@ func handleResumeRun(client *ws.Client, runs *runManager, msg ws.Message) {
 
 	if err := runs.resumeRun(req.Project, req.PRDID); err != nil {
 		if err.Error() == "RUN_NOT_ACTIVE" {
-			sendError(client, ws.ErrCodeRunNotActive,
+			sendError(sender, ws.ErrCodeRunNotActive,
 				fmt.Sprintf("No paused run for %s/%s", req.Project, req.PRDID), msg.ID)
 		} else {
-			sendError(client, ws.ErrCodeClaudeError,
+			sendError(sender, ws.ErrCodeClaudeError,
 				fmt.Sprintf("Failed to resume run: %v", err), msg.ID)
 		}
 		return
@@ -605,7 +605,7 @@ func handleResumeRun(client *ws.Client, runs *runManager, msg ws.Message) {
 }
 
 // handleStopRun handles a stop_run WebSocket message.
-func handleStopRun(client *ws.Client, runs *runManager, msg ws.Message) {
+func handleStopRun(sender messageSender, runs *runManager, msg ws.Message) {
 	var req ws.StopRunMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing stop_run message: %v", err)
@@ -614,10 +614,10 @@ func handleStopRun(client *ws.Client, runs *runManager, msg ws.Message) {
 
 	if err := runs.stopRun(req.Project, req.PRDID); err != nil {
 		if err.Error() == "RUN_NOT_ACTIVE" {
-			sendError(client, ws.ErrCodeRunNotActive,
+			sendError(sender, ws.ErrCodeRunNotActive,
 				fmt.Sprintf("No active run for %s/%s", req.Project, req.PRDID), msg.ID)
 		} else {
-			sendError(client, ws.ErrCodeClaudeError,
+			sendError(sender, ws.ErrCodeClaudeError,
 				fmt.Sprintf("Failed to stop run: %v", err), msg.ID)
 		}
 		return

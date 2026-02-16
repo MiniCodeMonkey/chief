@@ -55,7 +55,7 @@ func (s *claudeSession) inactiveDuration() time.Duration {
 type sessionManager struct {
 	mu                sync.RWMutex
 	sessions          map[string]*claudeSession
-	client            *ws.Client
+	sender            messageSender
 	timeout           time.Duration // session inactivity timeout
 	warningThresholds []int         // minutes of inactivity at which to send warnings
 	checkInterval     time.Duration // how often to check for timeouts (configurable for tests)
@@ -63,10 +63,10 @@ type sessionManager struct {
 }
 
 // newSessionManager creates a new session manager.
-func newSessionManager(client *ws.Client) *sessionManager {
+func newSessionManager(sender messageSender) *sessionManager {
 	sm := &sessionManager{
 		sessions:          make(map[string]*claudeSession),
-		client:            client,
+		sender:            sender,
 		timeout:           defaultSessionTimeout,
 		warningThresholds: defaultWarningThresholds,
 		checkInterval:     30 * time.Second,
@@ -191,7 +191,7 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 			Data:      "",
 			Done:      true,
 		}
-		if sendErr := sm.client.Send(doneMsg); sendErr != nil {
+		if sendErr := sm.sender.Send(doneMsg); sendErr != nil {
 			log.Printf("Error sending claude_output done: %v", sendErr)
 		}
 
@@ -231,7 +231,7 @@ func (sm *sessionManager) streamOutput(sessionID string, r io.Reader) {
 			Data:      line + "\n",
 			Done:      false,
 		}
-		if err := sm.client.Send(msg); err != nil {
+		if err := sm.sender.Send(msg); err != nil {
 			log.Printf("Error sending claude_output: %v", err)
 			return
 		}
@@ -381,7 +381,7 @@ func (sm *sessionManager) sendTimeoutWarning(sessionID string, minutesRemaining 
 		SessionID:        sessionID,
 		MinutesRemaining: minutesRemaining,
 	}
-	if err := sm.client.Send(msg); err != nil {
+	if err := sm.sender.Send(msg); err != nil {
 		log.Printf("Error sending session_timeout_warning: %v", err)
 	}
 }
@@ -412,7 +412,7 @@ func (sm *sessionManager) expireSession(sess *claudeSession) {
 		Timestamp: envelope.Timestamp,
 		SessionID: sess.sessionID,
 	}
-	if err := sm.client.Send(expiredMsg); err != nil {
+	if err := sm.sender.Send(expiredMsg); err != nil {
 		log.Printf("Error sending session_expired: %v", err)
 	}
 
@@ -449,7 +449,7 @@ func (sm *sessionManager) autoConvert(projectPath string) {
 }
 
 // handleNewPRD handles a new_prd WebSocket message.
-func handleNewPRD(client *ws.Client, scanner projectFinder, sessions *sessionManager, msg ws.Message) {
+func handleNewPRD(sender messageSender, scanner projectFinder, sessions *sessionManager, msg ws.Message) {
 	var req ws.NewPRDMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing new_prd message: %v", err)
@@ -458,13 +458,13 @@ func handleNewPRD(client *ws.Client, scanner projectFinder, sessions *sessionMan
 
 	project, found := scanner.FindProject(req.Project)
 	if !found {
-		sendError(client, ws.ErrCodeProjectNotFound,
+		sendError(sender, ws.ErrCodeProjectNotFound,
 			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
 		return
 	}
 
 	if err := sessions.newPRD(project.Path, req.Project, req.SessionID, req.InitialMessage); err != nil {
-		sendError(client, ws.ErrCodeClaudeError,
+		sendError(sender, ws.ErrCodeClaudeError,
 			fmt.Sprintf("Failed to start Claude session: %v", err), msg.ID)
 		return
 	}
@@ -473,7 +473,7 @@ func handleNewPRD(client *ws.Client, scanner projectFinder, sessions *sessionMan
 }
 
 // handlePRDMessage handles a prd_message WebSocket message.
-func handlePRDMessage(client *ws.Client, sessions *sessionManager, msg ws.Message) {
+func handlePRDMessage(sender messageSender, sessions *sessionManager, msg ws.Message) {
 	var req ws.PRDMessageMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing prd_message: %v", err)
@@ -481,14 +481,14 @@ func handlePRDMessage(client *ws.Client, sessions *sessionManager, msg ws.Messag
 	}
 
 	if err := sessions.sendMessage(req.SessionID, req.Content); err != nil {
-		sendError(client, ws.ErrCodeSessionNotFound,
+		sendError(sender, ws.ErrCodeSessionNotFound,
 			fmt.Sprintf("Session %q not found", req.SessionID), msg.ID)
 		return
 	}
 }
 
 // handleClosePRDSession handles a close_prd_session WebSocket message.
-func handleClosePRDSession(client *ws.Client, sessions *sessionManager, msg ws.Message) {
+func handleClosePRDSession(sender messageSender, sessions *sessionManager, msg ws.Message) {
 	var req ws.ClosePRDSessionMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing close_prd_session: %v", err)
@@ -496,7 +496,7 @@ func handleClosePRDSession(client *ws.Client, sessions *sessionManager, msg ws.M
 	}
 
 	if err := sessions.closeSession(req.SessionID, req.Save); err != nil {
-		sendError(client, ws.ErrCodeSessionNotFound,
+		sendError(sender, ws.ErrCodeSessionNotFound,
 			fmt.Sprintf("Session %q not found", req.SessionID), msg.ID)
 		return
 	}

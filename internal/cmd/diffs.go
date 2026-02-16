@@ -13,7 +13,7 @@ import (
 )
 
 // handleGetDiff handles a get_diff request.
-func handleGetDiff(client *ws.Client, finder projectFinder, msg ws.Message) {
+func handleGetDiff(sender messageSender, finder projectFinder, msg ws.Message) {
 	var req ws.GetDiffMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing get_diff message: %v", err)
@@ -22,26 +22,26 @@ func handleGetDiff(client *ws.Client, finder projectFinder, msg ws.Message) {
 
 	project, found := finder.FindProject(req.Project)
 	if !found {
-		sendError(client, ws.ErrCodeProjectNotFound,
+		sendError(sender, ws.ErrCodeProjectNotFound,
 			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
 		return
 	}
 
 	prdDir := filepath.Join(project.Path, ".chief", "prds", req.PRDID)
 	if _, err := os.Stat(prdDir); os.IsNotExist(err) {
-		sendError(client, ws.ErrCodePRDNotFound,
+		sendError(sender, ws.ErrCodePRDNotFound,
 			fmt.Sprintf("PRD %q not found in project %q", req.PRDID, req.Project), msg.ID)
 		return
 	}
 
 	diffText, files, err := getStoryDiff(project.Path, req.StoryID)
 	if err != nil {
-		sendError(client, ws.ErrCodeFilesystemError,
+		sendError(sender, ws.ErrCodeFilesystemError,
 			fmt.Sprintf("Failed to get diff for story %q: %v", req.StoryID, err), msg.ID)
 		return
 	}
 
-	sendDiffMessage(client, req.Project, req.PRDID, req.StoryID, files, diffText)
+	sendDiffMessage(sender, req.Project, req.PRDID, req.StoryID, files, diffText)
 }
 
 // getStoryDiff returns the diff and list of changed files for a story's commit(s).
@@ -116,9 +116,9 @@ func getCommitFiles(repoDir, commitHash string) ([]string, error) {
 	return files, nil
 }
 
-// sendDiffMessage sends a diff message over WebSocket.
-func sendDiffMessage(client *ws.Client, project, prdID, storyID string, files []string, diffText string) {
-	if client == nil {
+// sendDiffMessage sends a diff message.
+func sendDiffMessage(sender messageSender, project, prdID, storyID string, files []string, diffText string) {
+	if sender == nil {
 		return
 	}
 
@@ -137,7 +137,7 @@ func sendDiffMessage(client *ws.Client, project, prdID, storyID string, files []
 		Files:     files,
 		DiffText:  diffText,
 	}
-	if err := client.Send(msg); err != nil {
+	if err := sender.Send(msg); err != nil {
 		log.Printf("Error sending diff: %v", err)
 	}
 }

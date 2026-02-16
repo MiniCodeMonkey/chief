@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/minicodemonkey/chief/internal/engine"
 	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/ws"
@@ -44,7 +43,7 @@ func TestRunServe_StartRun(t *testing.T) {
 	var mu sync.Mutex
 	gotError := false
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send start_run request
 		startReq := map[string]string{
 			"type":      "start_run",
@@ -53,14 +52,13 @@ func TestRunServe_StartRun(t *testing.T) {
 			"project":   "myproject",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(startReq)
+		ms.sendCommand(startReq)
 
 		// Wait a moment for the run to start, then check if error was returned
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
-		if err == nil {
+		raw, err := ms.waitForMessages(1, 2*time.Second)
+		if err == nil && len(raw) > 0 {
 			mu.Lock()
-			json.Unmarshal(data, &responseReceived)
+			json.Unmarshal(raw[0], &responseReceived)
 			// If it's an error, it means the run couldn't start (expected in test env without claude)
 			if responseReceived["type"] == "error" {
 				gotError = true
@@ -101,7 +99,7 @@ func TestRunServe_StartRunProjectNotFound(t *testing.T) {
 	var errorReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		startReq := map[string]string{
 			"type":      "start_run",
 			"id":        "req-1",
@@ -109,13 +107,12 @@ func TestRunServe_StartRunProjectNotFound(t *testing.T) {
 			"project":   "nonexistent",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(startReq)
+		ms.sendCommand(startReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
+			json.Unmarshal(raw, &errorReceived)
 			mu.Unlock()
 		}
 	})
@@ -152,7 +149,7 @@ func TestRunServe_PauseRunNotActive(t *testing.T) {
 	var errorReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		pauseReq := map[string]string{
 			"type":      "pause_run",
 			"id":        "req-1",
@@ -160,13 +157,12 @@ func TestRunServe_PauseRunNotActive(t *testing.T) {
 			"project":   "myproject",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(pauseReq)
+		ms.sendCommand(pauseReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
+			json.Unmarshal(raw, &errorReceived)
 			mu.Unlock()
 		}
 	})
@@ -203,7 +199,7 @@ func TestRunServe_ResumeRunNotActive(t *testing.T) {
 	var errorReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		resumeReq := map[string]string{
 			"type":      "resume_run",
 			"id":        "req-1",
@@ -211,13 +207,12 @@ func TestRunServe_ResumeRunNotActive(t *testing.T) {
 			"project":   "myproject",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(resumeReq)
+		ms.sendCommand(resumeReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
+			json.Unmarshal(raw, &errorReceived)
 			mu.Unlock()
 		}
 	})
@@ -254,7 +249,7 @@ func TestRunServe_StopRunNotActive(t *testing.T) {
 	var errorReceived map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		stopReq := map[string]string{
 			"type":      "stop_run",
 			"id":        "req-1",
@@ -262,13 +257,12 @@ func TestRunServe_StopRunNotActive(t *testing.T) {
 			"project":   "myproject",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(stopReq)
+		ms.sendCommand(stopReq)
 
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, data, err := conn.ReadMessage()
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
 		if err == nil {
 			mu.Lock()
-			json.Unmarshal(data, &errorReceived)
+			json.Unmarshal(raw, &errorReceived)
 			mu.Unlock()
 		}
 	})
@@ -561,7 +555,7 @@ exit 1
 	var messages []map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send start_run request
 		startReq := map[string]string{
 			"type":      "start_run",
@@ -570,21 +564,19 @@ exit 1
 			"project":   "myproject",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(startReq)
+		ms.sendCommand(startReq)
 
 		// Read messages — we expect run_paused with reason "quota_exhausted"
 		// and a quota_exhausted message
-		for i := 0; i < 5; i++ {
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
+		raws, err := ms.waitForMessages(5, 5*time.Second)
+		if err == nil {
+			for _, data := range raws {
+				var msg map[string]interface{}
+				if json.Unmarshal(data, &msg) == nil {
+					mu.Lock()
+					messages = append(messages, msg)
+					mu.Unlock()
+				}
 			}
 		}
 	})
@@ -935,7 +927,7 @@ exit 0
 	var messages []map[string]interface{}
 	var mu sync.Mutex
 
-	err := serveTestHelper(t, workspaceDir, func(conn *websocket.Conn) {
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send start_run request
 		startReq := map[string]string{
 			"type":      "start_run",
@@ -944,20 +936,18 @@ exit 0
 			"project":   "myproject",
 			"prd_id":    "feature",
 		}
-		conn.WriteJSON(startReq)
+		ms.sendCommand(startReq)
 
 		// Read messages — expect run_progress and claude_output messages
-		for i := 0; i < 15; i++ {
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-			var msg map[string]interface{}
-			if json.Unmarshal(data, &msg) == nil {
-				mu.Lock()
-				messages = append(messages, msg)
-				mu.Unlock()
+		raws, err := ms.waitForMessages(15, 5*time.Second)
+		if err == nil {
+			for _, data := range raws {
+				var msg map[string]interface{}
+				if json.Unmarshal(data, &msg) == nil {
+					mu.Lock()
+					messages = append(messages, msg)
+					mu.Unlock()
+				}
 			}
 		}
 	})

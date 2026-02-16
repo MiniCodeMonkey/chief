@@ -20,10 +20,16 @@ import (
 // ScanInterval is how often the scanner re-scans the workspace.
 const ScanInterval = 60 * time.Second
 
+// MessageSender is an interface for sending messages to the server.
+// This abstracts over both the old ws.Client and the new uplink sender.
+type MessageSender interface {
+	Send(msg interface{}) error
+}
+
 // Scanner discovers and tracks git repositories in a workspace directory.
 type Scanner struct {
 	workspace string
-	client    *ws.Client
+	sender    MessageSender
 	interval  time.Duration
 
 	mu       sync.RWMutex
@@ -31,10 +37,10 @@ type Scanner struct {
 }
 
 // New creates a new Scanner for the given workspace directory.
-func New(workspace string, client *ws.Client) *Scanner {
+func New(workspace string, sender MessageSender) *Scanner {
 	return &Scanner{
 		workspace: workspace,
-		client:    client,
+		sender:    sender,
 		interval:  ScanInterval,
 	}
 }
@@ -44,12 +50,12 @@ func (s *Scanner) WorkspacePath() string {
 	return s.workspace
 }
 
-// SetClient sets the WebSocket client on the scanner.
-// This allows creating the scanner before the client is fully set up.
-func (s *Scanner) SetClient(client *ws.Client) {
+// SetSender sets the message sender on the scanner.
+// This allows creating the scanner before the sender is fully set up.
+func (s *Scanner) SetSender(sender MessageSender) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.client = client
+	s.sender = sender
 }
 
 // Projects returns the current list of discovered projects.
@@ -153,9 +159,9 @@ func (s *Scanner) Run(ctx context.Context) {
 	}
 }
 
-// sendProjectList sends a project_list message over WebSocket.
+// sendProjectList sends a project_list message.
 func (s *Scanner) sendProjectList() {
-	if s.client == nil {
+	if s.sender == nil {
 		return
 	}
 
@@ -172,7 +178,7 @@ func (s *Scanner) sendProjectList() {
 		Projects:  projects,
 	}
 
-	if err := s.client.Send(plMsg); err != nil {
+	if err := s.sender.Send(plMsg); err != nil {
 		log.Printf("Error sending project_list: %v", err)
 	}
 }

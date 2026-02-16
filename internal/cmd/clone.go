@@ -17,7 +17,7 @@ import (
 )
 
 // handleCloneRepo handles a clone_repo request.
-func handleCloneRepo(client *ws.Client, scanner *workspace.Scanner, msg ws.Message) {
+func handleCloneRepo(sender messageSender, scanner *workspace.Scanner, msg ws.Message) {
 	var req ws.CloneRepoMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing clone_repo message: %v", err)
@@ -25,7 +25,7 @@ func handleCloneRepo(client *ws.Client, scanner *workspace.Scanner, msg ws.Messa
 	}
 
 	if req.URL == "" {
-		sendError(client, ws.ErrCodeCloneFailed, "URL is required", msg.ID)
+		sendError(sender, ws.ErrCodeCloneFailed, "URL is required", msg.ID)
 		return
 	}
 
@@ -41,13 +41,13 @@ func handleCloneRepo(client *ws.Client, scanner *workspace.Scanner, msg ws.Messa
 
 	// Check if target already exists
 	if _, err := os.Stat(targetDir); err == nil {
-		sendError(client, ws.ErrCodeCloneFailed,
+		sendError(sender, ws.ErrCodeCloneFailed,
 			fmt.Sprintf("Directory %q already exists in workspace", dirName), msg.ID)
 		return
 	}
 
 	// Run clone in a goroutine so we don't block the message loop
-	go runClone(client, scanner, req.URL, dirName, workspaceDir)
+	go runClone(sender, scanner, req.URL, dirName, workspaceDir)
 }
 
 // inferDirName extracts a directory name from a git URL.
@@ -75,19 +75,19 @@ func inferDirName(url string) string {
 var percentPattern = regexp.MustCompile(`(\d+)%`)
 
 // runClone executes the git clone and streams progress messages.
-func runClone(client *ws.Client, scanner *workspace.Scanner, url, dirName, workspaceDir string) {
+func runClone(sender messageSender, scanner *workspace.Scanner, url, dirName, workspaceDir string) {
 	cmd := exec.Command("git", "clone", "--progress", url, dirName)
 	cmd.Dir = workspaceDir
 
 	// Git clone writes progress to stderr
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		sendCloneComplete(client, url, "", false, fmt.Sprintf("Failed to set up clone: %v", err))
+		sendCloneComplete(sender, url, "", false, fmt.Sprintf("Failed to set up clone: %v", err))
 		return
 	}
 
 	if err := cmd.Start(); err != nil {
-		sendCloneComplete(client, url, "", false, fmt.Sprintf("Failed to start clone: %v", err))
+		sendCloneComplete(sender, url, "", false, fmt.Sprintf("Failed to start clone: %v", err))
 		return
 	}
 
@@ -105,18 +105,18 @@ func runClone(client *ws.Client, scanner *workspace.Scanner, url, dirName, works
 			percent, _ = strconv.Atoi(matches[1])
 		}
 
-		sendCloneProgress(client, url, line, percent)
+		sendCloneProgress(sender, url, line, percent)
 	}
 
 	if err := cmd.Wait(); err != nil {
-		sendCloneComplete(client, url, "", false, fmt.Sprintf("Clone failed: %v", err))
+		sendCloneComplete(sender, url, "", false, fmt.Sprintf("Clone failed: %v", err))
 		return
 	}
 
 	// Trigger a rescan so the new project appears immediately
 	scanner.ScanAndUpdate()
 
-	sendCloneComplete(client, url, dirName, true, "")
+	sendCloneComplete(sender, url, dirName, true, "")
 }
 
 // scanGitProgress is a bufio.SplitFunc that splits on \r or \n,
@@ -138,8 +138,8 @@ func scanGitProgress(data []byte, atEOF bool) (advance int, token []byte, err er
 }
 
 // sendCloneProgress sends a clone_progress message.
-func sendCloneProgress(client *ws.Client, url, progressText string, percent int) {
-	if client == nil {
+func sendCloneProgress(sender messageSender, url, progressText string, percent int) {
+	if sender == nil {
 		return
 	}
 	envelope := ws.NewMessage(ws.TypeCloneProgress)
@@ -151,14 +151,14 @@ func sendCloneProgress(client *ws.Client, url, progressText string, percent int)
 		ProgressText: progressText,
 		Percent:      percent,
 	}
-	if err := client.Send(msg); err != nil {
+	if err := sender.Send(msg); err != nil {
 		log.Printf("Error sending clone_progress: %v", err)
 	}
 }
 
 // sendCloneComplete sends a clone_complete message.
-func sendCloneComplete(client *ws.Client, url, project string, success bool, errMsg string) {
-	if client == nil {
+func sendCloneComplete(sender messageSender, url, project string, success bool, errMsg string) {
+	if sender == nil {
 		return
 	}
 	envelope := ws.NewMessage(ws.TypeCloneComplete)
@@ -171,13 +171,13 @@ func sendCloneComplete(client *ws.Client, url, project string, success bool, err
 		Error:     errMsg,
 		Project:   project,
 	}
-	if err := client.Send(msg); err != nil {
+	if err := sender.Send(msg); err != nil {
 		log.Printf("Error sending clone_complete: %v", err)
 	}
 }
 
 // handleCreateProject handles a create_project request.
-func handleCreateProject(client *ws.Client, scanner *workspace.Scanner, msg ws.Message) {
+func handleCreateProject(sender messageSender, scanner *workspace.Scanner, msg ws.Message) {
 	var req ws.CreateProjectMessage
 	if err := json.Unmarshal(msg.Raw, &req); err != nil {
 		log.Printf("Error parsing create_project message: %v", err)
@@ -185,7 +185,7 @@ func handleCreateProject(client *ws.Client, scanner *workspace.Scanner, msg ws.M
 	}
 
 	if req.Name == "" {
-		sendError(client, ws.ErrCodeFilesystemError, "Project name is required", msg.ID)
+		sendError(sender, ws.ErrCodeFilesystemError, "Project name is required", msg.ID)
 		return
 	}
 
@@ -194,14 +194,14 @@ func handleCreateProject(client *ws.Client, scanner *workspace.Scanner, msg ws.M
 
 	// Check if directory already exists
 	if _, err := os.Stat(projectDir); err == nil {
-		sendError(client, ws.ErrCodeFilesystemError,
+		sendError(sender, ws.ErrCodeFilesystemError,
 			fmt.Sprintf("Directory %q already exists", req.Name), msg.ID)
 		return
 	}
 
 	// Create the directory
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		sendError(client, ws.ErrCodeFilesystemError,
+		sendError(sender, ws.ErrCodeFilesystemError,
 			fmt.Sprintf("Failed to create directory: %v", err), msg.ID)
 		return
 	}
@@ -210,7 +210,7 @@ func handleCreateProject(client *ws.Client, scanner *workspace.Scanner, msg ws.M
 	if req.GitInit {
 		cmd := exec.Command("git", "init", projectDir)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			sendError(client, ws.ErrCodeFilesystemError,
+			sendError(sender, ws.ErrCodeFilesystemError,
 				fmt.Sprintf("git init failed: %v\n%s", err, strings.TrimSpace(string(out))), msg.ID)
 			return
 		}
@@ -230,7 +230,7 @@ func handleCreateProject(client *ws.Client, scanner *workspace.Scanner, msg ws.M
 				Timestamp: envelope.Timestamp,
 				Project:   project,
 			}
-			if err := client.Send(psMsg); err != nil {
+			if err := sender.Send(psMsg); err != nil {
 				log.Printf("Error sending project_state: %v", err)
 			}
 			return
@@ -245,7 +245,7 @@ func handleCreateProject(client *ws.Client, scanner *workspace.Scanner, msg ws.M
 		Timestamp: envelope.Timestamp,
 		Projects:  scanner.Projects(),
 	}
-	if err := client.Send(plMsg); err != nil {
+	if err := sender.Send(plMsg); err != nil {
 		log.Printf("Error sending project_list: %v", err)
 	}
 }
