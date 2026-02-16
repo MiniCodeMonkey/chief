@@ -94,7 +94,7 @@ func RunServe(opts ServeOptions) error {
 		deviceName = creds.DeviceName
 	}
 
-	// Determine WebSocket URL (precedence: flag > env > user config > default)
+	// Determine WebSocket URL (precedence: flag > env > user config > credentials > default)
 	wsURL := opts.WSURL
 	if wsURL == "" {
 		wsURL = os.Getenv("CHIEF_WS_URL")
@@ -103,6 +103,9 @@ func RunServe(opts ServeOptions) error {
 		if userCfg, err := config.LoadUserConfig(); err == nil && userCfg.WSURL != "" {
 			wsURL = userCfg.WSURL
 		}
+	}
+	if wsURL == "" && creds.WSURL != "" {
+		wsURL = creds.WSURL
 	}
 	if wsURL == "" {
 		wsURL = ws.DefaultURL

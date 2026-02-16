@@ -45,6 +45,7 @@ func TestRunLogin_Success(t *testing.T) {
 				RefreshToken: "test-refresh-token",
 				ExpiresIn:    3600,
 				User:         "testuser@example.com",
+				WSURL:        "wss://ws-test-reverb.laravel.cloud/ws/server",
 			})
 		default:
 			http.NotFound(w, r)
@@ -83,6 +84,9 @@ func TestRunLogin_Success(t *testing.T) {
 	}
 	if creds.DeviceName != "test-device" {
 		t.Errorf("expected device_name %q, got %q", "test-device", creds.DeviceName)
+	}
+	if creds.WSURL != "wss://ws-test-reverb.laravel.cloud/ws/server" {
+		t.Errorf("expected ws_url %q, got %q", "wss://ws-test-reverb.laravel.cloud/ws/server", creds.WSURL)
 	}
 }
 
@@ -240,6 +244,7 @@ func TestRunLogin_SetupToken_Success(t *testing.T) {
 			RefreshToken: "setup-refresh-token",
 			ExpiresIn:    3600,
 			User:         "setupuser@example.com",
+			WSURL:        "wss://ws-setup-reverb.laravel.cloud/ws/server",
 		})
 	}))
 	defer server.Close()
@@ -276,6 +281,66 @@ func TestRunLogin_SetupToken_Success(t *testing.T) {
 	}
 	if creds.DeviceName != "setup-device" {
 		t.Errorf("expected device_name %q, got %q", "setup-device", creds.DeviceName)
+	}
+	if creds.WSURL != "wss://ws-setup-reverb.laravel.cloud/ws/server" {
+		t.Errorf("expected ws_url %q, got %q", "wss://ws-setup-reverb.laravel.cloud/ws/server", creds.WSURL)
+	}
+}
+
+func TestRunLogin_WSURLNotReturned(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	var pollCount atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/oauth/device/code":
+			json.NewEncoder(w).Encode(deviceCodeResponse{
+				DeviceCode: "test-device-code",
+				UserCode:   "ABCD-1234",
+			})
+		case "/api/oauth/device/token":
+			count := pollCount.Add(1)
+			if count < 2 {
+				json.NewEncoder(w).Encode(tokenResponse{
+					Error: "authorization_pending",
+				})
+				return
+			}
+			// No ws_url in response
+			json.NewEncoder(w).Encode(tokenResponse{
+				AccessToken:  "test-access-token",
+				RefreshToken: "test-refresh-token",
+				ExpiresIn:    3600,
+				User:         "testuser@example.com",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	oldStdin := os.Stdin
+	defer func() { os.Stdin = oldStdin }()
+	r, w, _ := os.Pipe()
+	os.Stdin = r
+	w.Close()
+
+	err := RunLogin(LoginOptions{
+		DeviceName: "test-device",
+		BaseURL:    server.URL,
+	})
+	if err != nil {
+		t.Fatalf("RunLogin failed: %v", err)
+	}
+
+	creds, err := auth.LoadCredentials()
+	if err != nil {
+		t.Fatalf("LoadCredentials after login failed: %v", err)
+	}
+	if creds.WSURL != "" {
+		t.Errorf("expected empty ws_url, got %q", creds.WSURL)
 	}
 }
 

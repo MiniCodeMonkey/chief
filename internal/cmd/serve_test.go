@@ -1685,6 +1685,71 @@ func TestSessionManager_SessionCount(t *testing.T) {
 	}
 }
 
+func TestRunServe_UsesCredentialsWSURL(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	// Save credentials with a WSURL
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		conn.ReadMessage()
+
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		cancel()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	// Save credentials with WSURL pointing at our test server
+	creds := &auth.Credentials{
+		AccessToken:  "test-token",
+		RefreshToken: "test-refresh",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		DeviceName:   "test-device",
+		User:         "user@example.com",
+		WSURL:        serveWsURL(srv),
+	}
+	if err := auth.SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// No WSURL flag, no env var, no user config — should use credentials WSURL
+	t.Setenv("CHIEF_WS_URL", "")
+
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+}
+
 func TestRunServe_WSURLFromEnvVar(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)

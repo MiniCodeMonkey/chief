@@ -452,6 +452,122 @@ func TestRefreshToken_ThreadSafe(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadCredentials_WithWSURL(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	creds := &Credentials{
+		AccessToken:  "access-abc",
+		RefreshToken: "refresh-xyz",
+		ExpiresAt:    time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+		DeviceName:   "my-laptop",
+		User:         "user@example.com",
+		WSURL:        "wss://ws-abc123-reverb.laravel.cloud/ws/server",
+	}
+
+	if err := SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	loaded, err := LoadCredentials()
+	if err != nil {
+		t.Fatalf("LoadCredentials failed: %v", err)
+	}
+
+	if loaded.WSURL != "wss://ws-abc123-reverb.laravel.cloud/ws/server" {
+		t.Errorf("expected ws_url %q, got %q", "wss://ws-abc123-reverb.laravel.cloud/ws/server", loaded.WSURL)
+	}
+}
+
+func TestRefreshToken_PreservesWSURL(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	creds := &Credentials{
+		AccessToken:  "old-access-token",
+		RefreshToken: "test-refresh-token",
+		ExpiresAt:    time.Now().Add(2 * time.Minute),
+		DeviceName:   "test-device",
+		User:         "user@example.com",
+		WSURL:        "wss://old-host/ws/server",
+	}
+	if err := SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/oauth/token" {
+			json.NewEncoder(w).Encode(refreshResponse{
+				AccessToken:  "new-access-token",
+				RefreshToken: "new-refresh-token",
+				ExpiresIn:    3600,
+				WSURL:        "wss://new-host/ws/server",
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	refreshed, err := RefreshToken(server.URL)
+	if err != nil {
+		t.Fatalf("RefreshToken failed: %v", err)
+	}
+
+	if refreshed.WSURL != "wss://new-host/ws/server" {
+		t.Errorf("expected ws_url %q, got %q", "wss://new-host/ws/server", refreshed.WSURL)
+	}
+
+	// Verify persisted
+	loaded, err := LoadCredentials()
+	if err != nil {
+		t.Fatalf("LoadCredentials failed: %v", err)
+	}
+	if loaded.WSURL != "wss://new-host/ws/server" {
+		t.Errorf("expected persisted ws_url %q, got %q", "wss://new-host/ws/server", loaded.WSURL)
+	}
+}
+
+func TestRefreshToken_WSURLNotReturned_PreservesExisting(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+
+	creds := &Credentials{
+		AccessToken:  "old-access-token",
+		RefreshToken: "test-refresh-token",
+		ExpiresAt:    time.Now().Add(2 * time.Minute),
+		DeviceName:   "test-device",
+		User:         "user@example.com",
+		WSURL:        "wss://existing-host/ws/server",
+	}
+	if err := SaveCredentials(creds); err != nil {
+		t.Fatalf("SaveCredentials failed: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/oauth/token" {
+			json.NewEncoder(w).Encode(refreshResponse{
+				AccessToken:  "new-access-token",
+				RefreshToken: "new-refresh-token",
+				ExpiresIn:    3600,
+				// WSURL intentionally omitted
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	refreshed, err := RefreshToken(server.URL)
+	if err != nil {
+		t.Fatalf("RefreshToken failed: %v", err)
+	}
+
+	if refreshed.WSURL != "wss://existing-host/ws/server" {
+		t.Errorf("expected existing ws_url to be preserved %q, got %q", "wss://existing-host/ws/server", refreshed.WSURL)
+	}
+}
+
 func TestRevokeDevice_Success(t *testing.T) {
 	var receivedToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

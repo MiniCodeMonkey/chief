@@ -34,6 +34,7 @@ type Credentials struct {
 	ExpiresAt    time.Time `yaml:"expires_at"`
 	DeviceName   string    `yaml:"device_name"`
 	User         string    `yaml:"user"`
+	WSURL        string    `yaml:"ws_url,omitempty"`
 }
 
 // IsExpired returns true if the access token has expired.
@@ -159,6 +160,7 @@ type refreshResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
+	WSURL        string `json:"ws_url"`
 	Error        string `json:"error"`
 }
 
@@ -206,6 +208,9 @@ func RefreshToken(baseURL string) (*Credentials, error) {
 	creds.AccessToken = tokenResp.AccessToken
 	if tokenResp.RefreshToken != "" {
 		creds.RefreshToken = tokenResp.RefreshToken
+	}
+	if tokenResp.WSURL != "" {
+		creds.WSURL = tokenResp.WSURL
 	}
 	creds.ExpiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
 

@@ -41,6 +41,7 @@ type tokenResponse struct {
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
 	User         string `json:"user"`
+	WSURL        string `json:"ws_url"`
 	Error        string `json:"error"`
 }
 
@@ -163,6 +164,7 @@ func exchangeSetupToken(baseURL, token, deviceName string) error {
 		ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
 		DeviceName:   deviceName,
 		User:         tokenResp.User,
+		WSURL:        tokenResp.WSURL,
 	}
 
 	if err := auth.SaveCredentials(creds); err != nil {
@@ -221,6 +223,7 @@ func pollForToken(baseURL, deviceCode, deviceName string) (*auth.Credentials, er
 				ExpiresAt:    time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second),
 				DeviceName:   deviceName,
 				User:         tokenResp.User,
+				WSURL:        tokenResp.WSURL,
 			}, nil
 		}
 
