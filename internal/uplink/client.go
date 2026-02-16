@@ -229,6 +229,15 @@ func (c *Client) SendMessagesWithRetry(ctx context.Context, batchID string, mess
 	}
 }
 
+// Heartbeat calls POST /api/device/heartbeat to tell the server the device is alive.
+func (c *Client) Heartbeat(ctx context.Context) error {
+	var resp json.RawMessage
+	if err := c.doJSON(ctx, "POST", "/api/device/heartbeat", nil, &resp); err != nil {
+		return fmt.Errorf("heartbeat: %w", err)
+	}
+	return nil
+}
+
 // Disconnect calls POST /api/device/disconnect to notify the server the device is going offline.
 func (c *Client) Disconnect(ctx context.Context) error {
 	var resp json.RawMessage
