@@ -1667,3 +1667,296 @@ func TestSessionManager_SessionCount(t *testing.T) {
 		t.Errorf("expected 2 sessions, got %d", sm.sessionCount())
 	}
 }
+
+func TestRunServe_WSURLFromEnvVar(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Read hello
+		conn.ReadMessage()
+
+		// Send welcome
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		cancel()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	// Set env var to point at our test server (no WSURL in ServeOptions)
+	t.Setenv("CHIEF_WS_URL", serveWsURL(srv))
+
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+}
+
+func TestRunServe_WSURLFromUserConfig(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		conn.ReadMessage()
+
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		cancel()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	// Write ws_url to user config (~/.chief/config.yaml)
+	chiefDir := filepath.Join(home, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgContent := fmt.Sprintf("ws_url: %s\n", serveWsURL(srv))
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte(cfgContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// No WSURL flag and no env var — should use user config
+	t.Setenv("CHIEF_WS_URL", "")
+
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+}
+
+func TestRunServe_WSURLPrecedence_FlagOverridesEnv(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		conn.ReadMessage()
+
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		cancel()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	// Set env var to a bad URL — flag should override it
+	t.Setenv("CHIEF_WS_URL", "ws://bad-url-that-should-not-be-used:9999")
+
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		WSURL:     serveWsURL(srv), // Flag value — should take precedence
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+}
+
+func TestRunServe_WSURLPrecedence_EnvOverridesConfig(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		conn.ReadMessage()
+
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		cancel()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	// Write ws_url to user config pointing to a bad URL
+	chiefDir := filepath.Join(home, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("ws_url: ws://bad-url:9999\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Env var should override the user config
+	t.Setenv("CHIEF_WS_URL", serveWsURL(srv))
+
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+}
+
+func TestRunServe_WSURLLoggedOnStartup(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	logFile := filepath.Join(home, "serve.log")
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	upgrader := websocket.Upgrader{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		conn.ReadMessage()
+
+		welcome := map[string]string{
+			"type":      "welcome",
+			"id":        "test-id",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		conn.WriteJSON(welcome)
+
+		cancel()
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	wsURL := serveWsURL(srv)
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		WSURL:     wsURL,
+		LogFile:   logFile,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "Connecting to "+wsURL) {
+		t.Errorf("expected log to contain 'Connecting to %s', got: %s", wsURL, content)
+	}
+}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -8,6 +9,36 @@ import (
 )
 
 const configFile = ".chief/config.yaml"
+
+// UserConfig holds user-level settings from ~/.chief/config.yaml.
+type UserConfig struct {
+	WSURL string `yaml:"ws_url,omitempty"`
+}
+
+// LoadUserConfig reads the user-level config from ~/.chief/config.yaml.
+// Returns an empty UserConfig when the file doesn't exist (no error).
+func LoadUserConfig() (*UserConfig, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return &UserConfig{}, fmt.Errorf("determining home directory: %w", err)
+	}
+
+	path := filepath.Join(home, ".chief", "config.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &UserConfig{}, nil
+		}
+		return &UserConfig{}, err
+	}
+
+	cfg := &UserConfig{}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return &UserConfig{}, err
+	}
+
+	return cfg, nil
+}
 
 // Config holds project-level settings for Chief.
 type Config struct {

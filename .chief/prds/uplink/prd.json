@@ -490,7 +490,7 @@
         "Log the target URL on startup so it's obvious which server chief is connecting to"
       ],
       "priority": 28,
-      "passes": false
+      "passes": true
     }
   ]
 }

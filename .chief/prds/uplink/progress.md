@@ -65,6 +65,13 @@
 - `update.CheckForUpdate(version, opts)` returns `CheckResult` with `UpdateAvailable` bool; `update.PerformUpdate(version, opts)` does full download+replace
 - Startup version check runs non-blocking in `PersistentPreRun`; serve mode checks every 24h and sends `update_available` WS message
 - `ServeOptions.ReleasesURL` allows testing the periodic version checker with a mock server
+- `handleMessage` returns `bool` — `true` signals the serve loop to exit cleanly (for remote update); all other handlers return `false`
+- Setup token login: `chief login --setup-token <token>` exchanges via `POST /oauth/device/exchange`; cloud-init uses `CHIEF_SETUP_TOKEN` env var and a one-shot systemd service
+- Rate limiting: `ws.NewRateLimiter()` checks in main event loop before `handleMessage()`; `Reset()` on reconnect; ping is exempt; expensive ops (clone_repo, start_run, new_prd) have per-type 2/minute limits
+- Graceful shutdown: `serveShutdown()` accepts engine, runs `markInterruptedStories()` → `stopAll()`/`killAll()`/`eng.Shutdown()` in goroutine with 5s force-kill timeout; engine shutdown moved from `defer` to inside `serveShutdown` to avoid blocking
+- `runManager.markInterruptedStories()` loads PRD, sets `inProgress: true` for active story that hasn't passed, saves back — must be called before `stopAll()`
+- User-level config: `config.LoadUserConfig()` reads `~/.chief/config.yaml` (separate from project-level `.chief/config.yaml`); currently has `ws_url` field
+- WS URL precedence: `--ws-url` flag > `CHIEF_WS_URL` env var > `ws_url` in `~/.chief/config.yaml` > `ws.DefaultURL`
 
 ---
 
@@ -493,4 +500,37 @@
   - Rate limit check is done in the main event loop (before `handleMessage`) rather than inside `handleMessage` — cleaner separation of concerns
   - `rateLimiter.Reset()` is called in the `WithOnReconnect` callback alongside `sendStateSnapshot` — rate limiter state resets on reconnection
   - Pre-existing race conditions exist in `runManager` tests (unrelated to rate limiting) — these fail with `-race` flag but pass without it
+---
+
+## 2026-02-16 - US-027
+- **What was implemented:** Graceful shutdown for `chief serve` with process killing, story interruption tracking, timeout enforcement, and proper log flushing
+- **Files changed:**
+  - `internal/cmd/serve.go` - Enhanced `serveShutdown()` with: process counting, in-progress story marking, 5-second force-kill timeout, engine shutdown integration, proper log file sync/flush; removed `defer eng.Shutdown()` (engine now shut down inside `serveShutdown`); all callers updated to pass engine
+  - `internal/cmd/runs.go` - Added `markInterruptedStories()` (loads PRD, sets `inProgress: true` for active story, saves back), `activeRunCount()` method
+  - `internal/cmd/session.go` - Added `sessionCount()` method for process counting during shutdown
+  - `internal/cmd/serve_test.go` - Added 4 tests: `ShutdownLogsSequence`, `ShutdownMarksInterruptedStories` (integration test with mock claude), `ShutdownLogFileFlush`, `SessionManager_SessionCount`
+  - `internal/cmd/runs_test.go` - Added 3 tests: `MarkInterruptedStories`, `MarkInterruptedStoriesNoStoryID`, `ActiveRunCount`
+- **Learnings for future iterations:**
+  - `defer eng.Shutdown()` in `RunServe` blocks on `StopAll().wg.Wait()` — if processes are still alive after the 5-second force-kill timeout, this causes a hang. Solution: move engine shutdown into `serveShutdown` goroutine alongside `stopAll()`/`killAll()`
+  - `markInterruptedStories()` must be called BEFORE `stopAll()` because `stopAll()` clears the runs map and closes loggers
+  - Force-kill timeout must encompass both runs (`StopAll` which sends `Kill()` to processes) and sessions (`killAll` which kills process and waits for `<-done`)
+  - The 5-second timeout allows the goroutine to continue running in the background while we proceed with watcher/WebSocket cleanup — acceptable because the goroutine will eventually finish or be cleaned up by process exit
+  - Mock claude scripts using `sleep 300` are good for testing force-kill behavior — the process won't exit on its own, so the 5-second timeout is exercised
+  - Log file flush uses `Sync()` before `Close()` (via deferred function) to ensure all buffered output is written to disk
+---
+
+## 2026-02-16 - US-028
+- **What was implemented:** WebSocket URL configuration for local development — `--ws-url` flag, `CHIEF_WS_URL` env var, and `ws_url` field in `~/.chief/config.yaml` with proper precedence
+- **Files changed:**
+  - `internal/config/config.go` - Added `UserConfig` struct with `WSURL` field and `LoadUserConfig()` function for reading user-level config from `~/.chief/config.yaml`
+  - `internal/config/config_test.go` - Added 3 tests: `LoadUserConfig_NonExistent`, `LoadUserConfig_WithWSURL`, `LoadUserConfig_EmptyWSURL`
+  - `internal/cmd/serve.go` - Updated WS URL resolution to check flag > `CHIEF_WS_URL` env var > user config `ws_url` > default; added `config` import
+  - `internal/cmd/serve_test.go` - Added 5 integration tests: `WSURLFromEnvVar`, `WSURLFromUserConfig`, `WSURLPrecedence_FlagOverridesEnv`, `WSURLPrecedence_EnvOverridesConfig`, `WSURLLoggedOnStartup`
+  - `cmd/chief/main.go` - Added `--ws-url` flag to `serve` subcommand
+- **Learnings for future iterations:**
+  - User-level config (`~/.chief/config.yaml`) is separate from project-level config (`.chief/config.yaml`) — uses `os.UserHomeDir()` like auth credentials
+  - `LoadUserConfig()` returns empty struct (not error) when file doesn't exist — follows same pattern as project config
+  - `gorilla/websocket` natively supports both `ws://` and `wss://` — no special handling needed for TLS vs plain
+  - The WS URL was already logged on startup (line 95 in serve.go), so that AC was already met
+  - Precedence chain (flag > env > config > default) is cleanly implemented with sequential `if wsURL == ""` checks
 ---

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/minicodemonkey/chief/internal/auth"
+	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/engine"
 	"github.com/minicodemonkey/chief/internal/update"
 	"github.com/minicodemonkey/chief/internal/workspace"
@@ -85,8 +86,16 @@ func RunServe(opts ServeOptions) error {
 		deviceName = creds.DeviceName
 	}
 
-	// Determine WebSocket URL
+	// Determine WebSocket URL (precedence: flag > env > user config > default)
 	wsURL := opts.WSURL
+	if wsURL == "" {
+		wsURL = os.Getenv("CHIEF_WS_URL")
+	}
+	if wsURL == "" {
+		if userCfg, err := config.LoadUserConfig(); err == nil && userCfg.WSURL != "" {
+			wsURL = userCfg.WSURL
+		}
+	}
 	if wsURL == "" {
 		wsURL = ws.DefaultURL
 	}

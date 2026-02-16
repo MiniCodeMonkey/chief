@@ -122,6 +122,61 @@ func TestEffectiveDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadUserConfig_NonExistent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg, err := LoadUserConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WSURL != "" {
+		t.Errorf("expected empty WSURL, got %q", cfg.WSURL)
+	}
+}
+
+func TestLoadUserConfig_WithWSURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	chiefDir := filepath.Join(home, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("ws_url: ws://localhost:8080/ws/server\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadUserConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WSURL != "ws://localhost:8080/ws/server" {
+		t.Errorf("expected ws://localhost:8080/ws/server, got %q", cfg.WSURL)
+	}
+}
+
+func TestLoadUserConfig_EmptyWSURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	chiefDir := filepath.Join(home, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadUserConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WSURL != "" {
+		t.Errorf("expected empty WSURL, got %q", cfg.WSURL)
+	}
+}
+
 func TestExists(t *testing.T) {
 	dir := t.TempDir()
 
