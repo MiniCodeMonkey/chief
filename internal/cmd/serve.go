@@ -534,7 +534,15 @@ func checkAndNotify(sender messageSender, version, releasesURL string) {
 // uplinkCloser is an interface for closing the uplink connection.
 type uplinkCloser interface {
 	Close() error
+	CloseWithTimeout(timeout time.Duration) error
 }
+
+// shutdownTimeout is the maximum time allowed for the entire shutdown sequence.
+// This covers: process killing, batcher flush, Pusher close, and HTTP disconnect.
+const shutdownTimeout = 10 * time.Second
+
+// processKillTimeout is the maximum time to wait for Claude processes to exit gracefully.
+const processKillTimeout = 5 * time.Second
 
 // serveShutdown performs clean shutdown of the serve command.
 // It kills all child Claude processes, marks interrupted stories, closes the uplink,
@@ -543,7 +551,27 @@ type uplinkCloser interface {
 func serveShutdown(closer uplinkCloser, watcher *workspace.Watcher, sessions *sessionManager, runs *runManager, eng *engine.Engine) error {
 	log.Println("Shutting down...")
 
-	// Count processes before shutdown
+	// Enforce an overall shutdown deadline.
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		doShutdown(closer, watcher, sessions, runs, eng)
+	}()
+
+	select {
+	case <-shutdownDone:
+		// Normal shutdown completed within the timeout.
+	case <-time.After(shutdownTimeout):
+		log.Printf("Shutdown timed out after %s — forcing exit", shutdownTimeout)
+	}
+
+	log.Println("Goodbye.")
+	return nil
+}
+
+// doShutdown performs the actual shutdown sequence.
+func doShutdown(closer uplinkCloser, watcher *workspace.Watcher, sessions *sessionManager, runs *runManager, eng *engine.Engine) {
+	// Count processes before shutdown.
 	processCount := 0
 	if sessions != nil {
 		processCount += sessions.sessionCount()
@@ -552,25 +580,25 @@ func serveShutdown(closer uplinkCloser, watcher *workspace.Watcher, sessions *se
 		processCount += runs.activeRunCount()
 	}
 
-	// Mark any in-progress stories as interrupted in prd.json
+	// Mark any in-progress stories as interrupted in prd.json.
 	if runs != nil {
 		runs.markInterruptedStories()
 	}
 
-	// Use a channel to track when graceful shutdown completes
+	// Use a channel to track when graceful process shutdown completes.
 	done := make(chan struct{})
 	go func() {
-		// Stop all active Ralph loop runs
+		// Stop all active Ralph loop runs.
 		if runs != nil {
 			runs.stopAll()
 		}
 
-		// Kill all active Claude sessions
+		// Kill all active Claude sessions.
 		if sessions != nil {
 			sessions.killAll()
 		}
 
-		// Shut down the engine (stops event forwarding goroutine)
+		// Shut down the engine (stops event forwarding goroutine).
 		if eng != nil {
 			eng.Shutdown()
 		}
@@ -578,11 +606,11 @@ func serveShutdown(closer uplinkCloser, watcher *workspace.Watcher, sessions *se
 		close(done)
 	}()
 
-	// Wait for graceful shutdown or force-kill after 5 seconds
+	// Wait for graceful shutdown or force-kill after 5 seconds.
 	select {
 	case <-done:
-		// Graceful shutdown completed
-	case <-time.After(5 * time.Second):
+		// Graceful shutdown completed.
+	case <-time.After(processKillTimeout):
 		log.Println("Force-killing hung processes after 5 second timeout")
 	}
 
@@ -590,18 +618,16 @@ func serveShutdown(closer uplinkCloser, watcher *workspace.Watcher, sessions *se
 		log.Printf("Killed %d processes", processCount)
 	}
 
-	// Close file watcher
+	// Close file watcher.
 	if watcher != nil {
 		if err := watcher.Close(); err != nil {
 			log.Printf("Error closing file watcher: %v", err)
 		}
 	}
 
-	// Close the uplink (flushes batcher, disconnects Pusher, HTTP disconnect)
-	if err := closer.Close(); err != nil {
+	// Close the uplink with a timeout to prevent hanging on unreachable servers.
+	// The batcher flush + Pusher close + HTTP disconnect must complete within this window.
+	if err := closer.CloseWithTimeout(5 * time.Second); err != nil {
 		log.Printf("Error closing connection: %v", err)
 	}
-
-	log.Println("Goodbye.")
-	return nil
 }

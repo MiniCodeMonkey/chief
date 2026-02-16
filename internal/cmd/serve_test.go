@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1526,5 +1527,140 @@ func TestRunServe_ServerURLLoggedOnStartup(t *testing.T) {
 	content := string(data)
 	if !strings.Contains(content, "Connecting to "+serverURL) {
 		t.Errorf("expected log to contain 'Connecting to %s', got: %s", serverURL, content)
+	}
+}
+
+// --- serveShutdown unit tests ---
+
+// mockCloser implements uplinkCloser for testing serveShutdown directly.
+type mockCloser struct {
+	closeCalled  atomic.Int32
+	closeDelay   time.Duration // Simulates a slow Close operation.
+	closeErr     error
+}
+
+func (m *mockCloser) Close() error {
+	m.closeCalled.Add(1)
+	if m.closeDelay > 0 {
+		time.Sleep(m.closeDelay)
+	}
+	return m.closeErr
+}
+
+func (m *mockCloser) CloseWithTimeout(timeout time.Duration) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- m.Close()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return nil
+	}
+}
+
+func TestServeShutdown_CompletesWithinTimeout(t *testing.T) {
+	closer := &mockCloser{}
+
+	start := time.Now()
+	err := serveShutdown(closer, nil, nil, nil, nil)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Errorf("serveShutdown returned error: %v", err)
+	}
+
+	// Should complete quickly.
+	if elapsed > 2*time.Second {
+		t.Errorf("serveShutdown took %s, expected < 2s", elapsed)
+	}
+
+	// Close should have been called.
+	if got := closer.closeCalled.Load(); got != 1 {
+		t.Errorf("close called %d times, want 1", got)
+	}
+}
+
+func TestServeShutdown_TimesOutWithHangingClose(t *testing.T) {
+	// Create a closer that hangs longer than the shutdown timeout.
+	closer := &mockCloser{closeDelay: 30 * time.Second}
+
+	start := time.Now()
+	err := serveShutdown(closer, nil, nil, nil, nil)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Errorf("serveShutdown returned error: %v", err)
+	}
+
+	// Should complete within the shutdown timeout (10s) + small buffer,
+	// not hang for the full 30s close delay.
+	if elapsed > 15*time.Second {
+		t.Errorf("serveShutdown took %s, expected < 15s (shutdown timeout is 10s)", elapsed)
+	}
+
+	t.Logf("serveShutdown completed in %s", elapsed.Round(time.Millisecond))
+}
+
+func TestServeShutdown_DisconnectFailureLoggedNotBlocking(t *testing.T) {
+	closer := &mockCloser{closeErr: fmt.Errorf("connection refused")}
+
+	err := serveShutdown(closer, nil, nil, nil, nil)
+
+	// serveShutdown should not propagate the close error.
+	if err != nil {
+		t.Errorf("serveShutdown returned error: %v, want nil", err)
+	}
+
+	// Close should have been called.
+	if got := closer.closeCalled.Load(); got != 1 {
+		t.Errorf("close called %d times, want 1", got)
+	}
+}
+
+func TestServeShutdown_CallsDisconnectOnServer(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspace := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ms := newMockUplinkServer(t)
+
+	go func() {
+		if err := ms.waitForPusherSubscribe(10 * time.Second); err != nil {
+			t.Logf("waitForPusherSubscribe: %v", err)
+			cancel()
+			return
+		}
+
+		// Wait for state_snapshot to ensure connection is fully established.
+		if _, err := ms.waitForMessageType("state_snapshot", 5*time.Second); err != nil {
+			t.Logf("waitForMessageType(state_snapshot): %v", err)
+		}
+
+		// Cancel to trigger shutdown.
+		cancel()
+	}()
+
+	err := RunServe(ServeOptions{
+		Workspace: workspace,
+		ServerURL: ms.httpSrv.URL,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	// Verify disconnect was called during shutdown.
+	if got := ms.disconnectCalls.Load(); got != 1 {
+		t.Errorf("disconnect calls = %d, want 1", got)
 	}
 }

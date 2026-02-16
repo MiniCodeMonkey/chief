@@ -202,6 +202,44 @@ func (u *Uplink) Receive() <-chan json.RawMessage {
 //  2. Close the Pusher client
 //  3. HTTP disconnect
 func (u *Uplink) Close() error {
+	return u.doClose()
+}
+
+// CloseWithTimeout performs graceful shutdown with a deadline.
+// If the timeout expires before the batcher flush completes, the flush is
+// abandoned and shutdown continues with Pusher close and HTTP disconnect.
+// This prevents shutdown from hanging when the server is unreachable.
+func (u *Uplink) CloseWithTimeout(timeout time.Duration) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- u.doClose()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		log.Printf("uplink: graceful close timed out after %s — forcing shutdown", timeout)
+		// Force-cancel the batcher/heartbeat/monitor contexts to unblock doClose.
+		u.mu.Lock()
+		u.connected = false
+		u.mu.Unlock()
+		if u.cancel != nil {
+			u.cancel()
+		}
+		// Wait briefly for doClose to finish after cancellation.
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(2 * time.Second):
+			log.Printf("uplink: forced shutdown complete")
+			return nil
+		}
+	}
+}
+
+// doClose is the internal close implementation shared by Close and CloseWithTimeout.
+func (u *Uplink) doClose() error {
 	u.mu.Lock()
 	if !u.connected {
 		u.mu.Unlock()

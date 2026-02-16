@@ -1484,3 +1484,175 @@ func TestUplink_Reconnect_StableReceiveChannel(t *testing.T) {
 		t.Error("Receive() channel changed after reconnection — should be stable")
 	}
 }
+
+// --- CloseWithTimeout Tests ---
+
+func TestUplink_CloseWithTimeout_NormalShutdown(t *testing.T) {
+	us := newTestUplinkServer(t)
+	u := newTestUplink(t, us)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// Enqueue a low-priority message — flush should happen during close.
+	u.Send(json.RawMessage(`{"type":"settings","data":"config"}`), "settings")
+
+	// Close with a generous timeout — should complete well within it.
+	start := time.Now()
+	if err := u.CloseWithTimeout(5 * time.Second); err != nil {
+		t.Fatalf("CloseWithTimeout() failed: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	// Should have completed quickly (under 2 seconds).
+	if elapsed > 2*time.Second {
+		t.Errorf("CloseWithTimeout took %s, expected < 2s", elapsed)
+	}
+
+	// Verify the message was flushed.
+	batches := us.getMessageBatches()
+	found := false
+	for _, batch := range batches {
+		for _, msg := range batch.Messages {
+			var parsed map[string]interface{}
+			json.Unmarshal(msg, &parsed)
+			if parsed["type"] == "settings" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("settings message was not flushed during CloseWithTimeout")
+	}
+
+	// Verify disconnect was called.
+	if got := us.disconnectCalls.Load(); got != 1 {
+		t.Errorf("disconnect calls = %d, want 1", got)
+	}
+}
+
+func TestUplink_CloseWithTimeout_TimesOut(t *testing.T) {
+	// Create a server that hangs on message sending to simulate an unreachable server.
+	ps := newTestPusherServer(t)
+	reverbCfg := ps.reverbConfig()
+
+	// hangDone is closed before the server closes — allows the hanging handler to exit
+	// so the httptest.Server can close cleanly. Registered AFTER srv.Close() in cleanup
+	// (LIFO order means hangDone closes first, then srv.Close proceeds).
+	hangDone := make(chan struct{})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/api/device/connect":
+			json.NewEncoder(w).Encode(WelcomeResponse{
+				Type:            "welcome",
+				ProtocolVersion: 1,
+				DeviceID:        42,
+				SessionID:       "sess-timeout-test",
+				Reverb:          reverbCfg,
+			})
+
+		case "/api/device/disconnect":
+			json.NewEncoder(w).Encode(map[string]string{"status": "disconnected"})
+
+		case "/api/device/messages":
+			// Hang until test cleanup to simulate unreachable server during batcher flush.
+			select {
+			case <-hangDone:
+			case <-r.Context().Done():
+			}
+
+		case "/api/device/broadcasting/auth":
+			var body broadcastAuthRequest
+			json.NewDecoder(r.Body).Decode(&body)
+			sig := GenerateAuthSignature(ps.appKey, ps.appSecret, body.SocketID, body.ChannelName)
+			json.NewEncoder(w).Encode(pusherAuthResponse{Auth: sig})
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	// Register srv.Close first (runs second in LIFO), then hangDone (runs first).
+	t.Cleanup(func() { srv.Close() })
+	t.Cleanup(func() { close(hangDone) })
+
+	client := newTestClient(t, srv.URL, "test-token")
+	u := NewUplink(client)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	select {
+	case <-ps.onSubscribe:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for subscription")
+	}
+
+	// Enqueue an immediate message — batcher will try to flush on Stop()
+	// but the server hangs, so the flush blocks.
+	u.Send(json.RawMessage(`{"type":"run_complete","data":"test"}`), "run_complete")
+
+	// Give the batcher time to attempt sending (and block on the hanging server).
+	time.Sleep(200 * time.Millisecond)
+
+	// CloseWithTimeout should return within the timeout even though flush is stuck.
+	start := time.Now()
+	err := u.CloseWithTimeout(1 * time.Second)
+	elapsed := time.Since(start)
+
+	// Should complete near the timeout (1-4 seconds, accounting for the force-close 2s grace).
+	if elapsed > 5*time.Second {
+		t.Errorf("CloseWithTimeout took %s, expected < 5s", elapsed)
+	}
+
+	// No error is expected — timeout is handled internally.
+	if err != nil {
+		t.Logf("CloseWithTimeout returned: %v (acceptable)", err)
+	}
+
+	t.Logf("CloseWithTimeout completed in %s", elapsed.Round(time.Millisecond))
+}
+
+func TestUplink_CloseWithTimeout_DoubleCloseIsSafe(t *testing.T) {
+	us := newTestUplinkServer(t)
+	u := newTestUplink(t, us)
+
+	ctx := testContext(t)
+	if err := u.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+
+	// Wait for Pusher subscription.
+	waitForSubscription(t, us.pusherSrv)
+
+	// First close.
+	if err := u.CloseWithTimeout(5 * time.Second); err != nil {
+		t.Fatalf("first CloseWithTimeout() failed: %v", err)
+	}
+
+	// Second close should be a no-op.
+	if err := u.CloseWithTimeout(5 * time.Second); err != nil {
+		t.Fatalf("second CloseWithTimeout() failed: %v", err)
+	}
+
+	// Only one disconnect call.
+	if got := us.disconnectCalls.Load(); got != 1 {
+		t.Errorf("disconnect calls = %d, want 1", got)
+	}
+}
