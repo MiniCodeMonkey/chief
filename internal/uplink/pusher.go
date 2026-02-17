@@ -279,12 +279,26 @@ func (p *PusherClient) subscribe(ctx context.Context, conn *websocket.Conn, sock
 	}
 }
 
+// readResult is a message or error from the reader goroutine.
+type readResult struct {
+	data []byte
+	err  error
+}
+
 // readLoop reads messages from the WebSocket and dispatches command events.
+//
+// A separate goroutine performs the blocking ReadMessage calls and feeds
+// results into a channel, allowing the main loop to select on both incoming
+// messages and the ping timer. Per the Pusher protocol, the client sends a
+// pusher:ping after activityTimeout seconds of inactivity; if no pusher:pong
+// arrives within pusherPingTimeout, the read deadline expires and the
+// connection is considered dead.
 func (p *PusherClient) readLoop(ctx context.Context, conn *websocket.Conn, activityTimeout int) {
 	defer close(p.done)
 	defer close(p.recvCh)
 
-	// Set up a ping/pong timer based on the server's activity timeout.
+	// Ping interval is the server's advertised activity timeout — the client
+	// should send a ping after this many seconds of silence.
 	pingInterval := time.Duration(activityTimeout) * time.Second
 	if pingInterval <= 0 {
 		pingInterval = 120 * time.Second // Default Pusher activity timeout.
@@ -292,107 +306,137 @@ func (p *PusherClient) readLoop(ctx context.Context, conn *websocket.Conn, activ
 	pingTimer := time.NewTimer(pingInterval)
 	defer pingTimer.Stop()
 
-	// Set up pong handler to confirm the connection is alive.
-	pongCh := make(chan struct{}, 1)
-	conn.SetPongHandler(func(string) error {
-		select {
-		case pongCh <- struct{}{}:
-		default:
+	// Reader goroutine: performs blocking ReadMessage calls and feeds results
+	// to readCh. The read deadline allows pingInterval for normal activity
+	// plus pusherPingTimeout for a pong response after we send a ping.
+	readCh := make(chan readResult, 1)
+	go func() {
+		for {
+			conn.SetReadDeadline(time.Now().Add(pingInterval + pusherPingTimeout))
+			_, data, err := conn.ReadMessage()
+			select {
+			case readCh <- readResult{data, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
 		}
-		return nil
-	})
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-		}
 
-		// Non-blocking check for shutdown.
-		p.mu.Lock()
-		if p.stopped {
-			p.mu.Unlock()
-			return
-		}
-		p.mu.Unlock()
-
-		conn.SetReadDeadline(time.Now().Add(pingInterval + pusherPingTimeout))
-		_, data, err := conn.ReadMessage()
-		if err != nil {
-			// Check if we're shutting down.
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			p.mu.Lock()
-			stopped := p.stopped
-			p.mu.Unlock()
-			if stopped {
-				return
-			}
-
-			log.Printf("Pusher read error: %v", err)
-			return
-		}
-
-		// Reset ping timer on any activity.
-		if !pingTimer.Stop() {
-			select {
-			case <-pingTimer.C:
-			default:
-			}
-		}
-		pingTimer.Reset(pingInterval)
-
-		var msg pusherMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("Pusher: ignoring unparseable message: %v", err)
-			continue
-		}
-
-		switch msg.Event {
-		case "pusher:ping":
-			// Respond with pong.
-			p.mu.Lock()
-			c := p.conn
-			p.mu.Unlock()
-			if c != nil {
-				pongMsg := pusherMessage{Event: "pusher:pong", Data: json.RawMessage("{}")}
-				c.SetWriteDeadline(time.Now().Add(pusherWriteTimeout))
-				if err := c.WriteJSON(pongMsg); err != nil {
-					log.Printf("Pusher: failed to send pong: %v", err)
-				}
-				c.SetWriteDeadline(time.Time{})
-			}
-
-		case "pusher:pong":
-			// Server responded to our ping — connection is alive.
-			select {
-			case pongCh <- struct{}{}:
-			default:
-			}
-
-		case "pusher:error":
-			log.Printf("Pusher server error: %s", string(msg.Data))
-
-		case "chief.command":
-			// This is a command from the server — deliver to the receive channel.
-			if msg.Channel == p.channel {
-				// The data field contains the command payload.
+		case result := <-readCh:
+			if result.err != nil {
 				select {
-				case p.recvCh <- msg.Data:
+				case <-ctx.Done():
+					return
 				default:
-					log.Printf("Pusher: receive buffer full, dropping command")
 				}
+				p.mu.Lock()
+				stopped := p.stopped
+				p.mu.Unlock()
+				if stopped {
+					return
+				}
+				log.Printf("Pusher read error: %v", result.err)
+				return
 			}
 
-		default:
-			// Ignore other event types (subscription_succeeded during reconnect, etc.).
+			// Reset ping timer on any received data.
+			if !pingTimer.Stop() {
+				select {
+				case <-pingTimer.C:
+				default:
+				}
+			}
+			pingTimer.Reset(pingInterval)
+
+			p.handleMessage(result.data)
+
+		case <-pingTimer.C:
+			// No activity for pingInterval — send a ping to keep alive.
+			if !p.sendPusherMessage(conn, pusherMessage{
+				Event: "pusher:ping",
+				Data:  json.RawMessage("{}"),
+			}) {
+				return
+			}
+			// The read deadline (pingInterval + pusherPingTimeout) gives the
+			// server pusherPingTimeout to respond with pusher:pong. If no
+			// response arrives, ReadMessage returns a timeout error.
 		}
 	}
+}
+
+// handleMessage processes a single Pusher protocol message.
+func (p *PusherClient) handleMessage(data []byte) {
+	var msg pusherMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		log.Printf("Pusher: ignoring unparseable message: %v", err)
+		return
+	}
+
+	switch msg.Event {
+	case "pusher:ping":
+		// Respond with pong.
+		p.sendPusherMessage(p.getConn(), pusherMessage{
+			Event: "pusher:pong",
+			Data:  json.RawMessage("{}"),
+		})
+
+	case "pusher:pong":
+		// Server responded to our ping — connection confirmed alive.
+
+	case "pusher:error":
+		log.Printf("Pusher server error: %s", string(msg.Data))
+
+	case "chief.command":
+		if msg.Channel == p.channel {
+			// Pusher wraps event data as a JSON-encoded string, so we
+			// must unwrap it before forwarding to the command handler.
+			payload := msg.Data
+			var dataStr string
+			if err := json.Unmarshal(msg.Data, &dataStr); err == nil {
+				payload = json.RawMessage(dataStr)
+			}
+			select {
+			case p.recvCh <- payload:
+			default:
+				log.Printf("Pusher: receive buffer full, dropping command")
+			}
+		}
+
+	default:
+		// Ignore other event types (subscription_succeeded during reconnect, etc.).
+	}
+}
+
+// sendPusherMessage writes a Pusher protocol JSON message to the connection.
+// Returns false if the write failed (connection should be considered dead).
+func (p *PusherClient) sendPusherMessage(conn *websocket.Conn, msg pusherMessage) bool {
+	if conn == nil {
+		return false
+	}
+	conn.SetWriteDeadline(time.Now().Add(pusherWriteTimeout))
+	err := conn.WriteJSON(msg)
+	conn.SetWriteDeadline(time.Time{})
+	if err != nil {
+		log.Printf("Pusher: write error: %v", err)
+		return false
+	}
+	return true
+}
+
+// getConn returns the current WebSocket connection, or nil if closed.
+func (p *PusherClient) getConn() *websocket.Conn {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.conn
 }
 
 // BroadcastAuth authenticates a Pusher channel subscription via the uplink HTTP client.

@@ -183,6 +183,31 @@ func (ps *testPusherServer) sendCommand(channel string, command json.RawMessage)
 	return conn.WriteJSON(msg)
 }
 
+// sendCommandStringEncoded sends a chief.command event where the data field
+// is a JSON-encoded string, matching real Reverb/Pusher wire format.
+func (ps *testPusherServer) sendCommandStringEncoded(channel string, command json.RawMessage) error {
+	ps.mu.Lock()
+	conn := ps.conn
+	ps.mu.Unlock()
+
+	if conn == nil {
+		return fmt.Errorf("no client connected")
+	}
+
+	// Double-encode: wrap the JSON object as a JSON string.
+	encoded, err := json.Marshal(string(command))
+	if err != nil {
+		return fmt.Errorf("encoding command: %w", err)
+	}
+
+	msg := pusherMessage{
+		Event:   "chief.command",
+		Channel: channel,
+		Data:    encoded,
+	}
+	return conn.WriteJSON(msg)
+}
+
 // closeConnection closes the WebSocket connection from the server side,
 // simulating a Pusher disconnection.
 func (ps *testPusherServer) closeConnection() error {
@@ -784,5 +809,53 @@ func TestPusherClient_DialFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error connecting to unreachable server, got nil")
 		client.Close()
+	}
+}
+
+// TestPusherClient_DoubleEncodedData verifies that commands with Pusher's
+// real wire format (data as JSON string) are correctly unwrapped.
+func TestPusherClient_DoubleEncodedData(t *testing.T) {
+	ps := newTestPusherServer(t)
+	channel := "private-chief-server.42"
+
+	client := NewPusherClient(ps.reverbConfig(), channel, ps.testAuthFn())
+
+	ctx := testContext(t)
+	if err := client.Connect(ctx); err != nil {
+		t.Fatalf("Connect() failed: %v", err)
+	}
+	defer client.Close()
+
+	// Wait for subscription.
+	select {
+	case <-ps.onSubscribe:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for subscription")
+	}
+
+	// Send command using Reverb's real format (data as JSON string).
+	cmd := json.RawMessage(`{"type":"start_run","payload":{"project_slug":"my-project"}}`)
+	if err := ps.sendCommandStringEncoded(channel, cmd); err != nil {
+		t.Fatalf("sendCommandStringEncoded failed: %v", err)
+	}
+
+	select {
+	case received := <-client.Receive():
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(received, &parsed); err != nil {
+			t.Fatalf("failed to parse received command: %v (raw: %s)", err, string(received))
+		}
+		if parsed["type"] != "start_run" {
+			t.Errorf("received type = %v, want start_run", parsed["type"])
+		}
+		payload, ok := parsed["payload"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("payload is not an object: %v", parsed["payload"])
+		}
+		if payload["project_slug"] != "my-project" {
+			t.Errorf("received project_slug = %v, want my-project", payload["project_slug"])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for command")
 	}
 }
