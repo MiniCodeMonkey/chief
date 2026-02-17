@@ -83,16 +83,16 @@ func TestSessionManager_NewPRD(t *testing.T) {
 		}
 		ms.sendCommand(newPRDReq)
 
-		// We should receive claude_output messages.
+		// We should receive prd_output messages.
 		// Since we can't actually run claude in tests, expect an error response
 		// (claude binary not available in test) — this tests the error path.
 		// Wait for first message with 3 second timeout.
 		raw, err := ms.waitForMessageType("error", 3*time.Second)
 		if err != nil {
-			// If not an error, might be claude_output
-			raw, err = ms.waitForMessageType("claude_output", 3*time.Second)
+			// If not an error, might be prd_output
+			raw, err = ms.waitForMessageType("prd_output", 3*time.Second)
 			if err != nil {
-				t.Fatal("expected error or claude_output message")
+				t.Fatal("expected error or prd_output message")
 			}
 		}
 
@@ -103,8 +103,8 @@ func TestSessionManager_NewPRD(t *testing.T) {
 
 		// Check that we got some kind of response
 		msgType := msg["type"].(string)
-		if msgType != "error" && msgType != "claude_output" {
-			t.Errorf("expected error or claude_output message, got %s", msgType)
+		if msgType != "error" && msgType != "prd_output" {
+			t.Errorf("expected error or prd_output message, got %s", msgType)
 		}
 	})
 	if err != nil {
@@ -329,14 +329,14 @@ echo "Session complete"
 		}
 		ms.sendCommand(closeMsg)
 
-		// Wait for a claude_output message with done=true
+		// Wait for a prd_response_complete message
 		deadline := time.After(5 * time.Second)
 		for {
 			msgs := ms.getMessages()
 			for _, raw := range msgs {
 				var msg map[string]interface{}
 				json.Unmarshal(raw, &msg)
-				if msg["type"] == "claude_output" && msg["done"] == true {
+				if msg["type"] == "prd_response_complete" {
 					cancel()
 					return
 				}
@@ -360,22 +360,22 @@ echo "Session complete"
 		t.Fatalf("RunServe returned error: %v", err)
 	}
 
-	// Collect all claude_output messages
+	// Collect all prd_output messages
 	allMsgs := ms.getMessages()
-	var claudeOutputs []map[string]interface{}
+	var prdOutputs []map[string]interface{}
 	for _, raw := range allMsgs {
 		var msg map[string]interface{}
-		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "claude_output" {
-			claudeOutputs = append(claudeOutputs, msg)
+		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "prd_output" {
+			prdOutputs = append(prdOutputs, msg)
 		}
 	}
 
-	if len(claudeOutputs) == 0 {
-		t.Fatal("expected at least one claude_output message")
+	if len(prdOutputs) == 0 {
+		t.Fatal("expected at least one prd_output message")
 	}
 
-	// Verify session_id is set on all claude_output messages
-	for _, co := range claudeOutputs {
+	// Verify session_id is set on all prd_output messages
+	for _, co := range prdOutputs {
 		if co["session_id"] != "sess-mock-1" {
 			t.Errorf("expected session_id 'sess-mock-1', got %v", co["session_id"])
 		}
@@ -384,22 +384,32 @@ echo "Session complete"
 		}
 	}
 
-	// Verify we got a done=true message
-	lastOutput := claudeOutputs[len(claudeOutputs)-1]
-	if lastOutput["done"] != true {
-		t.Error("expected last claude_output to have done=true")
+	// Verify we got a prd_response_complete message
+	hasComplete := false
+	for _, raw := range allMsgs {
+		var msg map[string]interface{}
+		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "prd_response_complete" {
+			hasComplete = true
+			if msg["session_id"] != "sess-mock-1" {
+				t.Errorf("expected session_id 'sess-mock-1' on prd_response_complete, got %v", msg["session_id"])
+			}
+			break
+		}
+	}
+	if !hasComplete {
+		t.Error("expected a prd_response_complete message")
 	}
 
 	// Verify we received some actual content
 	hasContent := false
-	for _, co := range claudeOutputs {
-		if data, ok := co["data"].(string); ok && strings.TrimSpace(data) != "" {
+	for _, co := range prdOutputs {
+		if text, ok := co["text"].(string); ok && strings.TrimSpace(text) != "" {
 			hasContent = true
 			break
 		}
 	}
 	if !hasContent {
-		t.Error("expected at least one claude_output with non-empty data")
+		t.Error("expected at least one prd_output with non-empty text")
 	}
 }
 
@@ -471,14 +481,14 @@ exit 0
 		}
 		ms.sendCommand(closeMsg)
 
-		// Wait for a claude_output with done=true
+		// Wait for a prd_response_complete message
 		deadline := time.After(5 * time.Second)
 		for {
 			msgs := ms.getMessages()
 			for _, raw := range msgs {
 				var msg map[string]interface{}
 				json.Unmarshal(raw, &msg)
-				if msg["type"] == "claude_output" && msg["done"] == true {
+				if msg["type"] == "prd_response_complete" {
 					cancel()
 					return
 				}
@@ -502,18 +512,18 @@ exit 0
 		t.Fatalf("RunServe returned error: %v", err)
 	}
 
-	// Verify we received a done=true message
+	// Verify we received a prd_response_complete message
 	allMsgs := ms.getMessages()
-	hasDone := false
+	hasComplete := false
 	for _, raw := range allMsgs {
 		var msg map[string]interface{}
-		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "claude_output" && msg["done"] == true {
-			hasDone = true
+		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "prd_response_complete" {
+			hasComplete = true
 			break
 		}
 	}
-	if !hasDone {
-		t.Error("expected a claude_output message with done=true after save close")
+	if !hasComplete {
+		t.Error("expected a prd_response_complete message after save close")
 	}
 }
 
@@ -627,8 +637,8 @@ done
 	msgs := sender.getMessages()
 	hasEcho := false
 	for _, msg := range msgs {
-		if msg["type"] == "claude_output" {
-			if d, ok := msg["data"].(string); ok && strings.Contains(d, "echo: hello world") {
+		if msg["type"] == "prd_output" {
+			if text, ok := msg["text"].(string); ok && strings.Contains(text, "echo: hello world") {
 				hasEcho = true
 				break
 			}

@@ -180,19 +180,17 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 			log.Printf("Claude session %s exited normally", sessionID)
 		}
 
-		// Send final done message
-		envelope := ws.NewMessage(ws.TypeClaudeOutput)
-		doneMsg := ws.ClaudeOutputMessage{
+		// Send prd_response_complete to signal the PRD session is done
+		envelope := ws.NewMessage(ws.TypePRDResponseComplete)
+		completeMsg := ws.PRDResponseCompleteMessage{
 			Type:      envelope.Type,
 			ID:        envelope.ID,
 			Timestamp: envelope.Timestamp,
 			SessionID: sessionID,
 			Project:   projectName,
-			Data:      "",
-			Done:      true,
 		}
-		if sendErr := sm.sender.Send(doneMsg); sendErr != nil {
-			log.Printf("Error sending claude_output done: %v", sendErr)
+		if sendErr := sm.sender.Send(completeMsg); sendErr != nil {
+			log.Printf("Error sending prd_response_complete: %v", sendErr)
 		}
 
 		// Auto-convert prd.md to prd.json if prd.md was created
@@ -208,7 +206,7 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 	return nil
 }
 
-// streamOutput reads from an io.Reader and sends each chunk as a claude_output message.
+// streamOutput reads from an io.Reader and sends each chunk as a prd_output message.
 func (sm *sessionManager) streamOutput(sessionID string, r io.Reader) {
 	sm.mu.RLock()
 	sess := sm.sessions[sessionID]
@@ -221,18 +219,17 @@ func (sm *sessionManager) streamOutput(sessionID string, r io.Reader) {
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		envelope := ws.NewMessage(ws.TypeClaudeOutput)
-		msg := ws.ClaudeOutputMessage{
+		envelope := ws.NewMessage(ws.TypePRDOutput)
+		msg := ws.PRDOutputMessage{
 			Type:      envelope.Type,
 			ID:        envelope.ID,
 			Timestamp: envelope.Timestamp,
 			SessionID: sessionID,
 			Project:   sess.project,
-			Data:      line + "\n",
-			Done:      false,
+			Text:      line + "\n",
 		}
 		if err := sm.sender.Send(msg); err != nil {
-			log.Printf("Error sending claude_output: %v", err)
+			log.Printf("Error sending prd_output: %v", err)
 			return
 		}
 	}

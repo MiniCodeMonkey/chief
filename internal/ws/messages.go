@@ -82,6 +82,8 @@ const (
 	TypeSettingsResponse      = "settings_response"
 	TypeSettingsUpdated       = "settings_updated"
 	TypeUpdateAvailable       = "update_available"
+	TypePRDOutput             = "prd_output"
+	TypePRDResponseComplete   = "prd_response_complete"
 
 	// Web App → Server message types.
 	TypeWelcome         = "welcome"
@@ -203,6 +205,25 @@ type ClaudeOutputMessage struct {
 	StoryID   string `json:"story_id,omitempty"`
 	Data      string `json:"data"`
 	Done      bool   `json:"done"`
+}
+
+// PRDOutputMessage streams PRD session output (text chunks from Claude).
+type PRDOutputMessage struct {
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Timestamp string `json:"timestamp"`
+	SessionID string `json:"session_id"`
+	Project   string `json:"project"`
+	Text      string `json:"text"`
+}
+
+// PRDResponseCompleteMessage signals that a PRD session's Claude process has finished.
+type PRDResponseCompleteMessage struct {
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Timestamp string `json:"timestamp"`
+	SessionID string `json:"session_id"`
+	Project   string `json:"project"`
 }
 
 // RunProgressMessage reports run state changes.

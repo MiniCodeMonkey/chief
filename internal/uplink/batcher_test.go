@@ -524,6 +524,7 @@ func TestTierFor(t *testing.T) {
 		{"clone_complete", tierIDImmediate},
 		{"session_expired", tierIDImmediate},
 		{"quota_exhausted", tierIDImmediate},
+		{"prd_response_complete", tierIDImmediate},
 		// Standard tier.
 		{"claude_output", tierIDStandard},
 		{"prd_output", tierIDStandard},

@@ -43,7 +43,7 @@ const (
 // tierFor returns the tier for a given message type.
 func tierFor(msgType string) tier {
 	switch msgType {
-	case "run_complete", "run_paused", "error", "clone_complete", "session_expired", "quota_exhausted":
+	case "run_complete", "run_paused", "error", "clone_complete", "session_expired", "quota_exhausted", "prd_response_complete":
 		return tierIDImmediate
 	case "claude_output", "prd_output", "run_progress", "clone_progress":
 		return tierIDStandard

@@ -913,6 +913,70 @@ func TestProjectListRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPRDOutputRoundTrip(t *testing.T) {
+	msg := PRDOutputMessage{
+		Type:      TypePRDOutput,
+		ID:        newUUID(),
+		Timestamp: "2026-02-15T10:00:00Z",
+		SessionID: "session-123",
+		Project:   "my-project",
+		Text:      "Here is the PRD content\n",
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got PRDOutputMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.Type != TypePRDOutput {
+		t.Errorf("type = %q, want %q", got.Type, TypePRDOutput)
+	}
+	if got.SessionID != "session-123" {
+		t.Errorf("session_id = %q, want %q", got.SessionID, "session-123")
+	}
+	if got.Project != "my-project" {
+		t.Errorf("project = %q, want %q", got.Project, "my-project")
+	}
+	if got.Text != "Here is the PRD content\n" {
+		t.Errorf("text = %q, want %q", got.Text, "Here is the PRD content\n")
+	}
+}
+
+func TestPRDResponseCompleteRoundTrip(t *testing.T) {
+	msg := PRDResponseCompleteMessage{
+		Type:      TypePRDResponseComplete,
+		ID:        newUUID(),
+		Timestamp: "2026-02-15T10:00:00Z",
+		SessionID: "session-123",
+		Project:   "my-project",
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got PRDResponseCompleteMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.Type != TypePRDResponseComplete {
+		t.Errorf("type = %q, want %q", got.Type, TypePRDResponseComplete)
+	}
+	if got.SessionID != "session-123" {
+		t.Errorf("session_id = %q, want %q", got.SessionID, "session-123")
+	}
+	if got.Project != "my-project" {
+		t.Errorf("project = %q, want %q", got.Project, "my-project")
+	}
+}
+
 func TestPRDMessageRoundTrip(t *testing.T) {
 	msg := PRDMessageMessage{
 		Type:      TypePRDMessage,
