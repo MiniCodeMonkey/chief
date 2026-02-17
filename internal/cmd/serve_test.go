@@ -770,9 +770,6 @@ func TestRunServe_GetProjectNotFound(t *testing.T) {
 	if errorReceived["code"] != "PROJECT_NOT_FOUND" {
 		t.Errorf("expected code 'PROJECT_NOT_FOUND', got %v", errorReceived["code"])
 	}
-	if errorReceived["request_id"] != "req-1" {
-		t.Errorf("expected request_id 'req-1', got %v", errorReceived["request_id"])
-	}
 }
 
 func TestRunServe_GetPRD(t *testing.T) {

@@ -214,11 +214,28 @@ func (ms *mockUplinkServer) waitForMessages(n int, timeout time.Duration) ([]jso
 }
 
 // sendCommand sends a command to the CLI via the Pusher server.
+// Commands are wrapped in a {"type": ..., "payload": {...}} envelope
+// to match the real CommandRelayController format.
 func (ms *mockUplinkServer) sendCommand(command interface{}) error {
 	data, err := json.Marshal(command)
 	if err != nil {
 		return fmt.Errorf("marshaling command: %w", err)
 	}
+
+	// Wrap in payload envelope: extract "type", put everything else under "payload".
+	var flat map[string]json.RawMessage
+	if err := json.Unmarshal(data, &flat); err == nil {
+		cmdType := flat["type"]
+		delete(flat, "type")
+
+		payload, _ := json.Marshal(flat)
+		wrapped, _ := json.Marshal(map[string]json.RawMessage{
+			"type":    cmdType,
+			"payload": payload,
+		})
+		data = wrapped
+	}
+
 	channel := fmt.Sprintf("private-chief-server.%d", 42) // device ID 42
 	return ms.pusherSrv.sendCommand(channel, data)
 }

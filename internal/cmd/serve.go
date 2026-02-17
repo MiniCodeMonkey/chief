@@ -248,6 +248,17 @@ func RunServe(opts ServeOptions) error {
 			}
 			msg.Raw = raw
 
+			// Extract payload wrapper if present.
+			// The CommandRelayController sends {"type": "...", "payload": {...}}
+			// but handlers expect fields at the top level of msg.Raw.
+			var env struct {
+				Type    string          `json:"type"`
+				Payload json.RawMessage `json:"payload,omitempty"`
+			}
+			if err := json.Unmarshal(raw, &env); err == nil && len(env.Payload) > 0 {
+				msg.Raw = env.Payload
+			}
+
 			// Check rate limit before processing
 			if result := rateLimiter.Allow(msg.Type); !result.Allowed {
 				log.Printf("Rate limited message type=%s, retry after %s", msg.Type, ws.FormatRetryAfter(result.RetryAfter))
