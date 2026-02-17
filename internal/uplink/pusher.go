@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -93,7 +94,10 @@ func NewPusherClient(cfg ReverbConfig, channel string, authFn AuthFunc) *PusherC
 func (p *PusherClient) Connect(ctx context.Context) error {
 	wsURL := p.buildURL()
 
-	conn, _, err := p.dialer.DialContext(ctx, wsURL, nil)
+	headers := http.Header{}
+	headers.Set("Origin", fmt.Sprintf("%s://%s", p.scheme, p.host))
+
+	conn, _, err := p.dialer.DialContext(ctx, wsURL, headers)
 	if err != nil {
 		return fmt.Errorf("pusher dial: %w", err)
 	}
@@ -198,9 +202,14 @@ func (p *PusherClient) waitForConnectionEstablished(ctx context.Context, conn *w
 		}
 
 		if msg.Event == "pusher:connection_established" {
+			// The data field is a JSON-encoded string inside the outer JSON,
+			// so we unmarshal twice: first to get the string, then to parse it.
+			var dataStr string
+			if err := json.Unmarshal(msg.Data, &dataStr); err != nil {
+				return "", 0, fmt.Errorf("pusher: parsing connection data wrapper: %w", err)
+			}
 			var connData pusherConnectionData
-			// The data field is a JSON-encoded string inside the outer JSON.
-			if err := json.Unmarshal(msg.Data, &connData); err != nil {
+			if err := json.Unmarshal([]byte(dataStr), &connData); err != nil {
 				return "", 0, fmt.Errorf("pusher: parsing connection data: %w", err)
 			}
 			if connData.SocketID == "" {

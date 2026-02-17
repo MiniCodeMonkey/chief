@@ -92,13 +92,15 @@ func (ps *testPusherServer) handleWS(t *testing.T, w http.ResponseWriter, r *htt
 
 	// Send connection_established unless configured not to.
 	if !ps.skipEstablished {
-		connData, _ := json.Marshal(pusherConnectionData{
+		connDataJSON, _ := json.Marshal(pusherConnectionData{
 			SocketID:        ps.socketID,
 			ActivityTimeout: ps.activityTimeout,
 		})
+		// Real Pusher/Reverb double-encodes: the data field is a JSON string.
+		connDataStr, _ := json.Marshal(string(connDataJSON))
 		established := pusherMessage{
 			Event: "pusher:connection_established",
-			Data:  connData,
+			Data:  connDataStr,
 		}
 		if err := conn.WriteJSON(established); err != nil {
 			t.Logf("write connection_established: %v", err)
