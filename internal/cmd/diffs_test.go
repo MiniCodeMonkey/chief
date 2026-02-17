@@ -453,3 +453,184 @@ func TestRunServe_GetDiffNoCommit(t *testing.T) {
 		t.Errorf("expected code 'FILESYSTEM_ERROR', got %v", response["code"])
 	}
 }
+
+func TestRunServe_GetDiffs(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a git repo with a story commit
+	projectDir := filepath.Join(workspaceDir, "myproject")
+	createGitRepoWithStoryCommit(t, projectDir, "US-001", "Add feature")
+
+	var response map[string]interface{}
+	var mu sync.Mutex
+
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
+		// get_diffs does not require prd_id (unlike get_diff)
+		req := map[string]interface{}{
+			"type":      "get_diffs",
+			"id":        "req-1",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"project":   "myproject",
+			"story_id":  "US-001",
+		}
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
+
+		raw, err := ms.waitForMessageType("diffs_response", 5*time.Second)
+		if err == nil {
+			mu.Lock()
+			json.Unmarshal(raw, &response)
+			mu.Unlock()
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if response == nil {
+		t.Fatal("diffs_response was not received")
+	}
+	if response["type"] != "diffs_response" {
+		t.Errorf("expected type 'diffs_response', got %v", response["type"])
+	}
+
+	payload, ok := response["payload"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected payload to be an object")
+	}
+	if payload["project"] != "myproject" {
+		t.Errorf("expected project 'myproject', got %v", payload["project"])
+	}
+	if payload["story_id"] != "US-001" {
+		t.Errorf("expected story_id 'US-001', got %v", payload["story_id"])
+	}
+
+	files, ok := payload["files"].([]interface{})
+	if !ok {
+		t.Fatal("expected files to be an array")
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+
+	file := files[0].(map[string]interface{})
+	if file["filename"] != "feature.go" {
+		t.Errorf("expected filename 'feature.go', got %v", file["filename"])
+	}
+	if int(file["additions"].(float64)) == 0 {
+		t.Error("expected additions > 0")
+	}
+	if _, ok := file["patch"].(string); !ok || file["patch"] == "" {
+		t.Error("expected non-empty patch string")
+	}
+}
+
+func TestRunServe_GetDiffs_ProjectNotFound(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var response map[string]interface{}
+	var mu sync.Mutex
+
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
+		req := map[string]interface{}{
+			"type":      "get_diffs",
+			"id":        "req-1",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"project":   "nonexistent",
+			"story_id":  "US-001",
+		}
+		if err := ms.sendCommand(req); err != nil {
+			t.Errorf("sendCommand failed: %v", err)
+			return
+		}
+
+		raw, err := ms.waitForMessageType("error", 5*time.Second)
+		if err == nil {
+			mu.Lock()
+			json.Unmarshal(raw, &response)
+			mu.Unlock()
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if response == nil {
+		t.Fatal("error message was not received")
+	}
+	if response["code"] != "PROJECT_NOT_FOUND" {
+		t.Errorf("expected code 'PROJECT_NOT_FOUND', got %v", response["code"])
+	}
+}
+
+func TestParseDiffFiles(t *testing.T) {
+	diffText := `diff --git a/main.go b/main.go
+index abc..def 100644
+--- a/main.go
++++ b/main.go
+@@ -1,3 +1,5 @@
+ package main
++import "fmt"
++func hello() { fmt.Println("hi") }
+ func main() {}
+diff --git a/util.go b/util.go
+new file mode 100644
+--- /dev/null
++++ b/util.go
+@@ -0,0 +1,3 @@
++package main
++func helper() {}
++func other() {}
+`
+
+	files := parseDiffFiles(diffText)
+	if len(files) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(files))
+	}
+
+	if files[0].Filename != "main.go" {
+		t.Errorf("files[0].filename = %q, want %q", files[0].Filename, "main.go")
+	}
+	if files[0].Additions != 2 {
+		t.Errorf("files[0].additions = %d, want 2", files[0].Additions)
+	}
+	if files[0].Deletions != 0 {
+		t.Errorf("files[0].deletions = %d, want 0", files[0].Deletions)
+	}
+
+	if files[1].Filename != "util.go" {
+		t.Errorf("files[1].filename = %q, want %q", files[1].Filename, "util.go")
+	}
+	if files[1].Additions != 3 {
+		t.Errorf("files[1].additions = %d, want 3", files[1].Additions)
+	}
+}
+
+func TestParseDiffFiles_Empty(t *testing.T) {
+	files := parseDiffFiles("")
+	if len(files) != 0 {
+		t.Errorf("expected 0 files for empty diff, got %d", len(files))
+	}
+}
