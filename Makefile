@@ -75,9 +75,13 @@ FIXTURES_DIR  := contract/fixtures
 sync-fixtures:
 	@mkdir -p $(FIXTURES_DIR)/cli-to-server $(FIXTURES_DIR)/server-to-cli
 	@for f in cli-to-server/connect_request.json cli-to-server/state_snapshot.json \
-	          cli-to-server/messages_batch.json \
+	          cli-to-server/messages_batch.json cli-to-server/prds_response.json \
+	          cli-to-server/settings_response.json cli-to-server/diffs_response.json \
 	          server-to-cli/welcome_response.json server-to-cli/command_create_project.json \
-	          server-to-cli/command_list_projects.json server-to-cli/command_start_run.json; do \
+	          server-to-cli/command_list_projects.json server-to-cli/command_start_run.json \
+	          server-to-cli/command_get_prds.json server-to-cli/command_get_settings.json \
+	          server-to-cli/command_get_diffs.json server-to-cli/command_new_prd.json \
+	          server-to-cli/command_prd_message.json; do \
 	    if echo "$(FIXTURES_REPO)" | grep -q "^http"; then \
 	        curl -sf "$(FIXTURES_REPO)/$$f" -o "$(FIXTURES_DIR)/$$f" || echo "WARN: failed to fetch $$f"; \
 	    else \

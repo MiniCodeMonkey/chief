@@ -346,6 +346,68 @@ func TestCommandGetDiffs_PayloadWrapper(t *testing.T) {
 	}
 }
 
+func TestCommandNewPRD_PayloadWrapper(t *testing.T) {
+	data := loadFixture(t, "server-to-cli/command_new_prd.json")
+
+	var env struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatalf("failed to unmarshal command envelope: %v", err)
+	}
+
+	if env.Type != "new_prd" {
+		t.Errorf("envelope type = %q, want %q", env.Type, "new_prd")
+	}
+
+	var req ws.NewPRDMessage
+	if err := json.Unmarshal(env.Payload, &req); err != nil {
+		t.Fatalf("failed to unmarshal payload into NewPRDMessage: %v", err)
+	}
+
+	if req.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", req.Project, "my-project")
+	}
+	if req.SessionID != "session-abc" {
+		t.Errorf("payload.session_id = %q, want %q", req.SessionID, "session-abc")
+	}
+	if req.Message != "Build an authentication system" {
+		t.Errorf("payload.message = %q, want %q", req.Message, "Build an authentication system")
+	}
+}
+
+func TestCommandPRDMessage_PayloadWrapper(t *testing.T) {
+	data := loadFixture(t, "server-to-cli/command_prd_message.json")
+
+	var env struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatalf("failed to unmarshal command envelope: %v", err)
+	}
+
+	if env.Type != "prd_message" {
+		t.Errorf("envelope type = %q, want %q", env.Type, "prd_message")
+	}
+
+	var req ws.PRDMessageMessage
+	if err := json.Unmarshal(env.Payload, &req); err != nil {
+		t.Fatalf("failed to unmarshal payload into PRDMessageMessage: %v", err)
+	}
+
+	if req.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", req.Project, "my-project")
+	}
+	if req.SessionID != "session-abc" {
+		t.Errorf("payload.session_id = %q, want %q", req.SessionID, "session-abc")
+	}
+	if req.Message != "Add OAuth support to the PRD" {
+		t.Errorf("payload.message = %q, want %q", req.Message, "Add OAuth support to the PRD")
+	}
+}
+
 // --- cli-to-server response fixtures ---
 
 func TestPRDsResponse_Roundtrip(t *testing.T) {

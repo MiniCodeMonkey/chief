@@ -468,12 +468,12 @@ type GetPRDMessage struct {
 
 // NewPRDMessage requests creation of a new PRD via Claude.
 type NewPRDMessage struct {
-	Type           string `json:"type"`
-	ID             string `json:"id"`
-	Timestamp      string `json:"timestamp"`
-	Project        string `json:"project"`
-	SessionID      string `json:"session_id"`
-	InitialMessage string `json:"initial_message"`
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Timestamp string `json:"timestamp"`
+	Project   string `json:"project"`
+	SessionID string `json:"session_id"`
+	Message   string `json:"message"`
 }
 
 // PRDMessageMessage sends a user message to an active PRD session.
@@ -481,8 +481,9 @@ type PRDMessageMessage struct {
 	Type      string `json:"type"`
 	ID        string `json:"id"`
 	Timestamp string `json:"timestamp"`
+	Project   string `json:"project"`
 	SessionID string `json:"session_id"`
-	Content   string `json:"content"`
+	Message   string `json:"message"`
 }
 
 // ClosePRDSessionMessage closes a PRD session.

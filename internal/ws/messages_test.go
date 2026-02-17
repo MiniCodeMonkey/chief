@@ -288,12 +288,12 @@ func TestStartRunRoundTrip(t *testing.T) {
 
 func TestNewPRDRoundTrip(t *testing.T) {
 	msg := NewPRDMessage{
-		Type:           TypeNewPRD,
-		ID:             newUUID(),
-		Timestamp:      "2026-02-15T10:00:00Z",
-		Project:        "my-project",
-		SessionID:      "session-abc",
-		InitialMessage: "Build an authentication system",
+		Type:      TypeNewPRD,
+		ID:        newUUID(),
+		Timestamp: "2026-02-15T10:00:00Z",
+		Project:   "my-project",
+		SessionID: "session-abc",
+		Message:   "Build an authentication system",
 	}
 
 	data, err := json.Marshal(msg)
@@ -309,8 +309,8 @@ func TestNewPRDRoundTrip(t *testing.T) {
 	if got.SessionID != "session-abc" {
 		t.Errorf("session_id = %q", got.SessionID)
 	}
-	if got.InitialMessage != "Build an authentication system" {
-		t.Errorf("initial_message = %q", got.InitialMessage)
+	if got.Message != "Build an authentication system" {
+		t.Errorf("message = %q", got.Message)
 	}
 }
 
@@ -982,8 +982,9 @@ func TestPRDMessageRoundTrip(t *testing.T) {
 		Type:      TypePRDMessage,
 		ID:        newUUID(),
 		Timestamp: "2026-02-15T10:00:00Z",
+		Project:   "my-project",
 		SessionID: "session-abc",
-		Content:   "Add OAuth support to the PRD",
+		Message:   "Add OAuth support to the PRD",
 	}
 
 	data, err := json.Marshal(msg)
@@ -996,7 +997,7 @@ func TestPRDMessageRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if got.Content != "Add OAuth support to the PRD" {
-		t.Errorf("content = %q", got.Content)
+	if got.Message != "Add OAuth support to the PRD" {
+		t.Errorf("message = %q", got.Message)
 	}
 }

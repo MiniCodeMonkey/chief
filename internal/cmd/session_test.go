@@ -74,12 +74,12 @@ func TestSessionManager_NewPRD(t *testing.T) {
 	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send new_prd request
 		newPRDReq := map[string]string{
-			"type":            "new_prd",
-			"id":              "req-1",
-			"timestamp":       time.Now().UTC().Format(time.RFC3339),
-			"project":         "myproject",
-			"session_id":      "sess-123",
-			"initial_message": "Build a todo app",
+			"type":       "new_prd",
+			"id":         "req-1",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"project":    "myproject",
+			"session_id": "sess-123",
+			"message":    "Build a todo app",
 		}
 		ms.sendCommand(newPRDReq)
 
@@ -125,12 +125,12 @@ func TestSessionManager_NewPRD_ProjectNotFound(t *testing.T) {
 	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
 		// Send new_prd for nonexistent project
 		newPRDReq := map[string]string{
-			"type":            "new_prd",
-			"id":              "req-1",
-			"timestamp":       time.Now().UTC().Format(time.RFC3339),
-			"project":         "nonexistent",
-			"session_id":      "sess-123",
-			"initial_message": "Build a todo app",
+			"type":       "new_prd",
+			"id":         "req-1",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"project":    "nonexistent",
+			"session_id": "sess-123",
+			"message":    "Build a todo app",
 		}
 		ms.sendCommand(newPRDReq)
 
@@ -174,7 +174,7 @@ func TestSessionManager_PRDMessage_SessionNotFound(t *testing.T) {
 			"id":         "req-1",
 			"timestamp":  time.Now().UTC().Format(time.RFC3339),
 			"session_id": "nonexistent-session",
-			"content":    "hello",
+			"message":    "hello",
 		}
 		ms.sendCommand(prdMsg)
 
@@ -294,12 +294,12 @@ echo "Session complete"
 
 		// Send new_prd request via Pusher
 		newPRDReq := map[string]string{
-			"type":            "new_prd",
-			"id":              "req-1",
-			"timestamp":       time.Now().UTC().Format(time.RFC3339),
-			"project":         "myproject",
-			"session_id":      "sess-mock-1",
-			"initial_message": "Build a todo app",
+			"type":       "new_prd",
+			"id":         "req-1",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"project":    "myproject",
+			"session_id": "sess-mock-1",
+			"message":    "Build a todo app",
 		}
 		ms.sendCommand(newPRDReq)
 
@@ -312,7 +312,7 @@ echo "Session complete"
 			"id":         "req-2",
 			"timestamp":  time.Now().UTC().Format(time.RFC3339),
 			"session_id": "sess-mock-1",
-			"content":    "Add user authentication",
+			"message":    "Add user authentication",
 		}
 		ms.sendCommand(prdMsg)
 
@@ -460,12 +460,12 @@ exit 0
 
 		// Send new_prd via Pusher
 		newPRDReq := map[string]string{
-			"type":            "new_prd",
-			"id":              "req-1",
-			"timestamp":       time.Now().UTC().Format(time.RFC3339),
-			"project":         "myproject",
-			"session_id":      "sess-save-1",
-			"initial_message": "Build an API",
+			"type":       "new_prd",
+			"id":         "req-1",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"project":    "myproject",
+			"session_id": "sess-save-1",
+			"message":    "Build an API",
 		}
 		ms.sendCommand(newPRDReq)
 

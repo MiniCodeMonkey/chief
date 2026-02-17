@@ -460,7 +460,7 @@ func handleNewPRD(sender messageSender, scanner projectFinder, sessions *session
 		return
 	}
 
-	if err := sessions.newPRD(project.Path, req.Project, req.SessionID, req.InitialMessage); err != nil {
+	if err := sessions.newPRD(project.Path, req.Project, req.SessionID, req.Message); err != nil {
 		sendError(sender, ws.ErrCodeClaudeError,
 			fmt.Sprintf("Failed to start Claude session: %v", err), msg.ID)
 		return
@@ -477,7 +477,7 @@ func handlePRDMessage(sender messageSender, sessions *sessionManager, msg ws.Mes
 		return
 	}
 
-	if err := sessions.sendMessage(req.SessionID, req.Content); err != nil {
+	if err := sessions.sendMessage(req.SessionID, req.Message); err != nil {
 		sendError(sender, ws.ErrCodeSessionNotFound,
 			fmt.Sprintf("Session %q not found", req.SessionID), msg.ID)
 		return
