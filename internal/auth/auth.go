@@ -186,11 +186,19 @@ func RefreshToken(baseURL string) (*Credentials, error) {
 	}
 
 	reqBody, _ := json.Marshal(map[string]string{
+		"grant_type":    "refresh_token",
 		"refresh_token": creds.RefreshToken,
 	})
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(baseURL+"/api/oauth/token", "application/json", bytes.NewReader(reqBody))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/oauth/token", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("creating refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("refreshing token: %w", err)
 	}

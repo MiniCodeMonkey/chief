@@ -284,8 +284,14 @@ func TestRefreshToken_Success(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/oauth/token" {
+			if accept := r.Header.Get("Accept"); accept != "application/json" {
+				t.Errorf("expected Accept header %q, got %q", "application/json", accept)
+			}
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
+			if body["grant_type"] != "refresh_token" {
+				t.Errorf("expected grant_type %q, got %q", "refresh_token", body["grant_type"])
+			}
 			if body["refresh_token"] != "test-refresh-token" {
 				t.Errorf("expected refresh_token %q, got %q", "test-refresh-token", body["refresh_token"])
 			}
