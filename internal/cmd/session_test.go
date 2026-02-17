@@ -706,6 +706,330 @@ func TestSessionManager_DuplicateSession(t *testing.T) {
 	sm.killAll()
 }
 
+func TestSessionManager_RefinePRD(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := filepath.Join(workspaceDir, "myproject")
+	createGitRepo(t, projectDir)
+
+	// Create existing PRD directory with prd.md
+	prdDir := filepath.Join(projectDir, ".chief", "prds", "feature-auth")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(prdDir, "prd.md"), []byte("# Auth PRD\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
+		// Send refine_prd request
+		refinePRDReq := map[string]string{
+			"type":       "refine_prd",
+			"id":         "req-1",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"project":    "myproject",
+			"session_id": "sess-refine-1",
+			"prd_id":     "feature-auth",
+			"message":    "Add OAuth support",
+		}
+		ms.sendCommand(refinePRDReq)
+
+		// Since we can't actually run claude in tests, expect an error response
+		// (claude binary not available in test) — this tests the error path.
+		raw, err := ms.waitForMessageType("error", 3*time.Second)
+		if err != nil {
+			raw, err = ms.waitForMessageType("prd_output", 3*time.Second)
+			if err != nil {
+				t.Fatal("expected error or prd_output message")
+			}
+		}
+
+		var msg map[string]interface{}
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+
+		msgType := msg["type"].(string)
+		if msgType != "error" && msgType != "prd_output" {
+			t.Errorf("expected error or prd_output message, got %s", msgType)
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+}
+
+func TestSessionManager_RefinePRD_ProjectNotFound(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
+		refinePRDReq := map[string]string{
+			"type":       "refine_prd",
+			"id":         "req-1",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"project":    "nonexistent",
+			"session_id": "sess-refine-1",
+			"prd_id":     "feature-auth",
+			"message":    "Add OAuth support",
+		}
+		ms.sendCommand(refinePRDReq)
+
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
+		if err != nil {
+			t.Fatalf("expected error message: %v", err)
+		}
+
+		var errorReceived map[string]interface{}
+		if err := json.Unmarshal(raw, &errorReceived); err != nil {
+			t.Fatalf("failed to unmarshal error: %v", err)
+		}
+
+		if errorReceived["type"] != "error" {
+			t.Errorf("expected type 'error', got %v", errorReceived["type"])
+		}
+		if errorReceived["code"] != "PROJECT_NOT_FOUND" {
+			t.Errorf("expected code 'PROJECT_NOT_FOUND', got %v", errorReceived["code"])
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+}
+
+func TestSessionManager_RefinePRD_PRDNotFound(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := filepath.Join(workspaceDir, "myproject")
+	createGitRepo(t, projectDir)
+
+	err := serveTestHelper(t, workspaceDir, func(ms *mockUplinkServer) {
+		refinePRDReq := map[string]string{
+			"type":       "refine_prd",
+			"id":         "req-1",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"project":    "myproject",
+			"session_id": "sess-refine-1",
+			"prd_id":     "nonexistent-prd",
+			"message":    "Add OAuth support",
+		}
+		ms.sendCommand(refinePRDReq)
+
+		raw, err := ms.waitForMessageType("error", 2*time.Second)
+		if err != nil {
+			t.Fatalf("expected error message: %v", err)
+		}
+
+		var errorReceived map[string]interface{}
+		if err := json.Unmarshal(raw, &errorReceived); err != nil {
+			t.Fatalf("failed to unmarshal error: %v", err)
+		}
+
+		if errorReceived["type"] != "error" {
+			t.Errorf("expected type 'error', got %v", errorReceived["type"])
+		}
+		if errorReceived["code"] != "CLAUDE_ERROR" {
+			t.Errorf("expected code 'CLAUDE_ERROR', got %v", errorReceived["code"])
+		}
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+}
+
+func TestSessionManager_WithMockClaude_RefinePRD(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	setupServeCredentials(t)
+
+	workspaceDir := filepath.Join(home, "projects")
+	projectDir := filepath.Join(workspaceDir, "myproject")
+	createGitRepo(t, projectDir)
+
+	// Create existing PRD directory with prd.md
+	prdDir := filepath.Join(projectDir, ".chief", "prds", "feature-auth")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(prdDir, "prd.md"), []byte("# Auth PRD\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a mock "claude" script that echoes input
+	mockClaudeBin := filepath.Join(home, "claude")
+	mockScript := `#!/bin/sh
+echo "Claude PRD edit session started"
+echo "Processing: $1"
+while IFS= read -r line; do
+    echo "Received: $line"
+done
+echo "Edit complete"
+`
+	if err := os.WriteFile(mockClaudeBin, []byte(mockScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", home+":"+origPath)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ms := newMockUplinkServer(t)
+
+	go func() {
+		if err := ms.waitForPusherSubscribe(10 * time.Second); err != nil {
+			t.Logf("waitForPusherSubscribe: %v", err)
+			cancel()
+			return
+		}
+
+		if _, err := ms.waitForMessageType("state_snapshot", 5*time.Second); err != nil {
+			t.Logf("waitForMessageType(state_snapshot): %v", err)
+			cancel()
+			return
+		}
+
+		// Send refine_prd request via Pusher
+		refinePRDReq := map[string]string{
+			"type":       "refine_prd",
+			"id":         "req-1",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"project":    "myproject",
+			"session_id": "sess-refine-mock-1",
+			"prd_id":     "feature-auth",
+			"message":    "Add OAuth support",
+		}
+		ms.sendCommand(refinePRDReq)
+
+		// Wait for output
+		time.Sleep(500 * time.Millisecond)
+
+		// Send a follow-up message
+		prdMsg := map[string]string{
+			"type":       "prd_message",
+			"id":         "req-2",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"session_id": "sess-refine-mock-1",
+			"message":    "Also add RBAC",
+		}
+		ms.sendCommand(prdMsg)
+
+		// Wait for output
+		time.Sleep(500 * time.Millisecond)
+
+		// Close the session
+		closeMsg := map[string]interface{}{
+			"type":       "close_prd_session",
+			"id":         "req-3",
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"session_id": "sess-refine-mock-1",
+			"save":       false,
+		}
+		ms.sendCommand(closeMsg)
+
+		// Wait for prd_response_complete
+		deadline := time.After(5 * time.Second)
+		for {
+			msgs := ms.getMessages()
+			for _, raw := range msgs {
+				var msg map[string]interface{}
+				json.Unmarshal(raw, &msg)
+				if msg["type"] == "prd_response_complete" {
+					cancel()
+					return
+				}
+			}
+			select {
+			case <-deadline:
+				cancel()
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
+	}()
+
+	err := RunServe(ServeOptions{
+		Workspace: workspaceDir,
+		ServerURL: ms.httpSrv.URL,
+		Version:   "1.0.0",
+		Ctx:       ctx,
+	})
+	if err != nil {
+		t.Fatalf("RunServe returned error: %v", err)
+	}
+
+	// Collect all prd_output messages
+	allMsgs := ms.getMessages()
+	var prdOutputs []map[string]interface{}
+	for _, raw := range allMsgs {
+		var msg map[string]interface{}
+		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "prd_output" {
+			prdOutputs = append(prdOutputs, msg)
+		}
+	}
+
+	if len(prdOutputs) == 0 {
+		t.Fatal("expected at least one prd_output message")
+	}
+
+	// Verify session_id is set on all prd_output messages
+	for _, co := range prdOutputs {
+		if co["session_id"] != "sess-refine-mock-1" {
+			t.Errorf("expected session_id 'sess-refine-mock-1', got %v", co["session_id"])
+		}
+		if co["project"] != "myproject" {
+			t.Errorf("expected project 'myproject', got %v", co["project"])
+		}
+	}
+
+	// Verify we got a prd_response_complete message
+	hasComplete := false
+	for _, raw := range allMsgs {
+		var msg map[string]interface{}
+		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "prd_response_complete" {
+			hasComplete = true
+			if msg["session_id"] != "sess-refine-mock-1" {
+				t.Errorf("expected session_id 'sess-refine-mock-1' on prd_response_complete, got %v", msg["session_id"])
+			}
+			break
+		}
+	}
+	if !hasComplete {
+		t.Error("expected a prd_response_complete message")
+	}
+
+	// Verify the user's message was received by Claude (should appear in prd_output)
+	hasUserMessage := false
+	for _, co := range prdOutputs {
+		if text, ok := co["text"].(string); ok && strings.Contains(text, "Add OAuth support") {
+			hasUserMessage = true
+			break
+		}
+	}
+	if !hasUserMessage {
+		t.Error("expected user's refine message 'Add OAuth support' to appear in prd_output")
+	}
+}
+
 // newTestSessionManager creates a session manager with configurable timeouts for testing.
 // It does NOT start the timeout checker goroutine automatically.
 func newTestSessionManager(t *testing.T, timeout time.Duration, warningThresholds []int, checkInterval time.Duration) (*sessionManager, *captureSender, func()) {

@@ -355,6 +355,9 @@ func handleMessage(sender messageSender, scanner *workspace.Scanner, watcher *wo
 	case ws.TypeNewPRD:
 		handleNewPRD(sender, scanner, sessions, msg)
 
+	case ws.TypeRefinePRD:
+		handleRefinePRD(sender, scanner, sessions, msg)
+
 	case ws.TypePRDMessage:
 		handlePRDMessage(sender, sessions, msg)
 

@@ -81,7 +81,7 @@ sync-fixtures:
 	          server-to-cli/command_list_projects.json server-to-cli/command_start_run.json \
 	          server-to-cli/command_get_prds.json server-to-cli/command_get_settings.json \
 	          server-to-cli/command_get_diffs.json server-to-cli/command_new_prd.json \
-	          server-to-cli/command_prd_message.json; do \
+	          server-to-cli/command_refine_prd.json server-to-cli/command_prd_message.json; do \
 	    if echo "$(FIXTURES_REPO)" | grep -q "^http"; then \
 	        curl -sf "$(FIXTURES_REPO)/$$f" -o "$(FIXTURES_DIR)/$$f" || echo "WARN: failed to fetch $$f"; \
 	    else \

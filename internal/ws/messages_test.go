@@ -314,6 +314,41 @@ func TestNewPRDRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRefinePRDRoundTrip(t *testing.T) {
+	msg := RefinePRDMessage{
+		Type:      TypeRefinePRD,
+		ID:        newUUID(),
+		Timestamp: "2026-02-15T10:00:00Z",
+		Project:   "my-project",
+		SessionID: "session-abc",
+		PRDID:     "feature-auth",
+		Message:   "Add OAuth support",
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got RefinePRDMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.Type != TypeRefinePRD {
+		t.Errorf("type = %q, want %q", got.Type, TypeRefinePRD)
+	}
+	if got.SessionID != "session-abc" {
+		t.Errorf("session_id = %q", got.SessionID)
+	}
+	if got.PRDID != "feature-auth" {
+		t.Errorf("prd_id = %q", got.PRDID)
+	}
+	if got.Message != "Add OAuth support" {
+		t.Errorf("message = %q", got.Message)
+	}
+}
+
 func TestCloneRepoRoundTrip(t *testing.T) {
 	msg := CloneRepoMessage{
 		Type:          TypeCloneRepo,

@@ -93,6 +93,7 @@ const (
 	TypeGetPRD          = "get_prd"
 	TypeGetPRDs         = "get_prds"
 	TypeNewPRD          = "new_prd"
+	TypeRefinePRD       = "refine_prd"
 	TypePRDMessage      = "prd_message"
 	TypeClosePRDSession = "close_prd_session"
 	TypeStartRun        = "start_run"
@@ -473,6 +474,17 @@ type NewPRDMessage struct {
 	Timestamp string `json:"timestamp"`
 	Project   string `json:"project"`
 	SessionID string `json:"session_id"`
+	Message   string `json:"message"`
+}
+
+// RefinePRDMessage requests editing an existing PRD via Claude.
+type RefinePRDMessage struct {
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Timestamp string `json:"timestamp"`
+	Project   string `json:"project"`
+	SessionID string `json:"session_id"`
+	PRDID     string `json:"prd_id"`
 	Message   string `json:"message"`
 }
 

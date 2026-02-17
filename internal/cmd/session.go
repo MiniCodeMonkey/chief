@@ -206,6 +206,112 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 	return nil
 }
 
+// refinePRD spawns a Claude PRD session to edit an existing PRD.
+func (sm *sessionManager) refinePRD(projectPath, projectName, sessionID, prdID, message string) error {
+	sm.mu.Lock()
+	if _, exists := sm.sessions[sessionID]; exists {
+		sm.mu.Unlock()
+		return fmt.Errorf("session %s already exists", sessionID)
+	}
+	sm.mu.Unlock()
+
+	// Verify the PRD directory exists
+	prdDir := filepath.Join(projectPath, ".chief", "prds", prdID)
+	if _, err := os.Stat(prdDir); os.IsNotExist(err) {
+		return fmt.Errorf("PRD %q not found in project", prdID)
+	}
+
+	// Build prompt from edit_prompt.txt template
+	prompt := embed.GetEditPrompt(prdDir)
+
+	// Spawn claude with the edit prompt as argument (interactive mode)
+	cmd := exec.Command("claude", prompt)
+	cmd.Dir = projectPath
+
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		stdinPipe.Close()
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		stdinPipe.Close()
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		stdinPipe.Close()
+		return fmt.Errorf("failed to start Claude: %w", err)
+	}
+
+	sess := &claudeSession{
+		sessionID:   sessionID,
+		project:     projectName,
+		projectPath: projectPath,
+		cmd:         cmd,
+		stdin:       stdinPipe,
+		done:        make(chan struct{}),
+		lastActive:  time.Now(),
+	}
+
+	sm.mu.Lock()
+	sm.sessions[sessionID] = sess
+	sm.mu.Unlock()
+
+	// Stream stdout in a goroutine
+	go sm.streamOutput(sessionID, stdoutPipe)
+
+	// Stream stderr in a goroutine (merged into same prd_output)
+	go sm.streamOutput(sessionID, stderrPipe)
+
+	// Send the user's message as the first input to Claude
+	go func() {
+		// Small delay to let Claude process the initial prompt
+		time.Sleep(100 * time.Millisecond)
+		fmt.Fprintf(stdinPipe, "%s\n", message)
+	}()
+
+	// Wait for process to exit
+	go func() {
+		err := cmd.Wait()
+		if err != nil {
+			log.Printf("Claude session %s exited with error: %v", sessionID, err)
+		} else {
+			log.Printf("Claude session %s exited normally", sessionID)
+		}
+
+		// Send prd_response_complete to signal the PRD session is done
+		envelope := ws.NewMessage(ws.TypePRDResponseComplete)
+		completeMsg := ws.PRDResponseCompleteMessage{
+			Type:      envelope.Type,
+			ID:        envelope.ID,
+			Timestamp: envelope.Timestamp,
+			SessionID: sessionID,
+			Project:   projectName,
+		}
+		if sendErr := sm.sender.Send(completeMsg); sendErr != nil {
+			log.Printf("Error sending prd_response_complete: %v", sendErr)
+		}
+
+		// Auto-convert prd.md to prd.json if prd.md was updated
+		sm.autoConvert(projectPath)
+
+		close(sess.done)
+
+		sm.mu.Lock()
+		delete(sm.sessions, sessionID)
+		sm.mu.Unlock()
+	}()
+
+	return nil
+}
+
 // streamOutput reads from an io.Reader and sends each chunk as a prd_output message.
 func (sm *sessionManager) streamOutput(sessionID string, r io.Reader) {
 	sm.mu.RLock()
@@ -467,6 +573,30 @@ func handleNewPRD(sender messageSender, scanner projectFinder, sessions *session
 	}
 
 	log.Printf("Started Claude PRD session %s for project %s", req.SessionID, req.Project)
+}
+
+// handleRefinePRD handles a refine_prd WebSocket message.
+func handleRefinePRD(sender messageSender, scanner projectFinder, sessions *sessionManager, msg ws.Message) {
+	var req ws.RefinePRDMessage
+	if err := json.Unmarshal(msg.Raw, &req); err != nil {
+		log.Printf("Error parsing refine_prd message: %v", err)
+		return
+	}
+
+	project, found := scanner.FindProject(req.Project)
+	if !found {
+		sendError(sender, ws.ErrCodeProjectNotFound,
+			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
+		return
+	}
+
+	if err := sessions.refinePRD(project.Path, req.Project, req.SessionID, req.PRDID, req.Message); err != nil {
+		sendError(sender, ws.ErrCodeClaudeError,
+			fmt.Sprintf("Failed to start Claude session: %v", err), msg.ID)
+		return
+	}
+
+	log.Printf("Started Claude PRD refine session %s for project %s (prd: %s)", req.SessionID, req.Project, req.PRDID)
 }
 
 // handlePRDMessage handles a prd_message WebSocket message.

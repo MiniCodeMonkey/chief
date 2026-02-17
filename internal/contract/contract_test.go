@@ -408,6 +408,40 @@ func TestCommandPRDMessage_PayloadWrapper(t *testing.T) {
 	}
 }
 
+func TestCommandRefinePRD_PayloadWrapper(t *testing.T) {
+	data := loadFixture(t, "server-to-cli/command_refine_prd.json")
+
+	var env struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatalf("failed to unmarshal command envelope: %v", err)
+	}
+
+	if env.Type != "refine_prd" {
+		t.Errorf("envelope type = %q, want %q", env.Type, "refine_prd")
+	}
+
+	var req ws.RefinePRDMessage
+	if err := json.Unmarshal(env.Payload, &req); err != nil {
+		t.Fatalf("failed to unmarshal payload into RefinePRDMessage: %v", err)
+	}
+
+	if req.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", req.Project, "my-project")
+	}
+	if req.SessionID != "session-abc" {
+		t.Errorf("payload.session_id = %q, want %q", req.SessionID, "session-abc")
+	}
+	if req.PRDID != "feature-auth" {
+		t.Errorf("payload.prd_id = %q, want %q", req.PRDID, "feature-auth")
+	}
+	if req.Message != "Add OAuth support to the PRD" {
+		t.Errorf("payload.message = %q, want %q", req.Message, "Add OAuth support to the PRD")
+	}
+}
+
 // --- cli-to-server response fixtures ---
 
 func TestPRDsResponse_Roundtrip(t *testing.T) {
