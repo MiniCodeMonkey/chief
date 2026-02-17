@@ -347,6 +347,9 @@ func handleMessage(sender messageSender, scanner *workspace.Scanner, watcher *wo
 	case ws.TypeGetPRD:
 		handleGetPRD(sender, scanner, msg)
 
+	case ws.TypeGetPRDs:
+		handleGetPRDs(sender, scanner, msg)
+
 	case ws.TypeNewPRD:
 		handleNewPRD(sender, scanner, sessions, msg)
 
@@ -370,6 +373,9 @@ func handleMessage(sender messageSender, scanner *workspace.Scanner, watcher *wo
 
 	case ws.TypeGetDiff:
 		handleGetDiff(sender, scanner, msg)
+
+	case ws.TypeGetDiffs:
+		handleGetDiffs(sender, scanner, msg)
 
 	case ws.TypeGetLogs:
 		handleGetLogs(sender, scanner, msg)

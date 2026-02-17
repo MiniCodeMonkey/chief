@@ -38,7 +38,7 @@ func TestRunServe_GetSettings_Defaults(t *testing.T) {
 			return
 		}
 
-		raw, err := ms.waitForMessageType("settings", 5*time.Second)
+		raw, err := ms.waitForMessageType("settings_response", 5*time.Second)
 		if err == nil {
 			mu.Lock()
 			json.Unmarshal(raw, &settingsReceived)
@@ -53,31 +53,39 @@ func TestRunServe_GetSettings_Defaults(t *testing.T) {
 	defer mu.Unlock()
 
 	if settingsReceived == nil {
-		t.Fatal("settings was not received")
+		t.Fatal("settings_response was not received")
 	}
-	if settingsReceived["type"] != "settings" {
-		t.Errorf("expected type 'settings', got %v", settingsReceived["type"])
+	if settingsReceived["type"] != "settings_response" {
+		t.Errorf("expected type 'settings_response', got %v", settingsReceived["type"])
 	}
-	if settingsReceived["project"] != "myproject" {
-		t.Errorf("expected project 'myproject', got %v", settingsReceived["project"])
+	payload, ok := settingsReceived["payload"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected payload to be an object")
+	}
+	if payload["project"] != "myproject" {
+		t.Errorf("expected project 'myproject', got %v", payload["project"])
+	}
+	settings, ok := payload["settings"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected settings to be an object")
 	}
 	// Default max_iterations should be 5
-	if maxIter, ok := settingsReceived["max_iterations"].(float64); !ok || int(maxIter) != 5 {
-		t.Errorf("expected max_iterations 5, got %v", settingsReceived["max_iterations"])
+	if maxIter, ok := settings["max_iterations"].(float64); !ok || int(maxIter) != 5 {
+		t.Errorf("expected max_iterations 5, got %v", settings["max_iterations"])
 	}
 	// Default auto_commit should be true
-	if autoCommit, ok := settingsReceived["auto_commit"].(bool); !ok || !autoCommit {
-		t.Errorf("expected auto_commit true, got %v", settingsReceived["auto_commit"])
+	if autoCommit, ok := settings["auto_commit"].(bool); !ok || !autoCommit {
+		t.Errorf("expected auto_commit true, got %v", settings["auto_commit"])
 	}
 	// Other fields should be empty strings
-	if settingsReceived["commit_prefix"] != "" {
-		t.Errorf("expected empty commit_prefix, got %v", settingsReceived["commit_prefix"])
+	if settings["commit_prefix"] != "" {
+		t.Errorf("expected empty commit_prefix, got %v", settings["commit_prefix"])
 	}
-	if settingsReceived["claude_model"] != "" {
-		t.Errorf("expected empty claude_model, got %v", settingsReceived["claude_model"])
+	if settings["claude_model"] != "" {
+		t.Errorf("expected empty claude_model, got %v", settings["claude_model"])
 	}
-	if settingsReceived["test_command"] != "" {
-		t.Errorf("expected empty test_command, got %v", settingsReceived["test_command"])
+	if settings["test_command"] != "" {
+		t.Errorf("expected empty test_command, got %v", settings["test_command"])
 	}
 }
 
@@ -172,7 +180,7 @@ func TestRunServe_GetSettings_WithExistingConfig(t *testing.T) {
 			return
 		}
 
-		raw, err := ms.waitForMessageType("settings", 5*time.Second)
+		raw, err := ms.waitForMessageType("settings_response", 5*time.Second)
 		if err == nil {
 			mu.Lock()
 			json.Unmarshal(raw, &settingsReceived)
@@ -187,22 +195,24 @@ func TestRunServe_GetSettings_WithExistingConfig(t *testing.T) {
 	defer mu.Unlock()
 
 	if settingsReceived == nil {
-		t.Fatal("settings was not received")
+		t.Fatal("settings_response was not received")
 	}
-	if maxIter, ok := settingsReceived["max_iterations"].(float64); !ok || int(maxIter) != 10 {
-		t.Errorf("expected max_iterations 10, got %v", settingsReceived["max_iterations"])
+	payload := settingsReceived["payload"].(map[string]interface{})
+	settings := payload["settings"].(map[string]interface{})
+	if maxIter, ok := settings["max_iterations"].(float64); !ok || int(maxIter) != 10 {
+		t.Errorf("expected max_iterations 10, got %v", settings["max_iterations"])
 	}
-	if autoCommitVal, ok := settingsReceived["auto_commit"].(bool); !ok || autoCommitVal {
-		t.Errorf("expected auto_commit false, got %v", settingsReceived["auto_commit"])
+	if autoCommitVal, ok := settings["auto_commit"].(bool); !ok || autoCommitVal {
+		t.Errorf("expected auto_commit false, got %v", settings["auto_commit"])
 	}
-	if settingsReceived["commit_prefix"] != "fix:" {
-		t.Errorf("expected commit_prefix 'fix:', got %v", settingsReceived["commit_prefix"])
+	if settings["commit_prefix"] != "fix:" {
+		t.Errorf("expected commit_prefix 'fix:', got %v", settings["commit_prefix"])
 	}
-	if settingsReceived["claude_model"] != "claude-sonnet-4-5-20250929" {
-		t.Errorf("expected claude_model 'claude-sonnet-4-5-20250929', got %v", settingsReceived["claude_model"])
+	if settings["claude_model"] != "claude-sonnet-4-5-20250929" {
+		t.Errorf("expected claude_model 'claude-sonnet-4-5-20250929', got %v", settings["claude_model"])
 	}
-	if settingsReceived["test_command"] != "npm test" {
-		t.Errorf("expected test_command 'npm test', got %v", settingsReceived["test_command"])
+	if settings["test_command"] != "npm test" {
+		t.Errorf("expected test_command 'npm test', got %v", settings["test_command"])
 	}
 }
 
@@ -245,7 +255,7 @@ func TestRunServe_UpdateSettings(t *testing.T) {
 			return
 		}
 
-		raw, err := ms.waitForMessageType("settings", 5*time.Second)
+		raw, err := ms.waitForMessageType("settings_updated", 5*time.Second)
 		if err == nil {
 			mu.Lock()
 			json.Unmarshal(raw, &settingsReceived)
@@ -260,25 +270,27 @@ func TestRunServe_UpdateSettings(t *testing.T) {
 	defer mu.Unlock()
 
 	if settingsReceived == nil {
-		t.Fatal("settings was not received")
+		t.Fatal("settings_updated was not received")
 	}
-	if settingsReceived["type"] != "settings" {
-		t.Errorf("expected type 'settings', got %v", settingsReceived["type"])
+	if settingsReceived["type"] != "settings_updated" {
+		t.Errorf("expected type 'settings_updated', got %v", settingsReceived["type"])
 	}
-	if maxIter, ok := settingsReceived["max_iterations"].(float64); !ok || int(maxIter) != 8 {
-		t.Errorf("expected max_iterations 8, got %v", settingsReceived["max_iterations"])
+	payload := settingsReceived["payload"].(map[string]interface{})
+	settings := payload["settings"].(map[string]interface{})
+	if maxIter, ok := settings["max_iterations"].(float64); !ok || int(maxIter) != 8 {
+		t.Errorf("expected max_iterations 8, got %v", settings["max_iterations"])
 	}
-	if autoCommitVal, ok := settingsReceived["auto_commit"].(bool); !ok || autoCommitVal {
-		t.Errorf("expected auto_commit false, got %v", settingsReceived["auto_commit"])
+	if autoCommitVal, ok := settings["auto_commit"].(bool); !ok || autoCommitVal {
+		t.Errorf("expected auto_commit false, got %v", settings["auto_commit"])
 	}
-	if settingsReceived["commit_prefix"] != "chore:" {
-		t.Errorf("expected commit_prefix 'chore:', got %v", settingsReceived["commit_prefix"])
+	if settings["commit_prefix"] != "chore:" {
+		t.Errorf("expected commit_prefix 'chore:', got %v", settings["commit_prefix"])
 	}
-	if settingsReceived["claude_model"] != "claude-sonnet-4-5-20250929" {
-		t.Errorf("expected claude_model 'claude-sonnet-4-5-20250929', got %v", settingsReceived["claude_model"])
+	if settings["claude_model"] != "claude-sonnet-4-5-20250929" {
+		t.Errorf("expected claude_model 'claude-sonnet-4-5-20250929', got %v", settings["claude_model"])
 	}
-	if settingsReceived["test_command"] != "go test ./..." {
-		t.Errorf("expected test_command 'go test ./...', got %v", settingsReceived["test_command"])
+	if settings["test_command"] != "go test ./..." {
+		t.Errorf("expected test_command 'go test ./...', got %v", settings["test_command"])
 	}
 
 	// Verify the config was persisted to disk
@@ -336,7 +348,7 @@ func TestRunServe_UpdateSettings_PartialUpdate(t *testing.T) {
 			return
 		}
 
-		raw, err := ms.waitForMessageType("settings", 5*time.Second)
+		raw, err := ms.waitForMessageType("settings_updated", 5*time.Second)
 		if err == nil {
 			mu.Lock()
 			json.Unmarshal(raw, &settingsReceived)
@@ -351,21 +363,23 @@ func TestRunServe_UpdateSettings_PartialUpdate(t *testing.T) {
 	defer mu.Unlock()
 
 	if settingsReceived == nil {
-		t.Fatal("settings was not received")
+		t.Fatal("settings_updated was not received")
 	}
+	payload := settingsReceived["payload"].(map[string]interface{})
+	settings := payload["settings"].(map[string]interface{})
 	// Existing values should be preserved
-	if maxIter, ok := settingsReceived["max_iterations"].(float64); !ok || int(maxIter) != 10 {
-		t.Errorf("expected max_iterations 10 preserved, got %v", settingsReceived["max_iterations"])
+	if maxIter, ok := settings["max_iterations"].(float64); !ok || int(maxIter) != 10 {
+		t.Errorf("expected max_iterations 10 preserved, got %v", settings["max_iterations"])
 	}
-	if autoCommitVal, ok := settingsReceived["auto_commit"].(bool); !ok || autoCommitVal {
-		t.Errorf("expected auto_commit false preserved, got %v", settingsReceived["auto_commit"])
+	if autoCommitVal, ok := settings["auto_commit"].(bool); !ok || autoCommitVal {
+		t.Errorf("expected auto_commit false preserved, got %v", settings["auto_commit"])
 	}
-	if settingsReceived["commit_prefix"] != "fix:" {
-		t.Errorf("expected commit_prefix 'fix:' preserved, got %v", settingsReceived["commit_prefix"])
+	if settings["commit_prefix"] != "fix:" {
+		t.Errorf("expected commit_prefix 'fix:' preserved, got %v", settings["commit_prefix"])
 	}
 	// Updated value
-	if settingsReceived["test_command"] != "go test ./..." {
-		t.Errorf("expected test_command 'go test ./...', got %v", settingsReceived["test_command"])
+	if settings["test_command"] != "go test ./..." {
+		t.Errorf("expected test_command 'go test ./...', got %v", settings["test_command"])
 	}
 }
 

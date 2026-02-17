@@ -268,6 +268,171 @@ func TestConnectRequest_Deserialize(t *testing.T) {
 	}
 }
 
+func TestCommandGetPRDs_PayloadWrapper(t *testing.T) {
+	data := loadFixture(t, "server-to-cli/command_get_prds.json")
+
+	var env struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatalf("failed to unmarshal command envelope: %v", err)
+	}
+
+	if env.Type != "get_prds" {
+		t.Errorf("envelope type = %q, want %q", env.Type, "get_prds")
+	}
+
+	var req ws.GetPRDsMessage
+	if err := json.Unmarshal(env.Payload, &req); err != nil {
+		t.Fatalf("failed to unmarshal payload into GetPRDsMessage: %v", err)
+	}
+
+	if req.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", req.Project, "my-project")
+	}
+}
+
+func TestCommandGetSettings_PayloadWrapper(t *testing.T) {
+	data := loadFixture(t, "server-to-cli/command_get_settings.json")
+
+	var env struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatalf("failed to unmarshal command envelope: %v", err)
+	}
+
+	if env.Type != "get_settings" {
+		t.Errorf("envelope type = %q, want %q", env.Type, "get_settings")
+	}
+
+	var req ws.GetSettingsMessage
+	if err := json.Unmarshal(env.Payload, &req); err != nil {
+		t.Fatalf("failed to unmarshal payload into GetSettingsMessage: %v", err)
+	}
+
+	if req.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", req.Project, "my-project")
+	}
+}
+
+func TestCommandGetDiffs_PayloadWrapper(t *testing.T) {
+	data := loadFixture(t, "server-to-cli/command_get_diffs.json")
+
+	var env struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload,omitempty"`
+	}
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatalf("failed to unmarshal command envelope: %v", err)
+	}
+
+	if env.Type != "get_diffs" {
+		t.Errorf("envelope type = %q, want %q", env.Type, "get_diffs")
+	}
+
+	var req ws.GetDiffsMessage
+	if err := json.Unmarshal(env.Payload, &req); err != nil {
+		t.Fatalf("failed to unmarshal payload into GetDiffsMessage: %v", err)
+	}
+
+	if req.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", req.Project, "my-project")
+	}
+	if req.StoryID != "US-001" {
+		t.Errorf("payload.story_id = %q, want %q", req.StoryID, "US-001")
+	}
+}
+
+// --- cli-to-server response fixtures ---
+
+func TestPRDsResponse_Roundtrip(t *testing.T) {
+	data := loadFixture(t, "cli-to-server/prds_response.json")
+
+	var resp ws.PRDsResponseMessage
+	if err := json.Unmarshal(data, &resp); err != nil {
+		t.Fatalf("failed to unmarshal prds_response.json: %v", err)
+	}
+
+	if resp.Type != "prds_response" {
+		t.Errorf("type = %q, want %q", resp.Type, "prds_response")
+	}
+	if resp.Payload.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", resp.Payload.Project, "my-project")
+	}
+	if len(resp.Payload.PRDs) != 2 {
+		t.Fatalf("prds count = %d, want 2", len(resp.Payload.PRDs))
+	}
+
+	prd := resp.Payload.PRDs[0]
+	if prd.ID != "feature-auth" {
+		t.Errorf("prds[0].id = %q, want %q", prd.ID, "feature-auth")
+	}
+	if prd.Status != "active" {
+		t.Errorf("prds[0].status = %q, want %q", prd.Status, "active")
+	}
+	if prd.StoryCount != 5 {
+		t.Errorf("prds[0].story_count = %d, want 5", prd.StoryCount)
+	}
+}
+
+func TestSettingsResponse_Roundtrip(t *testing.T) {
+	data := loadFixture(t, "cli-to-server/settings_response.json")
+
+	var resp ws.SettingsResponseMessage
+	if err := json.Unmarshal(data, &resp); err != nil {
+		t.Fatalf("failed to unmarshal settings_response.json: %v", err)
+	}
+
+	if resp.Type != "settings_response" {
+		t.Errorf("type = %q, want %q", resp.Type, "settings_response")
+	}
+	if resp.Payload.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", resp.Payload.Project, "my-project")
+	}
+	if resp.Payload.Settings.MaxIterations != 5 {
+		t.Errorf("settings.max_iterations = %d, want 5", resp.Payload.Settings.MaxIterations)
+	}
+	if !resp.Payload.Settings.AutoCommit {
+		t.Error("settings.auto_commit = false, want true")
+	}
+}
+
+func TestDiffsResponse_Roundtrip(t *testing.T) {
+	data := loadFixture(t, "cli-to-server/diffs_response.json")
+
+	var resp ws.DiffsResponseMessage
+	if err := json.Unmarshal(data, &resp); err != nil {
+		t.Fatalf("failed to unmarshal diffs_response.json: %v", err)
+	}
+
+	if resp.Type != "diffs_response" {
+		t.Errorf("type = %q, want %q", resp.Type, "diffs_response")
+	}
+	if resp.Payload.Project != "my-project" {
+		t.Errorf("payload.project = %q, want %q", resp.Payload.Project, "my-project")
+	}
+	if resp.Payload.StoryID != "US-001" {
+		t.Errorf("payload.story_id = %q, want %q", resp.Payload.StoryID, "US-001")
+	}
+	if len(resp.Payload.Files) != 1 {
+		t.Fatalf("files count = %d, want 1", len(resp.Payload.Files))
+	}
+
+	file := resp.Payload.Files[0]
+	if file.Filename != "src/auth.go" {
+		t.Errorf("files[0].filename = %q, want %q", file.Filename, "src/auth.go")
+	}
+	if file.Additions != 25 {
+		t.Errorf("files[0].additions = %d, want 25", file.Additions)
+	}
+	if file.Deletions != 3 {
+		t.Errorf("files[0].deletions = %d, want 3", file.Deletions)
+	}
+}
+
 func TestMessagesBatch_Deserialize(t *testing.T) {
 	data := loadFixture(t, "cli-to-server/messages_batch.json")
 

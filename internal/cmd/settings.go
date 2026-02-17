@@ -31,20 +31,21 @@ func handleGetSettings(sender messageSender, finder projectFinder, msg ws.Messag
 		return
 	}
 
-	envelope := ws.NewMessage(ws.TypeSettings)
-	settingsMsg := ws.SettingsMessage{
-		Type:          envelope.Type,
-		ID:            envelope.ID,
-		Timestamp:     envelope.Timestamp,
-		Project:       req.Project,
-		MaxIterations: cfg.EffectiveMaxIterations(),
-		AutoCommit:    cfg.EffectiveAutoCommit(),
-		CommitPrefix:  cfg.CommitPrefix,
-		ClaudeModel:   cfg.ClaudeModel,
-		TestCommand:   cfg.TestCommand,
+	resp := ws.SettingsResponseMessage{
+		Type: ws.TypeSettingsResponse,
+		Payload: ws.SettingsResponsePayload{
+			Project: req.Project,
+			Settings: ws.SettingsData{
+				MaxIterations: cfg.EffectiveMaxIterations(),
+				AutoCommit:    cfg.EffectiveAutoCommit(),
+				CommitPrefix:  cfg.CommitPrefix,
+				ClaudeModel:   cfg.ClaudeModel,
+				TestCommand:   cfg.TestCommand,
+			},
+		},
 	}
-	if err := sender.Send(settingsMsg); err != nil {
-		log.Printf("Error sending settings: %v", err)
+	if err := sender.Send(resp); err != nil {
+		log.Printf("Error sending settings_response: %v", err)
 	}
 }
 
@@ -99,19 +100,20 @@ func handleUpdateSettings(sender messageSender, finder projectFinder, msg ws.Mes
 	}
 
 	// Echo back full updated settings
-	envelope := ws.NewMessage(ws.TypeSettings)
-	settingsMsg := ws.SettingsMessage{
-		Type:          envelope.Type,
-		ID:            envelope.ID,
-		Timestamp:     envelope.Timestamp,
-		Project:       req.Project,
-		MaxIterations: cfg.EffectiveMaxIterations(),
-		AutoCommit:    cfg.EffectiveAutoCommit(),
-		CommitPrefix:  cfg.CommitPrefix,
-		ClaudeModel:   cfg.ClaudeModel,
-		TestCommand:   cfg.TestCommand,
+	resp := ws.SettingsResponseMessage{
+		Type: ws.TypeSettingsUpdated,
+		Payload: ws.SettingsResponsePayload{
+			Project: req.Project,
+			Settings: ws.SettingsData{
+				MaxIterations: cfg.EffectiveMaxIterations(),
+				AutoCommit:    cfg.EffectiveAutoCommit(),
+				CommitPrefix:  cfg.CommitPrefix,
+				ClaudeModel:   cfg.ClaudeModel,
+				TestCommand:   cfg.TestCommand,
+			},
+		},
 	}
-	if err := sender.Send(settingsMsg); err != nil {
-		log.Printf("Error sending settings: %v", err)
+	if err := sender.Send(resp); err != nil {
+		log.Printf("Error sending settings_updated: %v", err)
 	}
 }

@@ -69,6 +69,8 @@ const (
 	TypeRunComplete           = "run_complete"
 	TypeRunPaused             = "run_paused"
 	TypeDiff                  = "diff"
+	TypeDiffsResponse         = "diffs_response"
+	TypePRDsResponse          = "prds_response"
 	TypeCloneProgress         = "clone_progress"
 	TypeCloneComplete         = "clone_complete"
 	TypeError                 = "error"
@@ -77,6 +79,8 @@ const (
 	TypeSessionTimeoutWarning = "session_timeout_warning"
 	TypeSessionExpired        = "session_expired"
 	TypeSettings              = "settings"
+	TypeSettingsResponse      = "settings_response"
+	TypeSettingsUpdated       = "settings_updated"
 	TypeUpdateAvailable       = "update_available"
 
 	// Web App → Server message types.
@@ -85,6 +89,7 @@ const (
 	TypeListProjects    = "list_projects"
 	TypeGetProject      = "get_project"
 	TypeGetPRD          = "get_prd"
+	TypeGetPRDs         = "get_prds"
 	TypeNewPRD          = "new_prd"
 	TypePRDMessage      = "prd_message"
 	TypeClosePRDSession = "close_prd_session"
@@ -95,6 +100,7 @@ const (
 	TypeCloneRepo       = "clone_repo"
 	TypeCreateProject   = "create_project"
 	TypeGetDiff         = "get_diff"
+	TypeGetDiffs        = "get_diffs"
 	TypeGetLogs         = "get_logs"
 	TypeGetSettings     = "get_settings"
 	TypeUpdateSettings  = "update_settings"
@@ -355,6 +361,79 @@ type GetProjectMessage struct {
 	ID        string `json:"id"`
 	Timestamp string `json:"timestamp"`
 	Project   string `json:"project"`
+}
+
+// GetPRDsMessage requests a list of all PRDs for a project.
+type GetPRDsMessage struct {
+	Project string `json:"project"`
+}
+
+// PRDsResponseMessage returns a list of PRDs for a project.
+type PRDsResponseMessage struct {
+	Type    string               `json:"type"`
+	Payload PRDsResponsePayload  `json:"payload"`
+}
+
+// PRDsResponsePayload is the payload of a PRDs response.
+type PRDsResponsePayload struct {
+	Project string    `json:"project"`
+	PRDs    []PRDItem `json:"prds"`
+}
+
+// PRDItem describes a PRD in the response list.
+type PRDItem struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	StoryCount int    `json:"story_count"`
+	Status     string `json:"status"`
+}
+
+// SettingsResponseMessage wraps settings for browser delivery.
+type SettingsResponseMessage struct {
+	Type    string                  `json:"type"`
+	Payload SettingsResponsePayload `json:"payload"`
+}
+
+// SettingsResponsePayload is the payload of a settings response.
+type SettingsResponsePayload struct {
+	Project  string       `json:"project"`
+	Settings SettingsData `json:"settings"`
+}
+
+// SettingsData contains project settings fields.
+type SettingsData struct {
+	MaxIterations int    `json:"max_iterations"`
+	AutoCommit    bool   `json:"auto_commit"`
+	CommitPrefix  string `json:"commit_prefix"`
+	ClaudeModel   string `json:"claude_model"`
+	TestCommand   string `json:"test_command"`
+}
+
+// DiffsResponseMessage wraps diff data for browser delivery.
+type DiffsResponseMessage struct {
+	Type    string               `json:"type"`
+	Payload DiffsResponsePayload `json:"payload"`
+}
+
+// DiffsResponsePayload is the payload of a diffs response.
+type DiffsResponsePayload struct {
+	Project string           `json:"project"`
+	StoryID string           `json:"story_id"`
+	Files   []DiffFileDetail `json:"files"`
+}
+
+// DiffFileDetail represents a single file's diff information.
+type DiffFileDetail struct {
+	Filename  string `json:"filename"`
+	Additions int    `json:"additions"`
+	Deletions int    `json:"deletions"`
+	Patch     string `json:"patch"`
+}
+
+// GetDiffsMessage requests diffs for a story (without requiring prd_id).
+type GetDiffsMessage struct {
+	Project string `json:"project"`
+	StoryID string `json:"story_id"`
 }
 
 // GetPRDMessage requests a PRD's content.

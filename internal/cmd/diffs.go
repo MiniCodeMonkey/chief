@@ -12,6 +12,95 @@ import (
 	"github.com/minicodemonkey/chief/internal/ws"
 )
 
+// handleGetDiffs handles a get_diffs request from the browser.
+// Unlike get_diff, this does not require prd_id and returns parsed per-file diffs.
+func handleGetDiffs(sender messageSender, finder projectFinder, msg ws.Message) {
+	var req ws.GetDiffsMessage
+	if err := json.Unmarshal(msg.Raw, &req); err != nil {
+		log.Printf("Error parsing get_diffs message: %v", err)
+		return
+	}
+
+	project, found := finder.FindProject(req.Project)
+	if !found {
+		sendError(sender, ws.ErrCodeProjectNotFound,
+			fmt.Sprintf("Project %q not found", req.Project), msg.ID)
+		return
+	}
+
+	diffText, _, err := getStoryDiff(project.Path, req.StoryID)
+	if err != nil {
+		sendError(sender, ws.ErrCodeFilesystemError,
+			fmt.Sprintf("Failed to get diff for story %q: %v", req.StoryID, err), msg.ID)
+		return
+	}
+
+	files := parseDiffFiles(diffText)
+
+	resp := ws.DiffsResponseMessage{
+		Type: ws.TypeDiffsResponse,
+		Payload: ws.DiffsResponsePayload{
+			Project: req.Project,
+			StoryID: req.StoryID,
+			Files:   files,
+		},
+	}
+	if err := sender.Send(resp); err != nil {
+		log.Printf("Error sending diffs_response: %v", err)
+	}
+}
+
+// parseDiffFiles splits a unified diff into per-file details.
+func parseDiffFiles(diffText string) []ws.DiffFileDetail {
+	if diffText == "" {
+		return []ws.DiffFileDetail{}
+	}
+
+	// Split on "diff --git" boundaries
+	chunks := strings.Split(diffText, "diff --git ")
+	var files []ws.DiffFileDetail
+
+	for _, chunk := range chunks {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+
+		// Extract filename from first line: "a/path b/path"
+		firstLine := chunk
+		if idx := strings.IndexByte(chunk, '\n'); idx != -1 {
+			firstLine = chunk[:idx]
+		}
+
+		filename := ""
+		if parts := strings.SplitN(firstLine, " b/", 2); len(parts) == 2 {
+			filename = parts[1]
+		}
+
+		// Count additions and deletions
+		additions, deletions := 0, 0
+		for _, line := range strings.Split(chunk, "\n") {
+			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				additions++
+			} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+				deletions++
+			}
+		}
+
+		files = append(files, ws.DiffFileDetail{
+			Filename:  filename,
+			Additions: additions,
+			Deletions: deletions,
+			Patch:     "diff --git " + chunk,
+		})
+	}
+
+	if files == nil {
+		files = []ws.DiffFileDetail{}
+	}
+	return files
+}
+
 // handleGetDiff handles a get_diff request.
 func handleGetDiff(sender messageSender, finder projectFinder, msg ws.Message) {
 	var req ws.GetDiffMessage
