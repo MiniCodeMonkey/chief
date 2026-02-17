@@ -331,6 +331,8 @@ func sendError(sender messageSender, code, message, requestID string) {
 // handleMessage routes incoming commands.
 // Returns true if the serve loop should exit (e.g., after a successful remote update).
 func handleMessage(sender messageSender, scanner *workspace.Scanner, watcher *workspace.Watcher, sessions *sessionManager, runs *runManager, msg ws.Message, version, releasesURL string) bool {
+	log.Printf("Received command type=%s id=%s", msg.Type, msg.ID)
+
 	switch msg.Type {
 	case ws.TypePing:
 		pong := ws.NewMessage(ws.TypePong)
