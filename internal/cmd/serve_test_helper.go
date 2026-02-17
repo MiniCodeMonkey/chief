@@ -342,13 +342,16 @@ func (ps *mockPusherServer) handleWS(t *testing.T, w http.ResponseWriter, r *htt
 	ps.mu.Unlock()
 
 	// Send connection_established.
-	connData, _ := json.Marshal(pusherConnData{
+	// Real Pusher protocol double-encodes the data: the data field is a JSON string
+	// containing the connection info, not an embedded object.
+	connDataInner, _ := json.Marshal(pusherConnData{
 		SocketID:        ps.socketID,
 		ActivityTimeout: ps.activityTimeout,
 	})
+	connDataStr, _ := json.Marshal(string(connDataInner))
 	conn.WriteJSON(pusherMsg{
 		Event: "pusher:connection_established",
-		Data:  connData,
+		Data:  connDataStr,
 	})
 
 	// Read loop.

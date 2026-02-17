@@ -11,3 +11,6 @@ node_modules/
 # VitePress
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+
+# Contract fixtures (synced from chief-uplink)
+contract/fixtures/
