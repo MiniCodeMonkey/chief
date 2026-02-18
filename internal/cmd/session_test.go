@@ -374,13 +374,18 @@ echo "Session complete"
 		t.Fatal("expected at least one prd_output message")
 	}
 
-	// Verify session_id is set on all prd_output messages
+	// Verify session_id and project are set on all prd_output messages (inside payload)
 	for _, co := range prdOutputs {
-		if co["session_id"] != "sess-mock-1" {
-			t.Errorf("expected session_id 'sess-mock-1', got %v", co["session_id"])
+		payload, _ := co["payload"].(map[string]interface{})
+		if payload == nil {
+			t.Error("expected prd_output to have a payload field")
+			continue
 		}
-		if co["project"] != "myproject" {
-			t.Errorf("expected project 'myproject', got %v", co["project"])
+		if payload["session_id"] != "sess-mock-1" {
+			t.Errorf("expected payload.session_id 'sess-mock-1', got %v", payload["session_id"])
+		}
+		if payload["project"] != "myproject" {
+			t.Errorf("expected payload.project 'myproject', got %v", payload["project"])
 		}
 	}
 
@@ -390,8 +395,11 @@ echo "Session complete"
 		var msg map[string]interface{}
 		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "prd_response_complete" {
 			hasComplete = true
-			if msg["session_id"] != "sess-mock-1" {
-				t.Errorf("expected session_id 'sess-mock-1' on prd_response_complete, got %v", msg["session_id"])
+			payload, _ := msg["payload"].(map[string]interface{})
+			if payload == nil {
+				t.Error("expected prd_response_complete to have a payload field")
+			} else if payload["session_id"] != "sess-mock-1" {
+				t.Errorf("expected payload.session_id 'sess-mock-1' on prd_response_complete, got %v", payload["session_id"])
 			}
 			break
 		}
@@ -403,13 +411,16 @@ echo "Session complete"
 	// Verify we received some actual content
 	hasContent := false
 	for _, co := range prdOutputs {
-		if text, ok := co["text"].(string); ok && strings.TrimSpace(text) != "" {
-			hasContent = true
-			break
+		payload, _ := co["payload"].(map[string]interface{})
+		if payload != nil {
+			if content, ok := payload["content"].(string); ok && strings.TrimSpace(content) != "" {
+				hasContent = true
+				break
+			}
 		}
 	}
 	if !hasContent {
-		t.Error("expected at least one prd_output with non-empty text")
+		t.Error("expected at least one prd_output with non-empty content")
 	}
 }
 
@@ -638,9 +649,12 @@ done
 	hasEcho := false
 	for _, msg := range msgs {
 		if msg["type"] == "prd_output" {
-			if text, ok := msg["text"].(string); ok && strings.Contains(text, "echo: hello world") {
-				hasEcho = true
-				break
+			payload, _ := msg["payload"].(map[string]interface{})
+			if payload != nil {
+				if content, ok := payload["content"].(string); ok && strings.Contains(content, "echo: hello world") {
+					hasEcho = true
+					break
+				}
 			}
 		}
 	}
@@ -991,13 +1005,18 @@ echo "Edit complete"
 		t.Fatal("expected at least one prd_output message")
 	}
 
-	// Verify session_id is set on all prd_output messages
+	// Verify session_id and project are set on all prd_output messages (inside payload)
 	for _, co := range prdOutputs {
-		if co["session_id"] != "sess-refine-mock-1" {
-			t.Errorf("expected session_id 'sess-refine-mock-1', got %v", co["session_id"])
+		payload, _ := co["payload"].(map[string]interface{})
+		if payload == nil {
+			t.Error("expected prd_output to have a payload field")
+			continue
 		}
-		if co["project"] != "myproject" {
-			t.Errorf("expected project 'myproject', got %v", co["project"])
+		if payload["session_id"] != "sess-refine-mock-1" {
+			t.Errorf("expected payload.session_id 'sess-refine-mock-1', got %v", payload["session_id"])
+		}
+		if payload["project"] != "myproject" {
+			t.Errorf("expected payload.project 'myproject', got %v", payload["project"])
 		}
 	}
 
@@ -1007,8 +1026,11 @@ echo "Edit complete"
 		var msg map[string]interface{}
 		if json.Unmarshal(raw, &msg) == nil && msg["type"] == "prd_response_complete" {
 			hasComplete = true
-			if msg["session_id"] != "sess-refine-mock-1" {
-				t.Errorf("expected session_id 'sess-refine-mock-1' on prd_response_complete, got %v", msg["session_id"])
+			payload, _ := msg["payload"].(map[string]interface{})
+			if payload == nil {
+				t.Error("expected prd_response_complete to have a payload field")
+			} else if payload["session_id"] != "sess-refine-mock-1" {
+				t.Errorf("expected payload.session_id 'sess-refine-mock-1' on prd_response_complete, got %v", payload["session_id"])
 			}
 			break
 		}
@@ -1020,9 +1042,12 @@ echo "Edit complete"
 	// Verify the user's message was received by Claude (should appear in prd_output)
 	hasUserMessage := false
 	for _, co := range prdOutputs {
-		if text, ok := co["text"].(string); ok && strings.Contains(text, "Add OAuth support") {
-			hasUserMessage = true
-			break
+		payload, _ := co["payload"].(map[string]interface{})
+		if payload != nil {
+			if content, ok := payload["content"].(string); ok && strings.Contains(content, "Add OAuth support") {
+				hasUserMessage = true
+				break
+			}
 		}
 	}
 	if !hasUserMessage {

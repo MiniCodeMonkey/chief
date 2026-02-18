@@ -208,23 +208,29 @@ type ClaudeOutputMessage struct {
 	Done      bool   `json:"done"`
 }
 
-// PRDOutputMessage streams PRD session output (text chunks from Claude).
-type PRDOutputMessage struct {
-	Type      string `json:"type"`
-	ID        string `json:"id"`
-	Timestamp string `json:"timestamp"`
+// PRDOutputPayload is the payload of a PRD output message.
+type PRDOutputPayload struct {
+	Content   string `json:"content"`
 	SessionID string `json:"session_id"`
 	Project   string `json:"project"`
-	Text      string `json:"text"`
+}
+
+// PRDOutputMessage streams PRD session output (text chunks from Claude).
+type PRDOutputMessage struct {
+	Type    string           `json:"type"`
+	Payload PRDOutputPayload `json:"payload"`
+}
+
+// PRDResponseCompletePayload is the payload of a PRD response complete message.
+type PRDResponseCompletePayload struct {
+	SessionID string `json:"session_id"`
+	Project   string `json:"project"`
 }
 
 // PRDResponseCompleteMessage signals that a PRD session's Claude process has finished.
 type PRDResponseCompleteMessage struct {
-	Type      string `json:"type"`
-	ID        string `json:"id"`
-	Timestamp string `json:"timestamp"`
-	SessionID string `json:"session_id"`
-	Project   string `json:"project"`
+	Type    string                     `json:"type"`
+	Payload PRDResponseCompletePayload `json:"payload"`
 }
 
 // RunProgressMessage reports run state changes.

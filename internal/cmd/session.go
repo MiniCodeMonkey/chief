@@ -126,7 +126,7 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 	prompt := embed.GetInitPrompt(prdsDir, initialMessage)
 
 	// Spawn claude in print mode for non-interactive piped I/O
-	cmd := exec.Command("claude", "-p", "--dangerously-skip-permissions", prompt)
+	cmd := exec.Command(claudeBinary(), "-p", "--dangerously-skip-permissions", prompt)
 	cmd.Dir = projectPath
 	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
@@ -182,13 +182,12 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 		}
 
 		// Send prd_response_complete to signal the PRD session is done
-		envelope := ws.NewMessage(ws.TypePRDResponseComplete)
 		completeMsg := ws.PRDResponseCompleteMessage{
-			Type:      envelope.Type,
-			ID:        envelope.ID,
-			Timestamp: envelope.Timestamp,
-			SessionID: sessionID,
-			Project:   projectName,
+			Type: ws.TypePRDResponseComplete,
+			Payload: ws.PRDResponseCompletePayload{
+				SessionID: sessionID,
+				Project:   projectName,
+			},
 		}
 		if sendErr := sm.sender.Send(completeMsg); sendErr != nil {
 			log.Printf("Error sending prd_response_complete: %v", sendErr)
@@ -226,7 +225,7 @@ func (sm *sessionManager) refinePRD(projectPath, projectName, sessionID, prdID, 
 	prompt := embed.GetEditPrompt(prdDir)
 
 	// Spawn claude in print mode for non-interactive piped I/O
-	cmd := exec.Command("claude", "-p", "--dangerously-skip-permissions", prompt)
+	cmd := exec.Command(claudeBinary(), "-p", "--dangerously-skip-permissions", prompt)
 	cmd.Dir = projectPath
 	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
@@ -289,13 +288,12 @@ func (sm *sessionManager) refinePRD(projectPath, projectName, sessionID, prdID, 
 		}
 
 		// Send prd_response_complete to signal the PRD session is done
-		envelope := ws.NewMessage(ws.TypePRDResponseComplete)
 		completeMsg := ws.PRDResponseCompleteMessage{
-			Type:      envelope.Type,
-			ID:        envelope.ID,
-			Timestamp: envelope.Timestamp,
-			SessionID: sessionID,
-			Project:   projectName,
+			Type: ws.TypePRDResponseComplete,
+			Payload: ws.PRDResponseCompletePayload{
+				SessionID: sessionID,
+				Project:   projectName,
+			},
 		}
 		if sendErr := sm.sender.Send(completeMsg); sendErr != nil {
 			log.Printf("Error sending prd_response_complete: %v", sendErr)
@@ -327,14 +325,13 @@ func (sm *sessionManager) streamOutput(sessionID string, r io.Reader) {
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		envelope := ws.NewMessage(ws.TypePRDOutput)
 		msg := ws.PRDOutputMessage{
-			Type:      envelope.Type,
-			ID:        envelope.ID,
-			Timestamp: envelope.Timestamp,
-			SessionID: sessionID,
-			Project:   sess.project,
-			Text:      line + "\n",
+			Type: ws.TypePRDOutput,
+			Payload: ws.PRDOutputPayload{
+				Content:   line + "\n",
+				SessionID: sessionID,
+				Project:   sess.project,
+			},
 		}
 		if err := sm.sender.Send(msg); err != nil {
 			log.Printf("Error sending prd_output: %v", err)
@@ -631,6 +628,15 @@ func handleClosePRDSession(sender messageSender, sessions *sessionManager, msg w
 	}
 
 	log.Printf("Closed Claude PRD session %s (save=%v)", req.SessionID, req.Save)
+}
+
+// claudeBinary returns the path to the claude CLI binary.
+// It checks the CHIEF_CLAUDE_BINARY environment variable first, falling back to "claude".
+func claudeBinary() string {
+	if bin := os.Getenv("CHIEF_CLAUDE_BINARY"); bin != "" {
+		return bin
+	}
+	return "claude"
 }
 
 // filterEnv returns a copy of env with the named variables removed.
