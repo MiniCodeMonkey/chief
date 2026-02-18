@@ -125,9 +125,10 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 	// We pass the prds base dir so the prompt has the right context.
 	prompt := embed.GetInitPrompt(prdsDir, initialMessage)
 
-	// Spawn claude with the prompt as argument (interactive mode)
-	cmd := exec.Command("claude", prompt)
+	// Spawn claude in print mode for non-interactive piped I/O
+	cmd := exec.Command("claude", "-p", "--dangerously-skip-permissions", prompt)
 	cmd.Dir = projectPath
+	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -224,9 +225,10 @@ func (sm *sessionManager) refinePRD(projectPath, projectName, sessionID, prdID, 
 	// Build prompt from edit_prompt.txt template
 	prompt := embed.GetEditPrompt(prdDir)
 
-	// Spawn claude with the edit prompt as argument (interactive mode)
-	cmd := exec.Command("claude", prompt)
+	// Spawn claude in print mode for non-interactive piped I/O
+	cmd := exec.Command("claude", "-p", "--dangerously-skip-permissions", prompt)
 	cmd.Dir = projectPath
+	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -629,6 +631,24 @@ func handleClosePRDSession(sender messageSender, sessions *sessionManager, msg w
 	}
 
 	log.Printf("Closed Claude PRD session %s (save=%v)", req.SessionID, req.Save)
+}
+
+// filterEnv returns a copy of env with the named variables removed.
+func filterEnv(env []string, keys ...string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, e := range env {
+		skip := false
+		for _, key := range keys {
+			if len(e) > len(key) && e[:len(key)+1] == key+"=" {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
 }
 
 // projectFinder is an interface for finding projects (for testability).
