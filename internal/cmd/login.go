@@ -109,7 +109,7 @@ func RunLogin(opts LoginOptions) error {
 	fmt.Printf("And enter this code: %s\n\n", codeResp.UserCode)
 
 	// Try to open browser automatically
-	openBrowser(deviceURL)
+	openBrowserFunc(deviceURL)
 
 	fmt.Println("Waiting for authorization...")
 
@@ -235,8 +235,12 @@ func pollForToken(baseURL, deviceCode, deviceName string) (*auth.Credentials, er
 	}
 }
 
-// openBrowser attempts to open the given URL in the default browser.
-func openBrowser(url string) {
+// openBrowserFunc is the function used to open URLs in the browser.
+// It can be replaced in tests to prevent actual browser launches.
+var openBrowserFunc = openBrowserDefault
+
+// openBrowserDefault attempts to open the given URL in the default browser.
+func openBrowserDefault(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":

@@ -12,6 +12,11 @@ import (
 	"github.com/minicodemonkey/chief/internal/auth"
 )
 
+func init() {
+	// Prevent tests from opening actual browser windows
+	openBrowserFunc = func(url string) {}
+}
+
 func setTestHome(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
@@ -467,5 +472,5 @@ func TestRunLogin_SetupToken_DefaultDeviceName(t *testing.T) {
 
 func TestOpenBrowser(t *testing.T) {
 	// Just verifying it doesn't panic — browser open is best-effort
-	openBrowser("https://example.com")
+	openBrowserFunc("https://example.com")
 }
