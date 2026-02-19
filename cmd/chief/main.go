@@ -56,11 +56,17 @@ func main() {
 		case "--version", "-v":
 			fmt.Printf("chief version %s\n", Version)
 			return
+		case "update":
+			runUpdate()
+			return
 		case "wiggum":
 			printWiggum()
 			return
 		}
 	}
+
+	// Non-blocking version check on startup (for interactive TUI sessions)
+	cmd.CheckVersionOnStartup(Version)
 
 	// Parse flags for TUI mode
 	opts := parseTUIFlags()
@@ -264,6 +270,15 @@ func runStatus() {
 	}
 }
 
+func runUpdate() {
+	if err := cmd.RunUpdate(cmd.UpdateOptions{
+		Version: Version,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func runList() {
 	opts := cmd.ListOptions{}
 
@@ -448,6 +463,7 @@ Commands:
   edit [name] [options]     Edit an existing PRD interactively
   status [name]             Show progress for a PRD (default: main)
   list                      List all PRDs with progress
+  update                    Update Chief to the latest version
   help                      Show this help message
 
 Global Options:
