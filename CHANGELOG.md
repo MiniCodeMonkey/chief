@@ -2,6 +2,28 @@
 
 All notable changes to Chief are documented in this file.
 
+## [0.5.0] - 2026-02-19
+
+### Features
+- Add version check and self-update command (`chief update`)
+- Add diff view for viewing task changes
+- Add `e` keybinding to edit current PRD directly
+- Add live progress display during PRD-to-JSON conversion
+- Add first-time setup post-completion config (auto-push, create PR)
+- Add git worktree support for isolated PRD branches
+- Add config system for per-project settings
+- Improve PRD conversion UX with styled progress panel
+
+### Bug Fixes
+- Fix Rosetta 2 deadlock on Apple Silicon caused by oto/v2 audio library (#13)
+- Fix missing `--verbose` flag for stream-json output
+
+### Breaking Changes
+- Remove `--no-sound` flag (sound feature removed entirely)
+
+### Performance
+- Inline prompt for PRD conversion instead of agentic tool use
+
 ## [0.4.0] - 2026-02-06
 
 ### Features
@@ -50,10 +72,10 @@ Initial release.
 - PRD picker with tab bar
 - Help overlay
 - Narrow terminal support
-- Completion sound
 - CLI commands: `chief new`, `chief edit`, `chief status`, `chief list`
 - Homebrew formula and install script
 
+[0.5.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/MiniCodeMonkey/chief/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.2.0...v0.3.0
