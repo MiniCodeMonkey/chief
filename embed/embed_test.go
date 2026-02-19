@@ -40,27 +40,23 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 }
 
 func TestGetConvertPrompt(t *testing.T) {
-	prdDir := "/path/to/.chief/prds/my-feature"
-	prompt := GetConvertPrompt(prdDir)
+	prdContent := "# My Feature\n\nA cool feature PRD."
+	prompt := GetConvertPrompt(prdContent)
 
 	// Verify the prompt is not empty
 	if prompt == "" {
 		t.Error("Expected GetConvertPrompt() to return non-empty prompt")
 	}
 
-	// Verify PRD directory is substituted
-	if !strings.Contains(prompt, prdDir) {
-		t.Errorf("Expected prompt to contain PRD directory %q", prdDir)
+	// Verify PRD content is inlined
+	if !strings.Contains(prompt, prdContent) {
+		t.Error("Expected prompt to contain the inlined PRD content")
 	}
-	if strings.Contains(prompt, "{{PRD_DIR}}") {
-		t.Error("Expected {{PRD_DIR}} to be substituted")
+	if strings.Contains(prompt, "{{PRD_CONTENT}}") {
+		t.Error("Expected {{PRD_CONTENT}} to be substituted")
 	}
 
 	// Verify key instructions are present
-	if !strings.Contains(prompt, "prd.md") {
-		t.Error("Expected prompt to mention prd.md")
-	}
-
 	if !strings.Contains(prompt, "JSON") {
 		t.Error("Expected prompt to mention JSON")
 	}
