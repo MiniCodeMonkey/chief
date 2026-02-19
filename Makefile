@@ -3,6 +3,7 @@
 
 BINARY_NAME := chief
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BIN_DIR := ./bin
 BUILD_DIR := ./build
 MAIN_PKG := ./cmd/chief
 
@@ -15,7 +16,8 @@ all: build
 
 ## build: Build the binary
 build:
-	go build $(LDFLAGS) -o $(BINARY_NAME) $(MAIN_PKG)
+	@mkdir -p $(BIN_DIR)
+	go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) $(MAIN_PKG)
 
 ## install: Install to $GOPATH/bin
 install:
@@ -48,7 +50,7 @@ tidy:
 
 ## clean: Remove build artifacts
 clean:
-	rm -f $(BINARY_NAME)
+	rm -rf $(BIN_DIR)
 	rm -rf $(BUILD_DIR)
 	rm -rf dist/
 
@@ -62,7 +64,7 @@ release:
 
 ## run: Build and run the TUI
 run: build
-	./$(BINARY_NAME)
+	$(BIN_DIR)/$(BINARY_NAME)
 
 ## help: Show this help
 help:
