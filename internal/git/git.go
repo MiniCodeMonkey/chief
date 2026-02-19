@@ -125,6 +125,52 @@ func GetDiffStats(dir string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
+// GetDiffForCommit returns the diff for a single commit.
+func GetDiffForCommit(dir, commitHash string) (string, error) {
+	cmd := exec.Command("git", "diff", commitHash+"~1", commitHash)
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		// If commitHash~1 doesn't exist (first commit), diff against empty tree
+		cmd = exec.Command("git", "diff", "4b825dc642cb6eb9a060e54bf899d69f82049674", commitHash)
+		cmd.Dir = dir
+		output, err = cmd.Output()
+		if err != nil {
+			return "", err
+		}
+	}
+	return string(output), nil
+}
+
+// GetDiffStatsForCommit returns the diffstat for a single commit.
+func GetDiffStatsForCommit(dir, commitHash string) (string, error) {
+	cmd := exec.Command("git", "diff", "--stat", commitHash+"~1", commitHash)
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		cmd = exec.Command("git", "diff", "--stat", "4b825dc642cb6eb9a060e54bf899d69f82049674", commitHash)
+		cmd.Dir = dir
+		output, err = cmd.Output()
+		if err != nil {
+			return "", err
+		}
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// FindCommitForStory searches the git log for a commit matching the given story ID.
+// Returns the commit hash if found, empty string otherwise.
+func FindCommitForStory(dir, storyID string) (string, error) {
+	cmd := exec.Command("git", "log", "--grep="+storyID, "--format=%H", "-1")
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	hash := strings.TrimSpace(string(output))
+	return hash, nil
+}
+
 // getMergeBase returns the merge base commit between two refs.
 func getMergeBase(dir, ref1, ref2 string) (string, error) {
 	cmd := exec.Command("git", "merge-base", ref1, ref2)

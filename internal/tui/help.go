@@ -90,8 +90,8 @@ func (h *HelpOverlay) GetCategories() []ShortcutCategory {
 			Shortcuts: []Shortcut{
 				{Key: "j / ↓", Description: "Scroll down"},
 				{Key: "k / ↑", Description: "Scroll up"},
-				{Key: "Ctrl+D", Description: "Page down"},
-				{Key: "Ctrl+U", Description: "Page up"},
+				{Key: "Ctrl+D / PgDn", Description: "Page down"},
+				{Key: "Ctrl+U / PgUp", Description: "Page up"},
 				{Key: "g", Description: "Go to top"},
 				{Key: "G", Description: "Go to bottom"},
 			},

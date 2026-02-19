@@ -15,6 +15,7 @@ type DiffViewer struct {
 	height     int
 	stats      string
 	baseDir    string
+	storyID    string // Story ID whose commit diff is being shown (empty = full branch diff)
 	err        error
 	loaded     bool
 }
@@ -32,12 +33,49 @@ func (d *DiffViewer) SetSize(width, height int) {
 	d.height = height
 }
 
-// Load fetches the latest git diff.
+// SetBaseDir updates the base directory used for loading diffs.
+func (d *DiffViewer) SetBaseDir(dir string) {
+	d.baseDir = dir
+}
+
+// Load fetches the latest git diff for the full branch.
 func (d *DiffViewer) Load() {
+	d.storyID = ""
+	d.loadDiff("", "")
+}
+
+// LoadForStory fetches the git diff for a specific story's commit.
+func (d *DiffViewer) LoadForStory(storyID string) {
+	d.storyID = storyID
+
+	// Find the commit for this story
+	commitHash, err := git.FindCommitForStory(d.baseDir, storyID)
+	if err != nil || commitHash == "" {
+		d.offset = 0
+		d.loaded = true
+		d.err = nil
+		d.lines = nil
+		d.stats = ""
+		return
+	}
+
+	d.loadDiff(storyID, commitHash)
+}
+
+// loadDiff loads a diff, either for a specific commit or the full branch.
+func (d *DiffViewer) loadDiff(storyID, commitHash string) {
 	d.offset = 0
 	d.loaded = true
 
-	diff, err := git.GetDiff(d.baseDir)
+	var diff string
+	var err error
+
+	if commitHash != "" {
+		diff, err = git.GetDiffForCommit(d.baseDir, commitHash)
+	} else {
+		diff, err = git.GetDiff(d.baseDir)
+	}
+
 	if err != nil {
 		d.err = err
 		d.lines = nil
@@ -55,9 +93,16 @@ func (d *DiffViewer) Load() {
 
 	d.lines = strings.Split(diff, "\n")
 
-	stats, err := git.GetDiffStats(d.baseDir)
-	if err == nil {
-		d.stats = stats
+	if commitHash != "" {
+		stats, err := git.GetDiffStatsForCommit(d.baseDir, commitHash)
+		if err == nil {
+			d.stats = stats
+		}
+	} else {
+		stats, err := git.GetDiffStats(d.baseDir)
+		if err == nil {
+			d.stats = stats
+		}
 	}
 }
 
@@ -121,6 +166,9 @@ func (d *DiffViewer) Render() string {
 	}
 
 	if len(d.lines) == 0 {
+		if d.storyID != "" {
+			return lipgloss.NewStyle().Foreground(MutedColor).Render("No commit found for " + d.storyID)
+		}
 		return lipgloss.NewStyle().Foreground(MutedColor).Render("No changes detected")
 	}
 

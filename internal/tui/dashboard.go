@@ -736,11 +736,15 @@ func (a *App) renderDiffHeader() string {
 	// Branding
 	brand := headerStyle.Render("chief")
 
-	// View indicator
+	// View indicator - show story ID if viewing a story-specific diff
+	viewLabel := "[Diff View]"
+	if a.diffViewer.storyID != "" {
+		viewLabel = fmt.Sprintf("[Diff: %s]", a.diffViewer.storyID)
+	}
 	viewIndicator := lipgloss.NewStyle().
 		Foreground(PrimaryColor).
 		Bold(true).
-		Render("[Diff View]")
+		Render(viewLabel)
 
 	// State indicator
 	stateStyle := GetStateStyle(a.state)
@@ -787,10 +791,14 @@ func (a *App) renderDiffHeader() string {
 func (a *App) renderNarrowDiffHeader() string {
 	brand := headerStyle.Render("chief")
 
+	viewLabel := "[Diff]"
+	if a.diffViewer.storyID != "" {
+		viewLabel = fmt.Sprintf("[%s]", a.diffViewer.storyID)
+	}
 	viewIndicator := lipgloss.NewStyle().
 		Foreground(PrimaryColor).
 		Bold(true).
-		Render("[Diff]")
+		Render(viewLabel)
 
 	stateStyle := GetStateStyle(a.state)
 	state := stateStyle.Render(fmt.Sprintf("[%s]", a.state.String()))

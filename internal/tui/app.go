@@ -521,8 +521,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Diff view
 		case "d":
 			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
+				// Use the current PRD's worktree directory if available, otherwise base dir
+				diffDir := a.baseDir
+				if instance := a.manager.GetInstance(a.prdName); instance != nil && instance.WorktreeDir != "" {
+					diffDir = instance.WorktreeDir
+				}
+				a.diffViewer.SetBaseDir(diffDir)
 				a.diffViewer.SetSize(a.width-4, a.height-headerHeight-footerHeight-2)
-				a.diffViewer.Load()
+				// Load diff for the selected story's commit
+				if story := a.GetSelectedStory(); story != nil {
+					a.diffViewer.LoadForStory(story.ID)
+				} else {
+					a.diffViewer.Load()
+				}
 				a.viewMode = ViewDiff
 			} else if a.viewMode == ViewDiff {
 				a.viewMode = ViewDashboard
@@ -606,13 +617,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		// Log/diff scrolling
-		case "ctrl+d":
+		case "ctrl+d", "pgdown":
 			if a.viewMode == ViewLog {
 				a.logViewer.PageDown()
 			} else if a.viewMode == ViewDiff {
 				a.diffViewer.PageDown()
 			}
-		case "ctrl+u":
+		case "ctrl+u", "pgup":
 			if a.viewMode == ViewLog {
 				a.logViewer.PageUp()
 			} else if a.viewMode == ViewDiff {
