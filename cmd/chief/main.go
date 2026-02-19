@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,7 +11,6 @@ import (
 	"github.com/minicodemonkey/chief/internal/cmd"
 	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/git"
-	"github.com/minicodemonkey/chief/internal/notify"
 	"github.com/minicodemonkey/chief/internal/prd"
 	"github.com/minicodemonkey/chief/internal/tui"
 )
@@ -24,7 +22,6 @@ var Version = "dev"
 type TUIOptions struct {
 	PRDPath       string
 	MaxIterations int
-	NoSound       bool
 	Verbose       bool
 	Merge         bool
 	Force         bool
@@ -126,7 +123,6 @@ func parseTUIFlags() *TUIOptions {
 	opts := &TUIOptions{
 		PRDPath:       "", // Will be resolved later
 		MaxIterations: 0,  // 0 signals dynamic calculation (remaining stories + 5)
-		NoSound:       false,
 		Verbose:       false,
 		Merge:         false,
 		Force:         false,
@@ -143,8 +139,6 @@ func parseTUIFlags() *TUIOptions {
 		case arg == "--version" || arg == "-v":
 			fmt.Printf("chief version %s\n", Version)
 			return nil
-		case arg == "--no-sound":
-			opts.NoSound = true
 		case arg == "--verbose":
 			opts.Verbose = true
 		case arg == "--merge":
@@ -396,20 +390,6 @@ func runTUIWithOptions(opts *TUIOptions) {
 		app.DisableRetry()
 	}
 
-	// Initialize sound notifier (unless disabled)
-	if !opts.NoSound {
-		notifier, err := notify.GetNotifier()
-		if err != nil {
-			// Log warning but don't crash - audio is optional
-			log.Printf("Warning: audio initialization failed: %v", err)
-		} else {
-			// Set completion callback to play sound when any PRD completes
-			app.SetCompletionCallback(func(prdName string) {
-				notifier.PlayCompletion()
-			})
-		}
-	}
-
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	model, err := p.Run()
 	if err != nil {
@@ -468,7 +448,6 @@ Commands:
 
 Global Options:
   --max-iterations N, -n N  Set maximum iterations (default: dynamic)
-  --no-sound                Disable completion sound notifications
   --no-retry                Disable auto-retry on Claude crashes
   --verbose                 Show raw Claude output in log
   --merge                   Auto-merge progress on conversion conflicts
@@ -491,7 +470,6 @@ Examples:
   chief -n 20               Launch with 20 max iterations
   chief --max-iterations=5 auth
                             Launch auth PRD with 5 max iterations
-  chief --no-sound          Launch TUI without audio notifications
   chief --verbose           Launch with raw Claude output visible
   chief new                 Create PRD in .chief/prds/main/
   chief new auth            Create PRD in .chief/prds/auth/

@@ -6,21 +6,11 @@
 #   - linux/amd64, linux/arm64
 #   - windows/amd64
 #
-# Build Requirements:
-#   - macOS: Uses purego (CGO required for cross-arch compatibility)
-#   - Windows: No CGO needed (uses syscalls)
-#   - Linux: Requires CGO for ALSA audio (oto/v2 dependency)
-#
-# Local snapshot (builds all platforms that can be cross-compiled):
+# Local snapshot (builds all platforms):
 #   goreleaser release --snapshot --clean
 #
 # Single target (current platform only):
 #   goreleaser build --snapshot --clean --single-target
-#
-# CI/CD (GitHub Actions) - use matrix with native runners:
-#   - macos-latest for darwin builds
-#   - ubuntu-latest for linux builds (apt install libasound2-dev)
-#   - windows-latest for windows builds
 
 version: 2
 
@@ -29,46 +19,18 @@ before:
     - go mod tidy
 
 builds:
-  # macOS builds (can cross-compile amd64/arm64 on either arch)
-  - id: chief-darwin
-    main: ./cmd/chief
+  - main: ./cmd/chief
     binary: chief
     goos:
       - darwin
-    goarch:
-      - amd64
-      - arm64
-    env:
-      - CGO_ENABLED=1
-    ldflags:
-      - -s -w
-      - -X main.Version={{.Version}}
-
-  # Windows build (no CGO needed, can cross-compile)
-  - id: chief-windows
-    main: ./cmd/chief
-    binary: chief
-    goos:
+      - linux
       - windows
     goarch:
       - amd64
-    env:
-      - CGO_ENABLED=0
-    ldflags:
-      - -s -w
-      - -X main.Version={{.Version}}
-
-  # Linux builds
-  # Note: CGO_ENABLED=0 uses stub audio (no sound on Linux without CGO)
-  # For full audio support, build natively on Linux with CGO_ENABLED=1
-  - id: chief-linux
-    main: ./cmd/chief
-    binary: chief
-    goos:
-      - linux
-    goarch:
-      - amd64
       - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
     env:
       - CGO_ENABLED=0
     ldflags:
