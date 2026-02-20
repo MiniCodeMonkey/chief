@@ -144,6 +144,7 @@ func runClaudeConversion(absPRDDir string) error {
 	cmd := exec.Command("claude",
 		"--dangerously-skip-permissions",
 		"--output-format", "stream-json",
+		"--verbose",
 		"-p", prompt,
 	)
 	cmd.Dir = absPRDDir

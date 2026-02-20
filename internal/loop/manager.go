@@ -71,6 +71,7 @@ type Manager struct {
 	events      chan ManagerEvent
 	maxIter     int
 	retryConfig RetryConfig
+	baseDir        string                               // Project root directory (for CLAUDE.md etc.)
 	config         *config.Config                       // Project config for post-completion actions
 	mu             sync.RWMutex
 	wg             sync.WaitGroup
@@ -115,6 +116,13 @@ func (m *Manager) SetPostCompleteCallback(fn func(prdName, branch, workDir strin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.onPostComplete = fn
+}
+
+// SetBaseDir sets the project root directory so Claude runs from there and picks up CLAUDE.md.
+func (m *Manager) SetBaseDir(baseDir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.baseDir = baseDir
 }
 
 // SetConfig sets the project config for post-completion actions.
@@ -214,13 +222,17 @@ func (m *Manager) Start(name string) error {
 		return fmt.Errorf("PRD %s is already running", name)
 	}
 
-	// Create a new loop instance, using worktree-aware constructor if WorktreeDir is set
-	if instance.WorktreeDir != "" {
-		prompt := embed.GetPrompt(instance.PRDPath)
-		instance.Loop = NewLoopWithWorkDir(instance.PRDPath, instance.WorktreeDir, prompt, m.maxIter)
-	} else {
-		instance.Loop = NewLoopWithEmbeddedPrompt(instance.PRDPath, m.maxIter)
+	// Create a new loop instance, using worktree-aware constructor if WorktreeDir is set.
+	// When no worktree is configured, run from the project root (baseDir) so that
+	// CLAUDE.md and other project-level files are visible to Claude.
+	prompt := embed.GetPrompt(instance.PRDPath)
+	workDir := instance.WorktreeDir
+	if workDir == "" {
+		m.mu.RLock()
+		workDir = m.baseDir
+		m.mu.RUnlock()
 	}
+	instance.Loop = NewLoopWithWorkDir(instance.PRDPath, workDir, prompt, m.maxIter)
 	m.mu.RLock()
 	instance.Loop.SetRetryConfig(m.retryConfig)
 	m.mu.RUnlock()
