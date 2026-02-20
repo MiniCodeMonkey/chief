@@ -21,6 +21,11 @@ type PRDUpdateMsg struct {
 	Error error
 }
 
+// ProgressUpdateMsg is sent when progress.md changes.
+type ProgressUpdateMsg struct {
+	Entries map[string][]prd.ProgressEntry
+}
+
 // AppState represents the current state of the application.
 type AppState int
 
@@ -96,6 +101,9 @@ type autoActionResultMsg struct {
 // completionSpinnerTickMsg is sent to animate the completion screen spinner.
 type completionSpinnerTickMsg struct{}
 
+// confettiTickMsg is sent to animate confetti particles on the completion screen.
+type confettiTickMsg struct{}
+
 // worktreeStepResultMsg is sent when a worktree setup step completes.
 type worktreeStepResultMsg struct {
 	step WorktreeSpinnerStep
@@ -161,7 +169,9 @@ type App struct {
 	lastActivity string
 
 	// File watching
-	watcher *prd.Watcher
+	watcher         *prd.Watcher
+	progressWatcher *prd.ProgressWatcher
+	progress        map[string][]prd.ProgressEntry
 
 	// View mode
 	viewMode  ViewMode
@@ -194,6 +204,11 @@ type App struct {
 
 	// Completion screen
 	completionScreen *CompletionScreen
+
+	// Story timing tracking
+	storyTimings     []StoryTiming
+	currentStoryID   string
+	currentStoryStart time.Time
 
 	// Settings overlay
 	settingsOverlay *SettingsOverlay
@@ -277,6 +292,10 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		_ = git.PruneWorktrees(baseDir)
 	}
 
+	// Create progress watcher and load initial progress
+	progressWatcher, _ := prd.NewProgressWatcher(prdPath)
+	progress, _ := prd.ParseProgress(prd.ProgressPath(prdPath))
+
 	// Create loop manager for parallel PRD execution
 	manager := loop.NewManager(maxIter)
 	manager.SetConfig(cfg)
@@ -299,8 +318,10 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		selectedIndex: 0,
 		maxIter:       maxIter,
 		manager:       manager,
-		watcher:       watcher,
-		viewMode:      ViewDashboard,
+		watcher:         watcher,
+		progressWatcher: progressWatcher,
+		progress:        progress,
+		viewMode:        ViewDashboard,
 		logViewer:     NewLogViewer(),
 		diffViewer:    NewDiffViewer(baseDir),
 		tabBar:        tabBar,
@@ -345,10 +366,16 @@ func (a App) Init() tea.Cmd {
 		}
 	}
 
+	// Start the progress watcher
+	if a.progressWatcher != nil {
+		_ = a.progressWatcher.Start()
+	}
+
 	return tea.Batch(
 		tea.EnterAltScreen,
 		a.listenForPRDChanges(),
 		a.listenForManagerEvents(),
+		a.listenForProgressChanges(),
 	)
 }
 
@@ -414,6 +441,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case confettiTickMsg:
+		if a.viewMode == ViewCompletion && a.completionScreen.HasConfetti() {
+			a.completionScreen.TickConfetti()
+			return a, tickConfetti()
+		}
+		return a, nil
+
 	case worktreeStepResultMsg:
 		return a.handleWorktreeStepResult(msg)
 
@@ -432,6 +466,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case settingsGHCheckResultMsg:
 		return a.handleSettingsGHCheck(msg)
+
+	case ProgressUpdateMsg:
+		a.progress = msg.Entries
+		return a, a.listenForProgressChanges()
 
 	case PRDUpdateMsg:
 		return a.handlePRDUpdate(msg)
@@ -745,6 +783,10 @@ func (a App) doStartLoop(prdName, prdDir string) (tea.Model, tea.Cmd) {
 		a.state = StateRunning
 		a.startTime = time.Now()
 		a.lastActivity = "Starting loop..."
+		// Reset story timing state
+		a.storyTimings = nil
+		a.currentStoryID = ""
+		a.currentStoryStart = time.Time{}
 		return a, tickElapsed()
 	}
 
@@ -844,11 +886,18 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 	case loop.EventStoryStarted:
 		if isCurrentPRD {
 			a.lastActivity = "Working on: " + event.StoryID
+			// Finalize previous story timing
+			a.finalizeStoryTiming()
+			// Start tracking the new story
+			a.currentStoryID = event.StoryID
+			a.currentStoryStart = time.Now()
 		}
 	case loop.EventComplete:
 		if isCurrentPRD {
 			a.state = StateComplete
 			a.lastActivity = "All stories complete!"
+			// Finalize the last story's timing
+			a.finalizeStoryTiming()
 			autoActionCmd = a.showCompletionScreen(prdName)
 		} else {
 			// For background PRDs, trigger auto-push/PR without showing completion screen
@@ -1116,6 +1165,29 @@ func (a *App) cleanupWorktreeSetup() {
 	}
 }
 
+// finalizeStoryTiming records the duration of the currently tracked story.
+func (a *App) finalizeStoryTiming() {
+	if a.currentStoryID == "" {
+		return
+	}
+	duration := time.Since(a.currentStoryStart)
+	title := a.currentStoryID
+	// Look up the story title from the PRD
+	for _, story := range a.prd.UserStories {
+		if story.ID == a.currentStoryID {
+			title = story.Title
+			break
+		}
+	}
+	a.storyTimings = append(a.storyTimings, StoryTiming{
+		StoryID:  a.currentStoryID,
+		Title:    title,
+		Duration: duration,
+	})
+	a.currentStoryID = ""
+	a.currentStoryStart = time.Time{}
+}
+
 // showCompletionScreen configures and shows the completion screen for a PRD.
 // Returns a tea.Cmd if auto-actions need to be started, nil otherwise.
 func (a *App) showCompletionScreen(prdName string) tea.Cmd {
@@ -1143,22 +1215,23 @@ func (a *App) showCompletionScreen(prdName string) tea.Cmd {
 	// Check if auto-actions are configured
 	hasAutoActions := a.config != nil && (a.config.OnComplete.Push || a.config.OnComplete.CreatePR)
 
-	a.completionScreen.Configure(prdName, completed, total, branch, commitCount, hasAutoActions)
+	totalDuration := a.GetElapsedTime()
+	a.completionScreen.Configure(prdName, completed, total, branch, commitCount, hasAutoActions, totalDuration, a.storyTimings)
 	a.completionScreen.SetSize(a.width, a.height)
 	a.viewMode = ViewCompletion
+
+	// Always start confetti tick
+	cmds := []tea.Cmd{tickConfetti()}
 
 	// Trigger auto-push if configured and branch is set
 	if a.config != nil && a.config.OnComplete.Push && branch != "" {
 		a.completionScreen.SetPushInProgress()
-		return tea.Batch(
-			tickCompletionSpinner(),
-			a.runAutoPush(),
-		)
+		cmds = append(cmds, tickCompletionSpinner(), a.runAutoPush())
 	}
 
 	// If only PR is configured (no push), we can't create a PR without pushing first
 	// So PR-only without push is a no-op (push is required for PR)
-	return nil
+	return tea.Batch(cmds...)
 }
 
 // backgroundAutoActionResultMsg is sent when a background PRD auto-action completes.
@@ -1465,6 +1538,13 @@ func (a App) handleCompletionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func tickCompletionSpinner() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 		return completionSpinnerTickMsg{}
+	})
+}
+
+// tickConfetti returns a tea.Cmd that ticks the confetti animation.
+func tickConfetti() tea.Cmd {
+	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg {
+		return confettiTickMsg{}
 	})
 }
 
@@ -1880,6 +1960,14 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Create new progress watcher and load initial progress
+	newProgressWatcher, err := prd.NewProgressWatcher(prdPath)
+	if err == nil {
+		a.progressWatcher = newProgressWatcher
+		_ = a.progressWatcher.Start()
+	}
+	a.progress, _ = prd.ParseProgress(prd.ProgressPath(prdPath))
+
 	// Get the state from the manager for this PRD
 	loopState, iteration, loopErr := a.manager.GetState(name)
 	appState := StateReady
@@ -1932,11 +2020,14 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	a.tabBar.SetActiveByName(name)
 	a.tabBar.Refresh()
 
-	// Clear log viewer (each PRD has its own log)
+	// Clear log viewer and story timing (each PRD has its own log/timing)
 	a.logViewer.Clear()
+	a.storyTimings = nil
+	a.currentStoryID = ""
+	a.currentStoryStart = time.Time{}
 
-	// Return with new watcher listener (and elapsed tick if running)
-	cmds := []tea.Cmd{a.listenForPRDChanges()}
+	// Return with new watcher listeners (and elapsed tick if running)
+	cmds := []tea.Cmd{a.listenForPRDChanges(), a.listenForProgressChanges()}
 	if appState == StateRunning {
 		cmds = append(cmds, tickElapsed())
 	}
@@ -2069,6 +2160,20 @@ func (a *App) adjustMaxIterations(delta int) {
 	a.lastActivity = fmt.Sprintf("Max iterations: %d", newMax)
 }
 
+// listenForProgressChanges listens for progress.md file changes and returns them as messages.
+func (a *App) listenForProgressChanges() tea.Cmd {
+	if a.progressWatcher == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		entries, ok := <-a.progressWatcher.Events()
+		if !ok {
+			return nil
+		}
+		return ProgressUpdateMsg{Entries: entries}
+	}
+}
+
 // listenForPRDChanges listens for PRD file changes and returns them as messages.
 func (a *App) listenForPRDChanges() tea.Cmd {
 	if a.watcher == nil {
@@ -2108,9 +2213,12 @@ func (a App) handlePRDUpdate(msg PRDUpdateMsg) (tea.Model, tea.Cmd) {
 	return a, a.listenForPRDChanges()
 }
 
-// stopWatcher stops the file watcher.
+// stopWatcher stops the file watchers.
 func (a *App) stopWatcher() {
 	if a.watcher != nil {
 		a.watcher.Stop()
+	}
+	if a.progressWatcher != nil {
+		a.progressWatcher.Stop()
 	}
 }
