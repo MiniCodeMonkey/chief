@@ -83,11 +83,13 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--max-iterations <n>`, `-n` | Loop iteration limit | `10` |
-| `--no-sound` | Disable completion sound | `false` |
+| `--max-iterations <n>`, `-n` | Loop iteration limit | Dynamic |
+| `--no-retry` | Disable auto-retry on Claude crashes | `false` |
 | `--verbose` | Show raw Claude output in log | `false` |
 | `--merge` | Auto-merge progress on conversion conflicts | `false` |
 | `--force` | Auto-overwrite on conversion conflicts | `false` |
+
+When `--max-iterations` is not specified, Chief calculates a dynamic limit based on the number of remaining stories plus a buffer. You can also adjust the limit at runtime with `+`/`-` in the TUI.
 
 ## Claude Code Configuration
 

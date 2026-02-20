@@ -91,23 +91,30 @@ Press `s` to start the Ralph Loop. Chief will offer to create a worktree for iso
 
 The TUI shows:
 
-- **Tab Bar** - All your PRDs with status indicators
-- **Stories List** - User stories with completion status
-- **Story Details** - Current story's description and acceptance criteria
-- **Live Activity** - Real-time status updates from Claude
+- **Tab Bar** — All your PRDs with status indicators
+- **Stories List** — User stories with completion status
+- **Story Details** — Current story's description and acceptance criteria
+- **Live Activity** — Real-time status updates from Claude
+- **Diff View** — Press `d` to see the commit diff for the selected story
 
 ### Keyboard Controls
 
 | Key | Action |
 |-----|--------|
-| `s` | **Start** the loop (when Ready, Paused, or Stopped) |
+| `s` | **Start** the loop (when Ready, Paused, Stopped, or Error) |
 | `p` | **Pause** the loop (finishes current iteration) |
 | `x` | **Stop** the loop immediately |
 | `t` | **Toggle** between Dashboard and Log views |
-| `n` | Open **PRD picker** to switch or create PRDs |
+| `d` | **Diff view** — show the selected story's commit diff |
+| `n` | Open **PRD picker** to create or switch PRDs |
+| `l` | Open **PRD picker** in selection mode |
+| `e` | **Edit** current PRD via Claude Code |
 | `1-9` | **Quick switch** to PRD tabs 1-9 |
-| `j/↓` | Navigate down (stories or scroll log) |
-| `k/↑` | Navigate up (stories or scroll log) |
+| `j/↓` | Navigate down (stories or scroll log/diff) |
+| `k/↑` | Navigate up (stories or scroll log/diff) |
+| `PgDn` / `Ctrl+D` | Page down (log/diff) |
+| `PgUp` / `Ctrl+U` | Page up (log/diff) |
+| `+`/`-` | Adjust max iterations |
 | `m` | **Merge** completed branch (in picker) |
 | `c` | **Clean** worktree (in picker) |
 | `,` | Open **Settings** |
@@ -115,7 +122,7 @@ The TUI shows:
 | `q` | **Quit** Chief |
 
 ::: info Hands-off operation
-Once started with `s`, Chief runs autonomously. You can watch the progress or walk away—it will complete your PRD and play a sound when done.
+Once started with `s`, Chief runs autonomously. You can watch the progress or walk away—it will complete your PRD while you're gone.
 :::
 
 ## What's Next?

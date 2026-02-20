@@ -105,7 +105,7 @@ Array of strings, each describing a requirement. Claude uses these to know when 
 
 ### priority
 
-Lower numbers = higher priority. Chief always picks the lowest-priority incomplete story.
+Lower numbers = higher priority. Chief always picks the incomplete story with the lowest priority number first.
 
 **Range:** Positive integers, typically 1-100
 

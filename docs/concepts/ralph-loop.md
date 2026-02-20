@@ -193,7 +193,7 @@ The next iteration starts fresh. Claude reads the updated PRD, sees the complete
 
 ## Iteration Limits
 
-Chief has a safety limit on iterations (default: 100). This prevents runaway loops if something goes wrong.
+Chief has a safety limit on iterations to prevent runaway loops. When `--max-iterations` is not specified, the limit is calculated dynamically based on the number of remaining stories plus a buffer. You can also adjust the limit at runtime with `+`/`-` in the TUI.
 
 | Scenario | What Happens |
 |----------|--------------|

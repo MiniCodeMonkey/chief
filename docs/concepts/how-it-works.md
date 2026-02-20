@@ -116,7 +116,9 @@ The TUI shows branch and directory information throughout:
 Autonomous doesn't mean unattended. The TUI lets you:
 
 - **Start / Pause / Stop**: Press `s` to start, `p` to pause after the current story, `x` to stop immediately
-- **Switch projects**: Press `n` to cycle through projects, or `1-9` to jump directly
+- **Review diffs**: Press `d` to see the commit diff for the selected story
+- **Edit the PRD**: Press `e` to open the current PRD in Claude Code for refinement
+- **Switch projects**: Press `l` to list PRDs, `n` to create a new one, or `1-9` to jump directly
 - **Resume anytime**: Walk away, come back, press `s`. Chief picks up where you left off
 - **Merge branches**: Press `m` in the picker to merge a completed branch
 - **Clean worktrees**: Press `c` in the picker to remove a worktree and optionally delete the branch

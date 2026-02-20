@@ -61,11 +61,21 @@ This method:
 - Installs to `/opt/homebrew/bin/chief` (Apple Silicon) or `/usr/local/bin/chief` (Intel/Linux)
 - Works on macOS (Apple Silicon and Intel) and Linux (x64 and ARM64)
 
-### Updating with Homebrew
+### Updating
+
+The easiest way to update is Chief's built-in update command, which works regardless of how you installed:
+
+```bash
+chief update
+```
+
+If you installed via Homebrew, you can also use:
 
 ```bash
 brew update && brew upgrade chief
 ```
+
+Chief automatically checks for updates on startup and notifies you when a new version is available.
 
 ## Install Script
 
@@ -197,10 +207,10 @@ git clone https://github.com/minicodemonkey/chief.git
 cd chief
 
 # Build the binary
-go build -o chief
+go build -o chief ./cmd/chief
 
 # Optionally install to your GOPATH/bin
-go install
+go install ./cmd/chief
 ```
 
 ### Build with Version Info
@@ -208,7 +218,7 @@ go install
 For a release-quality build with version information embedded:
 
 ```bash
-go build -ldflags "-X main.version=$(git describe --tags --always)" -o chief
+go build -ldflags "-X main.version=$(git describe --tags --always)" -o chief ./cmd/chief
 ```
 
 ### Verify the Build
@@ -236,10 +246,10 @@ Expected output:
 
 ```
 $ chief --version
-chief version v0.1.0
+chief version vX.Y.Z
 
 $ claude --version
-Claude Code CLI v1.0.0
+Claude Code vX.Y.Z
 ```
 
 ::: warning Troubleshooting

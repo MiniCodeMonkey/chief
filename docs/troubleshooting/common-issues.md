@@ -1,5 +1,5 @@
 ---
-description: Troubleshoot common Chief issues including Claude not found, permission errors, audio problems, and loop failures.
+description: Troubleshoot common Chief issues including Claude not found, permission errors, worktree problems, and loop failures.
 ---
 
 # Common Issues
@@ -33,22 +33,6 @@ claude --version
 **Solution:**
 
 Chief automatically runs Claude with permission prompts disabled for autonomous operation. If you're still seeing permission issues, ensure you're running Chief (not Claude directly) and that your Claude Code installation is up to date.
-
-## No Sound on Completion
-
-**Symptom:** Chief completes but no sound plays.
-
-**Cause:** Audio system configuration or muted output.
-
-**Solution:**
-
-1. Check system volume isn't muted
-2. Verify audio device is selected correctly
-3. Run with `--no-sound` if audio isn't needed:
-
-```bash
-chief --no-sound
-```
 
 ## PRD Not Updating
 
@@ -102,7 +86,7 @@ chief --no-sound
 
 **Symptom:** Chief stops with "max iterations reached" message.
 
-**Cause:** Claude hasn't completed after the iteration limit (default 10).
+**Cause:** Claude hasn't completed after the iteration limit.
 
 **Solution:**
 

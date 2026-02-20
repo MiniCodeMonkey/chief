@@ -21,6 +21,7 @@ chief [command] [flags]
 | `edit` | Open the PRD for editing |
 | `status` | Show current PRD progress |
 | `list` | List all PRDs in the project |
+| `update` | Update Chief to the latest version |
 
 ## Commands
 
@@ -42,8 +43,8 @@ chief [name]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--max-iterations <n>`, `-n` | Maximum loop iterations | `10` |
-| `--no-sound` | Disable completion sound | `false` |
+| `--max-iterations <n>`, `-n` | Maximum loop iterations | Dynamic |
+| `--no-retry` | Disable auto-retry on Claude crashes | `false` |
 | `--verbose` | Show raw Claude output in log | `false` |
 
 **Examples:**
@@ -59,8 +60,12 @@ chief auth-system
 chief --max-iterations 200
 
 # Combine flags
-chief auth-system -n 50 --no-sound
+chief auth-system -n 50 --verbose
 ```
+
+::: info Dynamic iteration limit
+When `--max-iterations` is not specified, Chief calculates a dynamic limit based on the number of remaining stories plus a buffer. You can adjust the limit at runtime with `+`/`-` in the TUI.
+:::
 
 ::: tip
 If your project has only one PRD, Chief auto-detects it. Pass a name when you have multiple PRDs.
@@ -73,8 +78,15 @@ If your project has only one PRD, Chief auto-detects it. Pass a name when you ha
 Create a new PRD in the current project. This command launches Claude Code with a preloaded prompt to help you define your project requirements interactively.
 
 ```bash
-chief new
+chief new [name] [context]
 ```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `name` | PRD name (optional, defaults to `main`). Must contain only letters, numbers, hyphens, and underscores. |
+| `context` | Additional context to pass to Claude (optional). Included in the PRD creation prompt. |
 
 **How it works:**
 
@@ -97,8 +109,14 @@ chief new
 **Examples:**
 
 ```bash
-# Create a new PRD
+# Create a new PRD (defaults to name "main")
 chief new
+
+# Create a named PRD
+chief new auth-system
+
+# Create a PRD with additional context
+chief new auth-system "We use Express.js with JWT tokens"
 
 # Claude Code opens - describe what you want to build
 # Type /exit when done - Chief generates the PRD files
@@ -204,6 +222,37 @@ chief list
 
 ---
 
+### chief update
+
+Update Chief to the latest version. Downloads and installs the newest release from GitHub.
+
+```bash
+chief update
+```
+
+Chief checks the GitHub releases API, compares your current version to the latest, and downloads the appropriate binary for your platform if an update is available.
+
+**Examples:**
+
+```bash
+# Update to latest version
+chief update
+
+# Example output:
+#   Checking for updates...
+#   Downloading v0.5.2 (you have v0.4.0)...
+#   Updated to v0.5.2.
+```
+
+::: tip Automatic update check
+Chief performs a non-blocking version check every time you launch the TUI. If a newer version is available, you'll see a message like:
+```
+Chief v0.5.2 available (you have v0.5.1). Run 'chief update' to upgrade.
+```
+:::
+
+---
+
 ## Keyboard Shortcuts (TUI)
 
 When Chief is running, the TUI provides real-time feedback and interactive controls:
@@ -221,14 +270,16 @@ When Chief is running, the TUI provides real-time feedback and interactive contr
 | Key | Action |
 |-----|--------|
 | `t` | **Toggle** between Dashboard and Log views |
+| `d` | **Toggle** Diff view (shows the selected story's commit diff) |
 
 ### PRD Management
 
 | Key | Action |
 |-----|--------|
-| `n` | Open **PRD picker** (switch PRDs or create new) |
+| `n` | Open **PRD picker** in create mode (switch PRDs or create new) |
+| `l` | Open **PRD picker** in selection mode (switch between existing PRDs) |
 | `1-9` | **Quick switch** to PRD tabs 1-9 |
-| `e` | **Edit** selected PRD (in picker) |
+| `e` | **Edit** current PRD via Claude Code (from any main view) |
 | `m` | **Merge** completed PRD's branch into main (in picker or completion screen) |
 | `c` | **Clean** worktree and optionally delete branch (in picker or completion screen) |
 
@@ -242,12 +293,14 @@ When Chief is running, the TUI provides real-time feedback and interactive contr
 
 | Key | Action |
 |-----|--------|
-| `j` / `↓` | Move down (stories in Dashboard, scroll in Log) |
-| `k` / `↑` | Move up (stories in Dashboard, scroll in Log) |
-| `Ctrl+D` | Page down (Log view) |
-| `Ctrl+U` | Page up (Log view) |
-| `g` | Jump to top (Log view) |
-| `G` | Jump to bottom (Log view) |
+| `j` / `↓` | Move down (stories in Dashboard, scroll in Log/Diff) |
+| `k` / `↑` | Move up (stories in Dashboard, scroll in Log/Diff) |
+| `Ctrl+D` / `PgDn` | Page down (Log/Diff view) |
+| `Ctrl+U` / `PgUp` | Page up (Log/Diff view) |
+| `g` | Jump to top (Log/Diff view) |
+| `G` | Jump to bottom (Log/Diff view) |
+| `+` / `=` | Increase max iterations by 5 |
+| `-` / `_` | Decrease max iterations by 5 |
 
 ### General
 
@@ -259,7 +312,7 @@ When Chief is running, the TUI provides real-time feedback and interactive contr
 | `Ctrl+C` | Force quit |
 
 ::: tip
-The TUI has two main views: **Dashboard** showing stories and progress, and **Log** view streaming Claude's output in real time. Press `t` to toggle between them.
+The TUI has three views: **Dashboard** showing stories and progress, **Log** streaming Claude's output in real time, and **Diff** showing the commit diff for the selected story. Press `t` to toggle Dashboard/Log, or `d` to open the Diff view.
 :::
 
 ## Exit Codes
