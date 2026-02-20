@@ -1880,6 +1880,20 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 		appState = StateError
 	}
 
+	// Only recalculate max iterations if no loop is currently running for this PRD
+	if instance := a.manager.GetInstance(name); instance == nil || instance.State != loop.LoopStateRunning {
+		remaining := 0
+		for _, story := range newPRD.UserStories {
+			if !story.Passes {
+				remaining++
+			}
+		}
+		a.maxIter = remaining + 5
+		if a.maxIter < 5 {
+			a.maxIter = 5
+		}
+	}
+
 	// Update app state
 	a.prd = newPRD
 	a.prdPath = prdPath
