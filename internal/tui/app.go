@@ -876,6 +876,17 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 				a.prd = p
 			}
 		}
+
+		// Mark the story as in-progress in the PRD and auto-select it
+		if event.Type == loop.EventStoryStarted && event.StoryID != "" {
+			a.markStoryInProgress(event.StoryID)
+			a.selectStoryByID(event.StoryID)
+		}
+
+		// Clear in-progress when the PRD completes or the loop stops
+		if event.Type == loop.EventComplete || event.Type == loop.EventError || event.Type == loop.EventMaxIterationsReached {
+			a.clearInProgress()
+		}
 	}
 
 	// Refresh tab bar to show updated state
@@ -1926,6 +1937,49 @@ func (a *App) GetSelectedStory() *prd.UserStory {
 	return nil
 }
 
+// markStoryInProgress clears any existing in-progress flags and marks the
+// given story as in-progress, then saves the PRD to disk.
+func (a *App) markStoryInProgress(storyID string) {
+	for i := range a.prd.UserStories {
+		a.prd.UserStories[i].InProgress = a.prd.UserStories[i].ID == storyID
+	}
+	_ = a.prd.Save(a.prdPath)
+}
+
+// clearInProgress clears all in-progress flags and saves the PRD to disk.
+func (a *App) clearInProgress() {
+	dirty := false
+	for i := range a.prd.UserStories {
+		if a.prd.UserStories[i].InProgress {
+			a.prd.UserStories[i].InProgress = false
+			dirty = true
+		}
+	}
+	if dirty {
+		_ = a.prd.Save(a.prdPath)
+	}
+}
+
+// selectStoryByID sets the selected index to the story with the given ID.
+func (a *App) selectStoryByID(storyID string) {
+	for i, story := range a.prd.UserStories {
+		if story.ID == storyID {
+			a.selectedIndex = i
+			return
+		}
+	}
+}
+
+// selectInProgressStory sets the selected index to the first in-progress story.
+func (a *App) selectInProgressStory() {
+	for i, story := range a.prd.UserStories {
+		if story.InProgress {
+			a.selectedIndex = i
+			return
+		}
+	}
+}
+
 // GetState returns the current app state.
 func (a *App) GetState() AppState {
 	return a.state
@@ -2011,6 +2065,9 @@ func (a App) handlePRDUpdate(msg PRDUpdateMsg) (tea.Model, tea.Cmd) {
 				a.selectedIndex = 0
 			}
 		}
+
+		// Auto-select the in-progress story so the user sees its details
+		a.selectInProgressStory()
 	}
 
 	// Continue listening for changes
