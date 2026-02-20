@@ -22,6 +22,9 @@ type LogEntry struct {
 	ToolInput map[string]interface{}
 	StoryID   string
 	FilePath  string // For Read tool results, stores the file path for syntax highlighting
+
+	highlightedCode string   // Pre-computed syntax highlighted code (computed once on add)
+	cachedLines     []string // Pre-rendered output lines (invalidated on width change)
 }
 
 // LogViewer manages the log viewport state.
@@ -32,6 +35,7 @@ type LogViewer struct {
 	width            int    // Viewport width
 	autoScroll       bool   // Auto-scroll to bottom when new content arrives
 	lastReadFilePath string // Track the last Read tool's file path for syntax highlighting
+	totalLineCount   int    // Running total of all rendered lines (O(1) lookup)
 }
 
 // NewLogViewer creates a new log viewer.
@@ -60,16 +64,24 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 		}
 	}
 
-	// For tool results, attach the file path from the preceding Read tool
+	// For tool results, attach the file path and pre-compute syntax highlighting
 	if event.Type == loop.EventToolResult && l.lastReadFilePath != "" {
 		entry.FilePath = l.lastReadFilePath
 		l.lastReadFilePath = "" // Clear after consuming
+		if entry.Text != "" {
+			entry.highlightedCode = l.highlightCode(entry.Text, entry.FilePath)
+		}
 	}
 
 	// Filter out events we don't want to display
 	switch event.Type {
 	case loop.EventAssistantText, loop.EventToolStart, loop.EventToolResult,
 		loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventRetrying:
+		// Pre-render and cache lines
+		if l.width > 0 {
+			entry.cachedLines = l.renderEntry(entry)
+			l.totalLineCount += len(entry.cachedLines)
+		}
 		l.entries = append(l.entries, entry)
 	default:
 		// Skip iteration start, unknown events, etc.
@@ -82,10 +94,26 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 	}
 }
 
-// SetSize sets the viewport dimensions.
+// SetSize sets the viewport dimensions. Rebuilds the line cache if width changed.
 func (l *LogViewer) SetSize(width, height int) {
+	widthChanged := l.width != width
 	l.width = width
 	l.height = height
+
+	if widthChanged && width > 0 {
+		l.rebuildCache()
+	}
+}
+
+// rebuildCache re-renders all entries using the current width.
+// This is called when the terminal is resized. Syntax highlighting is NOT
+// recomputed since it's width-independent and stored in highlightedCode.
+func (l *LogViewer) rebuildCache() {
+	l.totalLineCount = 0
+	for i := range l.entries {
+		l.entries[i].cachedLines = l.renderEntry(l.entries[i])
+		l.totalLineCount += len(l.entries[i].cachedLines)
+	}
 }
 
 // ScrollUp scrolls up by one line.
@@ -144,57 +172,29 @@ func (l *LogViewer) ScrollToTop() {
 	l.autoScroll = false
 }
 
-// ScrollToBottom scrolls to the bottom.
-func (l *LogViewer) scrollToBottom() {
-	l.scrollPos = l.maxScrollPos()
-	l.autoScroll = true
-}
-
 // ScrollToBottom (exported) scrolls to the bottom.
 func (l *LogViewer) ScrollToBottom() {
 	l.scrollToBottom()
 }
 
+// scrollToBottom scrolls to the bottom.
+func (l *LogViewer) scrollToBottom() {
+	l.scrollPos = l.maxScrollPos()
+	l.autoScroll = true
+}
+
 // maxScrollPos returns the maximum scroll position.
 func (l *LogViewer) maxScrollPos() int {
-	totalLines := l.totalLines()
-	maxPos := totalLines - l.height
+	maxPos := l.totalLineCount - l.height
 	if maxPos < 0 {
 		return 0
 	}
 	return maxPos
 }
 
-// totalLines calculates the total number of rendered lines.
+// totalLines returns the total number of rendered lines (O(1)).
 func (l *LogViewer) totalLines() int {
-	if l.width <= 0 {
-		return len(l.entries)
-	}
-
-	total := 0
-	for _, entry := range l.entries {
-		total += l.entryHeight(entry)
-	}
-	return total
-}
-
-// entryHeight calculates how many lines an entry takes.
-func (l *LogViewer) entryHeight(entry LogEntry) int {
-	switch entry.Type {
-	case loop.EventToolStart:
-		// Tool display is now a single line
-		return 1
-	case loop.EventToolResult:
-		// Tool result is typically compact
-		return 1
-	default:
-		// Text entries: count wrapped lines
-		if entry.Text == "" {
-			return 1
-		}
-		wrapped := wrapText(entry.Text, l.width-4)
-		return strings.Count(wrapped, "\n") + 1
-	}
+	return l.totalLineCount
 }
 
 // getToolIcon returns an emoji icon for a tool name.
@@ -276,9 +276,10 @@ func (l *LogViewer) Clear() {
 	l.entries = make([]LogEntry, 0)
 	l.scrollPos = 0
 	l.autoScroll = true
+	l.totalLineCount = 0
 }
 
-// Render renders the log viewer content.
+// Render renders only the visible portion of the log viewer.
 func (l *LogViewer) Render() string {
 	if len(l.entries) == 0 {
 		emptyStyle := lipgloss.NewStyle().
@@ -287,31 +288,50 @@ func (l *LogViewer) Render() string {
 		return emptyStyle.Render("No log entries yet. Start the loop to see Claude's activity.")
 	}
 
-	// Build all lines
-	var allLines []string
-	for _, entry := range l.entries {
-		lines := l.renderEntry(entry)
-		allLines = append(allLines, lines...)
-	}
-
-	// Apply scrolling
+	// Calculate visible range
 	startLine := l.scrollPos
 	if startLine < 0 {
 		startLine = 0
 	}
-	if startLine >= len(allLines) {
-		startLine = len(allLines) - 1
+	if startLine >= l.totalLineCount {
+		startLine = l.totalLineCount - 1
 		if startLine < 0 {
 			startLine = 0
 		}
 	}
 
 	endLine := startLine + l.height
-	if endLine > len(allLines) {
-		endLine = len(allLines)
+	if endLine > l.totalLineCount {
+		endLine = l.totalLineCount
 	}
 
-	visibleLines := allLines[startLine:endLine]
+	// Collect only visible lines by scanning cached entries
+	currentLine := 0
+	var visibleLines []string
+
+	for i := range l.entries {
+		lines := l.entries[i].cachedLines
+		entryEnd := currentLine + len(lines)
+
+		// Skip entries entirely before the viewport
+		if entryEnd <= startLine {
+			currentLine = entryEnd
+			continue
+		}
+		// Stop once we're past the viewport
+		if currentLine >= endLine {
+			break
+		}
+
+		// This entry has some visible lines
+		for j, line := range lines {
+			lineNum := currentLine + j
+			if lineNum >= startLine && lineNum < endLine {
+				visibleLines = append(visibleLines, line)
+			}
+		}
+		currentLine = entryEnd
+	}
 
 	// Add cursor indicator at bottom if streaming
 	content := strings.Join(visibleLines, "\n")
@@ -404,24 +424,21 @@ func (l *LogViewer) renderToolResult(entry LogEntry) []string {
 		return []string{resultStyle.Render(checkStyle.Render("  ↳ ") + "(no output)")}
 	}
 
-	// If this is a Read result with a file path, apply syntax highlighting
-	if entry.FilePath != "" {
-		highlighted := l.highlightCode(text, entry.FilePath)
-		if highlighted != "" {
-			lines := strings.Split(highlighted, "\n")
-			var result []string
-			result = append(result, checkStyle.Render("  ↳ ")) // Result indicator
-			// Limit to 20 lines to keep the log view manageable
-			maxLines := 20
-			for i, line := range lines {
-				if i >= maxLines {
-					result = append(result, resultStyle.Render(fmt.Sprintf("    ... (%d more lines)", len(lines)-maxLines)))
-					break
-				}
-				result = append(result, "    "+line)
+	// Use pre-computed syntax highlighting if available
+	if entry.highlightedCode != "" {
+		lines := strings.Split(entry.highlightedCode, "\n")
+		var result []string
+		result = append(result, checkStyle.Render("  ↳ ")) // Result indicator
+		// Limit to 20 lines to keep the log view manageable
+		maxLines := 20
+		for i, line := range lines {
+			if i >= maxLines {
+				result = append(result, resultStyle.Render(fmt.Sprintf("    ... (%d more lines)", len(lines)-maxLines)))
+				break
 			}
-			return result
+			result = append(result, "    "+line)
 		}
+		return result
 	}
 
 	// Fallback: show a compact single-line result

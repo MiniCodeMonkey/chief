@@ -369,8 +369,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		// Update log viewer size
-		a.logViewer.SetSize(a.width, a.height-a.effectiveHeaderHeight()-footerHeight-2)
+		// Log viewer size is set authoritatively in renderLogView (with correct -4 width).
+		// Only update height here for scroll calculations; width will match on next render.
+		a.logViewer.SetSize(a.width-4, a.height-headerHeight-footerHeight-2)
 		return a, nil
 
 	case LoopEventMsg:
@@ -512,7 +513,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			if a.viewMode == ViewDashboard || a.viewMode == ViewDiff {
 				a.viewMode = ViewLog
-				a.logViewer.SetSize(a.width, a.height-a.effectiveHeaderHeight()-footerHeight-2)
+				// SetSize is handled by renderLogView with correct dimensions
 			} else {
 				a.viewMode = ViewDashboard
 			}
@@ -867,10 +868,13 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		}
 	}
 
-	// Reload PRD if this is the current one to reflect any changes made by Claude
+	// Reload PRD from disk only on meaningful state changes (not every event)
 	if isCurrentPRD {
-		if p, err := prd.LoadPRD(a.prdPath); err == nil {
-			a.prd = p
+		switch event.Type {
+		case loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventMaxIterationsReached:
+			if p, err := prd.LoadPRD(a.prdPath); err == nil {
+				a.prd = p
+			}
 		}
 	}
 
