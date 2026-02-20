@@ -118,6 +118,7 @@ func Convert(opts ConvertOptions) error {
 	if err != nil {
 		// Retry once: ask Claude to fix the invalid JSON
 		fmt.Println("Conversion produced invalid JSON, retrying...")
+		fmt.Printf("Raw output:\n---\n%s\n---\n", cleanedJSON)
 		fixedJSON, retryErr := runClaudeJSONFix(cleanedJSON, err)
 		if retryErr != nil {
 			return fmt.Errorf("conversion retry failed: %w", retryErr)
@@ -126,7 +127,7 @@ func Convert(opts ConvertOptions) error {
 		cleanedJSON = cleanJSONOutput(fixedJSON)
 		newPRD, err = parseAndValidatePRD(cleanedJSON)
 		if err != nil {
-			return fmt.Errorf("conversion produced invalid JSON after retry: %w", err)
+			return fmt.Errorf("conversion produced invalid JSON after retry:\n---\n%s\n---\n%w", cleanedJSON, err)
 		}
 	}
 
