@@ -12,7 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/minicodemonkey/chief/embed"
+	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/prd"
 	"github.com/minicodemonkey/chief/internal/ws"
 )
@@ -125,39 +127,54 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 	// We pass the prds base dir so the prompt has the right context.
 	prompt := embed.GetInitPrompt(prdsDir, initialMessage)
 
-	// Spawn claude in print mode for non-interactive piped I/O
-	cmd := exec.Command(claudeBinary(), "-p", "--dangerously-skip-permissions", prompt)
+	// Spawn claude in print mode.
+	// --output-format stream-json streams JSONL events as they are generated.
+	// We use a PTY for stdin so Claude treats input as a real terminal — without
+	// a PTY, Claude detects a non-TTY stdin and buffers all output until exit.
+	cmd := exec.Command(claudeBinary(), "-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", prompt)
 	cmd.Dir = projectPath
 	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
-	stdinPipe, err := cmd.StdinPipe()
+	// Create a PTY pair: ptm (master, used by chief) and pts (slave, used by Claude).
+	ptm, pts, err := pty.Open()
 	if err != nil {
-		return fmt.Errorf("failed to create stdin pipe: %w", err)
+		return fmt.Errorf("failed to open PTY: %w", err)
 	}
+	cmd.Stdin = pts // Claude reads from the slave PTY (looks like a real terminal)
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		stdinPipe.Close()
+		ptm.Close()
+		pts.Close()
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		stdinPipe.Close()
+		ptm.Close()
+		pts.Close()
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
+	log.Printf("[debug] newPRD: launching %s -p --dangerously-skip-permissions --output-format stream-json (PTY stdin) <prompt len=%d> in dir=%s", claudeBinary(), len(prompt), projectPath)
 	if err := cmd.Start(); err != nil {
-		stdinPipe.Close()
+		ptm.Close()
+		pts.Close()
 		return fmt.Errorf("failed to start Claude: %w", err)
 	}
+	// Close the slave in the parent after the child has inherited it.
+	pts.Close()
+	log.Printf("[debug] newPRD: Claude process started pid=%d session=%s", cmd.Process.Pid, sessionID)
+
+	// Drain PTY master reads (echo of what we write) to prevent buffer backpressure.
+	go drainPTY(ptm)
 
 	sess := &claudeSession{
 		sessionID:   sessionID,
 		project:     projectName,
 		projectPath: projectPath,
 		cmd:         cmd,
-		stdin:       stdinPipe,
+		stdin:       ptm, // Write user messages to PTY master
 		done:        make(chan struct{}),
 		lastActive:  time.Now(),
 	}
@@ -169,19 +186,49 @@ func (sm *sessionManager) newPRD(projectPath, projectName, sessionID, initialMes
 	// Stream stdout in a goroutine
 	go sm.streamOutput(sessionID, stdoutPipe)
 
-	// Stream stderr in a goroutine (merged into same claude_output)
+	// Stream stderr in a goroutine
 	go sm.streamOutput(sessionID, stderrPipe)
+
+	// Send the user's initial message via the PTY master.
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		msg := initialMessage
+		if msg == "" {
+			msg = "Please start."
+		}
+		log.Printf("[debug] newPRD: writing PTY message (%d bytes) for session %s", len(msg), sessionID)
+		n, err := fmt.Fprintf(ptm, "%s\n", msg)
+		log.Printf("[debug] newPRD: PTY write complete n=%d err=%v for session %s", n, err, sessionID)
+	}()
+
+	// Watchdog: log process state every 10s until it exits.
+	go func() {
+		for i := 1; i <= 6; i++ {
+			time.Sleep(10 * time.Second)
+			select {
+			case <-sess.done:
+				return
+			default:
+			}
+			if sess.cmd.ProcessState != nil {
+				log.Printf("[debug] watchdog session=%s tick=%d: process already exited state=%v", sessionID, i, sess.cmd.ProcessState)
+				return
+			}
+			log.Printf("[debug] watchdog session=%s tick=%d: process pid=%d still running", sessionID, i, sess.cmd.Process.Pid)
+		}
+	}()
 
 	// Wait for process to exit
 	go func() {
 		err := cmd.Wait()
 		if err != nil {
-			log.Printf("Claude session %s exited with error: %v", sessionID, err)
+			log.Printf("Claude session %s exited with error: %v (pid=%d)", sessionID, err, cmd.Process.Pid)
 		} else {
-			log.Printf("Claude session %s exited normally", sessionID)
+			log.Printf("Claude session %s exited normally (pid=%d)", sessionID, cmd.Process.Pid)
 		}
 
 		// Send prd_response_complete to signal the PRD session is done
+		log.Printf("[debug] newPRD: sending prd_response_complete for session %s", sessionID)
 		completeMsg := ws.PRDResponseCompleteMessage{
 			Type: ws.TypePRDResponseComplete,
 			Payload: ws.PRDResponseCompletePayload{
@@ -224,39 +271,47 @@ func (sm *sessionManager) refinePRD(projectPath, projectName, sessionID, prdID, 
 	// Build prompt from edit_prompt.txt template
 	prompt := embed.GetEditPrompt(prdDir)
 
-	// Spawn claude in print mode for non-interactive piped I/O
-	cmd := exec.Command(claudeBinary(), "-p", "--dangerously-skip-permissions", prompt)
+	// Spawn claude in print mode with PTY stdin so Claude treats input as a terminal.
+	// --output-format stream-json streams JSONL events as they are generated.
+	cmd := exec.Command(claudeBinary(), "-p", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose", prompt)
 	cmd.Dir = projectPath
 	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 
-	stdinPipe, err := cmd.StdinPipe()
+	ptm, pts, err := pty.Open()
 	if err != nil {
-		return fmt.Errorf("failed to create stdin pipe: %w", err)
+		return fmt.Errorf("failed to open PTY: %w", err)
 	}
+	cmd.Stdin = pts
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		stdinPipe.Close()
+		ptm.Close()
+		pts.Close()
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		stdinPipe.Close()
+		ptm.Close()
+		pts.Close()
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		stdinPipe.Close()
+		ptm.Close()
+		pts.Close()
 		return fmt.Errorf("failed to start Claude: %w", err)
 	}
+	pts.Close()
+
+	go drainPTY(ptm)
 
 	sess := &claudeSession{
 		sessionID:   sessionID,
 		project:     projectName,
 		projectPath: projectPath,
 		cmd:         cmd,
-		stdin:       stdinPipe,
+		stdin:       ptm,
 		done:        make(chan struct{}),
 		lastActive:  time.Now(),
 	}
@@ -268,14 +323,13 @@ func (sm *sessionManager) refinePRD(projectPath, projectName, sessionID, prdID, 
 	// Stream stdout in a goroutine
 	go sm.streamOutput(sessionID, stdoutPipe)
 
-	// Stream stderr in a goroutine (merged into same prd_output)
+	// Stream stderr in a goroutine
 	go sm.streamOutput(sessionID, stderrPipe)
 
-	// Send the user's message as the first input to Claude
+	// Send the user's message via the PTY master
 	go func() {
-		// Small delay to let Claude process the initial prompt
 		time.Sleep(100 * time.Millisecond)
-		fmt.Fprintf(stdinPipe, "%s\n", message)
+		fmt.Fprintf(ptm, "%s\n", message)
 	}()
 
 	// Wait for process to exit
@@ -312,31 +366,75 @@ func (sm *sessionManager) refinePRD(projectPath, projectName, sessionID, prdID, 
 	return nil
 }
 
-// streamOutput reads from an io.Reader and sends each chunk as a prd_output message.
+// streamOutput reads stream-json JSONL from r, extracts assistant text events,
+// and forwards them as prd_output messages. Non-text events (tool calls, etc.) are logged.
+// Stderr lines are forwarded as-is since they don't contain JSONL.
 func (sm *sessionManager) streamOutput(sessionID string, r io.Reader) {
 	sm.mu.RLock()
 	sess := sm.sessions[sessionID]
 	sm.mu.RUnlock()
 	if sess == nil {
+		log.Printf("[debug] streamOutput: session %s not found", sessionID)
 		return
 	}
+
+	log.Printf("[debug] streamOutput: started for session %s", sessionID)
+	lineCount := 0
+	textCount := 0
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		msg := ws.PRDOutputMessage{
-			Type: ws.TypePRDOutput,
-			Payload: ws.PRDOutputPayload{
-				Content:   line + "\n",
-				SessionID: sessionID,
-				Project:   sess.project,
-			},
+		lineCount++
+
+		if lineCount <= 5 {
+			preview := line
+			if len(preview) > 120 {
+				preview = preview[:120] + "..."
+			}
+			log.Printf("[debug] streamOutput session=%s line=%d: %q", sessionID, lineCount, preview)
 		}
-		if err := sm.sender.Send(msg); err != nil {
-			log.Printf("Error sending prd_output: %v", err)
-			return
+
+		// Try to parse as stream-json and extract assistant text.
+		event := loop.ParseLine(line)
+		if event != nil && event.Type == loop.EventAssistantText && event.Text != "" {
+			textCount++
+			outMsg := ws.PRDOutputMessage{
+				Type: ws.TypePRDOutput,
+				Payload: ws.PRDOutputPayload{
+					Content:   event.Text,
+					SessionID: sessionID,
+					Project:   sess.project,
+				},
+			}
+			if sendErr := sm.sender.Send(outMsg); sendErr != nil {
+				log.Printf("[debug] streamOutput: send error for session %s: %v", sessionID, sendErr)
+				return
+			}
+		} else if event != nil {
+			log.Printf("[debug] streamOutput session=%s non-text event: %s", sessionID, event.Type.String())
+		} else if line != "" {
+			// Unparseable line (e.g. stderr or status message) — forward as-is.
+			outMsg := ws.PRDOutputMessage{
+				Type: ws.TypePRDOutput,
+				Payload: ws.PRDOutputPayload{
+					Content:   line + "\n",
+					SessionID: sessionID,
+					Project:   sess.project,
+				},
+			}
+			if sendErr := sm.sender.Send(outMsg); sendErr != nil {
+				log.Printf("[debug] streamOutput: send error for session %s: %v", sessionID, sendErr)
+				return
+			}
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("[debug] streamOutput: scanner error for session %s after %d lines: %v", sessionID, lineCount, err)
+	} else {
+		log.Printf("[debug] streamOutput: EOF for session %s after %d lines (%d text events)", sessionID, lineCount, textCount)
 	}
 }
 
@@ -628,6 +726,19 @@ func handleClosePRDSession(sender messageSender, sessions *sessionManager, msg w
 	}
 
 	log.Printf("Closed Claude PRD session %s (save=%v)", req.SessionID, req.Save)
+}
+
+// drainPTY reads and discards data from a PTY master file descriptor.
+// This prevents the PTY echo buffer from filling up when we write user messages.
+// Runs until the PTY is closed (typically when the child process exits).
+func drainPTY(f *os.File) {
+	buf := make([]byte, 256)
+	for {
+		_, err := f.Read(buf)
+		if err != nil {
+			return
+		}
+	}
 }
 
 // claudeBinary returns the path to the claude CLI binary.
