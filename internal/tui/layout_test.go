@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/minicodemonkey/chief/internal/loop"
+	"github.com/minicodemonkey/chief/internal/engine"
 )
 
 func TestIsNarrowMode(t *testing.T) {
@@ -207,20 +207,36 @@ func TestMinMaxHelpers(t *testing.T) {
 	}
 }
 
+// newTestEngine creates a test engine with the given PRD registered.
+func newTestEngine(name, prdPath string) *engine.Engine {
+	eng := engine.New(10)
+	if prdPath != "" {
+		eng.Register(name, prdPath)
+	}
+	return eng
+}
+
+// newTestEngineWithWorktree creates a test engine with a worktree-registered PRD.
+func newTestEngineWithWorktree(name, prdPath, worktreeDir, branch string) *engine.Engine {
+	eng := engine.New(10)
+	eng.RegisterWithWorktree(name, prdPath, worktreeDir, branch)
+	return eng
+}
+
 func TestGetWorktreeInfo_NoBranch(t *testing.T) {
-	// No manager - should return empty
+	// No engine - should return empty
 	app := &App{prdName: "auth"}
 	branch, dir := app.getWorktreeInfo()
 	if branch != "" || dir != "" {
-		t.Errorf("expected empty worktree info without manager, got branch=%q dir=%q", branch, dir)
+		t.Errorf("expected empty worktree info without engine, got branch=%q dir=%q", branch, dir)
 	}
 }
 
 func TestGetWorktreeInfo_WithBranch(t *testing.T) {
-	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	eng := newTestEngineWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	defer eng.Shutdown()
 
-	app := &App{prdName: "auth", manager: mgr}
+	app := &App{prdName: "auth", eng: eng}
 	branch, dir := app.getWorktreeInfo()
 	if branch != "chief/auth" {
 		t.Errorf("branch = %q, want %q", branch, "chief/auth")
@@ -232,10 +248,10 @@ func TestGetWorktreeInfo_WithBranch(t *testing.T) {
 
 func TestGetWorktreeInfo_WithBranchNoWorktree(t *testing.T) {
 	// Branch set but no worktree dir (branch-only mode)
-	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
+	eng := newTestEngineWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
+	defer eng.Shutdown()
 
-	app := &App{prdName: "auth", manager: mgr}
+	app := &App{prdName: "auth", eng: eng}
 	branch, dir := app.getWorktreeInfo()
 	if branch != "chief/auth" {
 		t.Errorf("branch = %q, want %q", branch, "chief/auth")
@@ -247,10 +263,10 @@ func TestGetWorktreeInfo_WithBranchNoWorktree(t *testing.T) {
 
 func TestGetWorktreeInfo_RegisteredNoBranch(t *testing.T) {
 	// Registered without worktree - should return empty (backward compatible)
-	mgr := loop.NewManager(10)
-	mgr.Register("auth", "/tmp/prd.json")
+	eng := newTestEngine("auth", "/tmp/prd.json")
+	defer eng.Shutdown()
 
-	app := &App{prdName: "auth", manager: mgr}
+	app := &App{prdName: "auth", eng: eng}
 	branch, dir := app.getWorktreeInfo()
 	if branch != "" || dir != "" {
 		t.Errorf("expected empty worktree info for no-branch PRD, got branch=%q dir=%q", branch, dir)
@@ -258,16 +274,17 @@ func TestGetWorktreeInfo_RegisteredNoBranch(t *testing.T) {
 }
 
 func TestHasWorktreeInfo(t *testing.T) {
-	// No manager
+	// No engine
 	app := &App{prdName: "auth"}
 	if app.hasWorktreeInfo() {
-		t.Error("expected hasWorktreeInfo=false without manager")
+		t.Error("expected hasWorktreeInfo=false without engine")
 	}
 
 	// With branch
-	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
-	app.manager = mgr
+	eng := newTestEngineWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	defer eng.Shutdown()
+
+	app.eng = eng
 	if !app.hasWorktreeInfo() {
 		t.Error("expected hasWorktreeInfo=true with branch set")
 	}
@@ -281,10 +298,10 @@ func TestEffectiveHeaderHeight_NoBranch(t *testing.T) {
 }
 
 func TestEffectiveHeaderHeight_WithBranch(t *testing.T) {
-	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	eng := newTestEngineWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	defer eng.Shutdown()
 
-	app := &App{prdName: "auth", manager: mgr}
+	app := &App{prdName: "auth", eng: eng}
 	if got := app.effectiveHeaderHeight(); got != headerHeight+1 {
 		t.Errorf("effectiveHeaderHeight() = %d, want %d (with branch)", got, headerHeight+1)
 	}
@@ -298,10 +315,10 @@ func TestRenderWorktreeInfoLine_NoBranch(t *testing.T) {
 }
 
 func TestRenderWorktreeInfoLine_WithBranch(t *testing.T) {
-	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	eng := newTestEngineWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	defer eng.Shutdown()
 
-	app := &App{prdName: "auth", manager: mgr}
+	app := &App{prdName: "auth", eng: eng}
 	got := app.renderWorktreeInfoLine()
 	if got == "" {
 		t.Error("renderWorktreeInfoLine() should not be empty with branch set")
@@ -321,10 +338,10 @@ func TestRenderWorktreeInfoLine_WithBranch(t *testing.T) {
 }
 
 func TestRenderWorktreeInfoLine_BranchNoWorktree(t *testing.T) {
-	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
+	eng := newTestEngineWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
+	defer eng.Shutdown()
 
-	app := &App{prdName: "auth", manager: mgr}
+	app := &App{prdName: "auth", eng: eng}
 	got := app.renderWorktreeInfoLine()
 	if !strings.Contains(got, "current directory") {
 		t.Errorf("renderWorktreeInfoLine() should contain 'current directory' for branch-only mode, got %q", got)

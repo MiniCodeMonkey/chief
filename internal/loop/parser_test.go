@@ -20,6 +20,7 @@ func TestEventTypeString(t *testing.T) {
 		{EventMaxIterationsReached, "MaxIterationsReached"},
 		{EventError, "Error"},
 		{EventRetrying, "Retrying"},
+		{EventQuotaExhausted, "QuotaExhausted"},
 	}
 
 	for _, tt := range tests {
@@ -303,5 +304,37 @@ func TestParseLineToolUseFirst(t *testing.T) {
 	}
 	if event.Tool != "Write" {
 		t.Errorf("event.Tool = %q, want %q", event.Tool, "Write")
+	}
+}
+
+func TestIsQuotaError(t *testing.T) {
+	tests := []struct {
+		text     string
+		expected bool
+	}{
+		{"rate limit exceeded", true},
+		{"Rate Limit Exceeded", true},
+		{"rate_limit_error", true},
+		{"quota exceeded for this billing period", true},
+		{"HTTP 429 Too Many Requests", true},
+		{"429", true},
+		{"too many requests", true},
+		{"Too Many Requests", true},
+		{"resource_exhausted", true},
+		{"model is overloaded", true},
+		{"Overloaded", true},
+		{"normal error message", false},
+		{"exit status 1", false},
+		{"connection refused", false},
+		{"", false},
+		{"Claude exited with error: exit status 2", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.text, func(t *testing.T) {
+			if got := IsQuotaError(tt.text); got != tt.expected {
+				t.Errorf("IsQuotaError(%q) = %v, want %v", tt.text, got, tt.expected)
+			}
+		})
 	}
 }

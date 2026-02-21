@@ -1,0 +1,496 @@
+{
+  "project": "Uplink — Chief Web App Support",
+  "description": "Modifications to the Chief Go CLI to support the chiefloop.com web application. Adds device OAuth authentication, a headless `serve` command with WebSocket connectivity, workspace management, Claude session management over WebSocket, and a self-update mechanism. The existing TUI experience is preserved unchanged by refactoring the loop engine into a shared core that both TUI and serve consume.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Migrate CLI to Cobra Framework",
+      "description": "As a developer, I want Chief to use the Cobra CLI framework so that adding new commands (login, logout, serve, update) is structured and maintainable.",
+      "acceptanceCriteria": [
+        "Replace manual flag parsing in `main.go` with Cobra command tree",
+        "All existing commands (`new`, `edit`, `status`, `list`, default TUI launch) work identically",
+        "All existing flags (`--max-iterations`, `--no-sound`, `--no-retry`, `--verbose`, `--merge`, `--force`, `--help`, `--version`) are preserved",
+        "Cobra is added to `go.mod`",
+        "Command structure supports future subcommands (`login`, `logout`, `serve`, `update`)",
+        "`chief --help` output is clean and organized with command grouping"
+      ],
+      "priority": 1,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-002",
+      "title": "Implement Credential Storage",
+      "description": "As a developer, I want a credential storage module so that login, logout, and serve can read/write auth tokens consistently.",
+      "acceptanceCriteria": [
+        "New `internal/auth` package with `Credentials` struct: `access_token`, `refresh_token`, `expires_at`, `device_name`, `user`",
+        "Credentials stored at `~/.chief/credentials.yaml` (YAML format, consistent with config)",
+        "File written with `0600` permissions",
+        "`LoadCredentials()` returns credentials or a clear \"not logged in\" error",
+        "`SaveCredentials()` writes atomically (write to temp file, rename)",
+        "`DeleteCredentials()` removes the file",
+        "`IsExpired()` and `IsNearExpiry(duration)` methods on credentials",
+        "Unit tests for load/save/delete cycle and permission enforcement"
+      ],
+      "priority": 2,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-003",
+      "title": "Implement `chief login`",
+      "description": "As a user, I want to authenticate Chief with chiefloop.com using device OAuth so that I never need to copy-paste tokens.",
+      "acceptanceCriteria": [
+        "`chief login` calls `POST https://chiefloop.com/oauth/device/code` to get `user_code` and `device_code`",
+        "Prints URL (`chiefloop.com/device`) and user code in clear, prominent formatting",
+        "Attempts to open browser automatically (`xdg-open` on Linux, `open` on macOS)",
+        "Polls `POST https://chiefloop.com/oauth/device/token` every 5 seconds with `device_code`",
+        "On approval, receives access token (1h expiry) and refresh token (90d expiry)",
+        "Stores both tokens via the credential storage module (US-002)",
+        "Device name auto-detected from hostname, overridable with `--name` flag",
+        "Device name sent during authorization request",
+        "Success message: `Logged in as \u003cuser\u003e (\u003cdevice-name\u003e)`",
+        "Handles timeout gracefully (user never approves): exits with clear message after 5 minutes",
+        "Handles network errors with retry and clear error messages",
+        "If already logged in, warns and asks for confirmation before overwriting"
+      ],
+      "priority": 3,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-004",
+      "title": "Implement `chief logout` and Automatic Token Refresh",
+      "description": "As a user, I want to log out (revoking my device) and have tokens refresh automatically so that sessions stay alive without manual intervention.",
+      "acceptanceCriteria": [
+        "`chief logout` calls revocation endpoint server-side to deauthorize the device",
+        "Deletes `~/.chief/credentials.yaml`",
+        "Prints: `Logged out. Device \"\u003cdevice-name\u003e\" has been deauthorized.`",
+        "Handles \"not logged in\" gracefully (no credentials file)",
+        "Handles revocation API failure gracefully (still deletes local credentials, warns about server-side)",
+        "`RefreshToken()` function calls `POST https://chiefloop.com/oauth/token` with refresh token",
+        "Auto-refresh triggers when access token is within 5 minutes of expiry",
+        "On refresh failure (revoked/expired refresh token), returns clear error: `Session expired. Run 'chief login' again.`",
+        "Refresh is thread-safe (mutex-protected for concurrent use by serve)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-005",
+      "title": "Extract Shared Engine from TUI",
+      "description": "As a developer, I want the loop orchestration logic extracted into a shared engine so that both the TUI and the serve command can drive Ralph loops and Claude sessions without code duplication.",
+      "acceptanceCriteria": [
+        "New `internal/engine` package with `Engine` interface/struct",
+        "Engine wraps `loop.Manager` functionality: start/pause/resume/stop runs, event streaming",
+        "Engine provides a channel-based event API (same events the TUI currently consumes)",
+        "TUI refactored to consume events from the engine instead of directly from `loop.Manager`",
+        "TUI behavior is identical before and after refactor (no user-visible changes)",
+        "Engine supports multiple consumers (TUI gets one, WebSocket handler gets another)",
+        "Engine manages Claude process lifecycle (spawn, track, kill)",
+        "Engine exposes project state queries (list PRDs, get run status, etc.)",
+        "All existing TUI tests still pass"
+      ],
+      "priority": 5,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-006",
+      "title": "Implement WebSocket Client with Reconnection",
+      "description": "As a developer, I want a robust WebSocket client that connects to chiefloop.com and automatically reconnects on failure.",
+      "acceptanceCriteria": [
+        "New `internal/ws` package with `Client` struct",
+        "Connects to `wss://chiefloop.com/ws/server` (default URL)",
+        "WebSocket URL configurable via `--ws-url` flag, `CHIEF_WS_URL` env var, or `ws_url` field in `~/.chief/config.yaml` (flag \u003e env \u003e config \u003e default) for local development",
+        "Reconnection with exponential backoff + jitter: 1s, 2s, 4s, 8s ... max 60s",
+        "Backoff resets on successful connection",
+        "Each reconnection attempt is logged",
+        "On reconnection, signals the serve command to re-send full state snapshot",
+        "`Send(message)` and `Receive() \u003c-chan Message` API",
+        "Graceful close with WebSocket close frame",
+        "Context-based cancellation for clean shutdown",
+        "Ping/pong keepalive support (responds to `ping` with `pong`)"
+      ],
+      "priority": 6,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-007",
+      "title": "Implement Protocol Handshake",
+      "description": "As a developer, I want the WebSocket protocol handshake to authenticate the connection and verify version compatibility.",
+      "acceptanceCriteria": [
+        "On WebSocket open, chief sends `hello` message containing: `protocol_version` (1), `chief_version`, `device_name`, `os`, `arch`, and `access_token`",
+        "Authentication is done via the `access_token` field in the `hello` message (NOT as a URL query parameter)",
+        "If access token is expired or near-expiry, chief refreshes it before connecting",
+        "Chief waits for `welcome` or `incompatible` response",
+        "On `welcome`: connection is established, chief proceeds normally",
+        "On `incompatible`: chief logs the `message` field, does NOT retry, exits serve",
+        "On auth failure response: chief logs \"Device deauthorized. Run 'chief login' to re-authenticate.\" and exits",
+        "Handshake has a 10-second timeout (if no response, reconnect)",
+        "All subsequent messages include `type`, `id` (UUID), and `timestamp` (ISO8601) fields"
+      ],
+      "priority": 7,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-008",
+      "title": "Implement Message Types and Serialization",
+      "description": "As a developer, I want strongly-typed message definitions and JSON serialization for all protocol messages so that the WebSocket communication is reliable and type-safe.",
+      "acceptanceCriteria": [
+        "Go structs for every message type in the protocol catalog (see full list below)",
+        "Server → Web App: `hello`, `state_snapshot`, `project_list`, `project_state`, `prd_content`, `claude_output`, `run_progress`, `run_complete`, `run_paused`, `diff`, `clone_progress`, `clone_complete`, `error`, `quota_exhausted`, `log_lines`, `session_timeout_warning`, `session_expired`, `settings`, `update_available`",
+        "Web App → Server: `welcome`, `incompatible`, `list_projects`, `get_project`, `get_prd`, `new_prd`, `prd_message`, `close_prd_session`, `start_run`, `pause_run`, `resume_run`, `stop_run`, `clone_repo`, `create_project`, `get_diff`, `get_logs`, `get_settings`, `update_settings`, `trigger_update`, `ping`",
+        "Bidirectional: `pong`",
+        "Standardized error codes as constants: `AUTH_FAILED`, `PROJECT_NOT_FOUND`, `PRD_NOT_FOUND`, `RUN_ALREADY_ACTIVE`, `RUN_NOT_ACTIVE`, `SESSION_NOT_FOUND`, `CLONE_FAILED`, `QUOTA_EXHAUSTED`, `FILESYSTEM_ERROR`, `CLAUDE_ERROR`, `UPDATE_FAILED`, `INCOMPATIBLE_VERSION`",
+        "Message dispatcher that routes incoming messages by `type` to registered handlers",
+        "Unknown message types are logged and ignored (forward compatibility)",
+        "Unit tests for serialization/deserialization round-trips"
+      ],
+      "priority": 8,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-009",
+      "title": "Implement Basic `chief serve` Command",
+      "description": "As a user, I want to run `chief serve --workspace ~/projects` to start a headless daemon that connects to chiefloop.com and accepts commands from the web app.",
+      "acceptanceCriteria": [
+        "`chief serve` command registered via Cobra",
+        "Required `--workspace` flag (or from `~/.chief/config.yaml` `workspace` field)",
+        "Optional `--name` flag to override device name for this session",
+        "Optional `--log-file` flag for background use (default: stdout)",
+        "Validates workspace directory exists",
+        "Checks for credentials, exits with `Not logged in. Run 'chief login' first.` if missing",
+        "Refreshes token if near-expiry, then connects WebSocket",
+        "Completes protocol handshake",
+        "Runs as long-lived process (no TUI, no interactive prompts)",
+        "Logs connection status, reconnections, and errors to stdout/log file",
+        "Handles SIGTERM/SIGINT: kills all child Claude processes, closes WebSocket cleanly, exits"
+      ],
+      "priority": 9,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-010",
+      "title": "Implement Workspace Scanner",
+      "description": "As a user, I want chief to automatically discover git repositories in my workspace directory so that all my projects appear in the web app without manual configuration.",
+      "acceptanceCriteria": [
+        "On startup, scans workspace directory one level deep for directories containing `.git/`",
+        "Every git repository is a project, regardless of `.chief/` presence",
+        "For each project, tracks: name (directory name), path, `has_chief` (bool), git branch, last commit (hash, message, author, timestamp), PRD list (id, name, story count, completion status)",
+        "Re-scans every 60 seconds to detect new/removed projects",
+        "Sends `project_list` update over WebSocket when projects change",
+        "Ignores non-directory entries and directories without `.git/`",
+        "Handles permission errors gracefully (logs warning, skips directory)"
+      ],
+      "priority": 10,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-011",
+      "title": "Implement Selective File Watching",
+      "description": "As a developer, I want chief to watch filesystem changes only for active projects so that we minimize resource usage while still pushing real-time updates.",
+      "acceptanceCriteria": [
+        "Use `fsnotify` to watch the workspace root directory (for new/removed project directories)",
+        "Deep watchers (`.chief/` directory, `.git/HEAD`) are only set up for \"active\" projects",
+        "A project becomes \"active\" when: a run is started, a Claude session is opened, or `get_project` is requested",
+        "A project becomes \"inactive\" after 10 minutes of no activity (watchers are removed)",
+        "When `.chief/prds/` changes are detected, push `project_state` update over WebSocket",
+        "When `.git/HEAD` changes, update branch info and push `project_state`",
+        "Watcher setup/teardown is logged at debug level"
+      ],
+      "priority": 11,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-012",
+      "title": "Implement State Snapshot and Project Handlers",
+      "description": "As a web app developer, I want chief to send a full state snapshot on connect/reconnect and respond to project queries so that the web app always has an accurate cache.",
+      "acceptanceCriteria": [
+        "On successful handshake (and on every reconnect), chief sends `state_snapshot` with: all projects, all active runs, all active Claude sessions",
+        "`list_projects` handler returns `project_list` with all discovered projects",
+        "`get_project` handler returns `project_state` for a single project: PRDs, run history, settings",
+        "`get_prd` handler returns `prd_content` with markdown content and state from `prd.json`",
+        "`PROJECT_NOT_FOUND` and `PRD_NOT_FOUND` errors returned for invalid references",
+        "Activates file watching for the requested project (US-011)"
+      ],
+      "priority": 12,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-013",
+      "title": "Implement Interactive Claude PRD Sessions over WebSocket",
+      "description": "As a web app user, I want to create and refine PRDs through a chat interface that streams Claude responses in real-time.",
+      "acceptanceCriteria": [
+        "`new_prd` handler spawns `claude -p` in streaming mode with the project's `init_prompt.txt` context and the `initial_message` from the web app",
+        "Process tracked by `session_id` (UUID generated by the web app)",
+        "stdout/stderr read in a goroutine and forwarded as `claude_output` messages with `session_id`, `data` (text chunk), and `done` (bool)",
+        "`prd_message` handler writes user messages to the Claude process stdin",
+        "`close_prd_session` handler: if `save` is true, waits for Claude to finish writing the PRD file; if false, kills immediately",
+        "When Claude finishes writing `prd.md`, chief auto-converts to `prd.json` (existing conversion logic)",
+        "`SESSION_NOT_FOUND` error if session_id doesn't match an active session",
+        "Claude process runs in the project's working directory"
+      ],
+      "priority": 13,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-014",
+      "title": "Implement Session Timeout with Warnings",
+      "description": "As a user, I want Claude PRD sessions to timeout after 30 minutes of inactivity with advance warnings so that I'm not surprised by session loss and resources aren't wasted.",
+      "acceptanceCriteria": [
+        "Each Claude session has a 30-minute inactivity timer that resets on every `prd_message`",
+        "At 20 minutes of inactivity (10 min remaining): send `session_timeout_warning` with `minutes_remaining: 10`",
+        "At 25 minutes (5 min remaining): send warning with `minutes_remaining: 5`",
+        "At 29 minutes (1 min remaining): send warning with `minutes_remaining: 1`",
+        "At 30 minutes: save whatever PRD state exists to disk, kill Claude process, send `session_expired` with saved state",
+        "Multiple concurrent sessions each have independent timers",
+        "Timer is goroutine-safe (no races between message handling and timeout)"
+      ],
+      "priority": 14,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-015",
+      "title": "Implement Run Control via WebSocket",
+      "description": "As a web app user, I want to start, pause, resume, and stop Ralph loop runs from the web interface.",
+      "acceptanceCriteria": [
+        "`start_run` handler: starts a Ralph loop for the specified project/PRD via the shared engine (US-005)",
+        "`pause_run` handler: pauses the loop (finishes current Claude invocation, then stops)",
+        "`resume_run` handler: resumes a paused loop from where it left off",
+        "`stop_run` handler: kills the Claude process immediately, marks current story as interrupted",
+        "Error responses: `RUN_ALREADY_ACTIVE` if starting a run that's running, `RUN_NOT_ACTIVE` if pausing/stopping a run that isn't running",
+        "Multiple runs across different projects can execute concurrently",
+        "Run state reflected in `prd.json` (existing `inProgress` field for interrupted stories)"
+      ],
+      "priority": 15,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-016",
+      "title": "Implement Quota Detection and Auto-Pause",
+      "description": "As a user, I want Ralph loops to automatically pause when Claude quota is exhausted so that iterations aren't wasted on failures.",
+      "acceptanceCriteria": [
+        "Detect Claude CLI quota/rate-limit errors by non-zero exit code and stderr content matching known patterns (e.g., \"rate limit\", \"quota\", \"429\")",
+        "On quota detection: pause the current loop immediately",
+        "Send `run_paused` with `reason: \"quota_exhausted\"`",
+        "Send `quota_exhausted` listing all affected runs and sessions",
+        "Do NOT auto-retry or auto-resume; user must explicitly `resume_run`",
+        "Current story marked as interrupted; on resume, story restarts from scratch (fresh context per iteration)",
+        "Quota errors are distinguishable from Claude crashes (which trigger existing retry logic)"
+      ],
+      "priority": 16,
+      "passes": true
+    },
+    {
+      "id": "US-017",
+      "title": "Implement Run Progress Streaming",
+      "description": "As a web app user, I want to see real-time progress updates for running Ralph loops so that the UI stays current.",
+      "acceptanceCriteria": [
+        "`run_progress` messages sent on every meaningful state change: story started, iteration started, test pass/fail, story complete",
+        "Each message includes: `project`, `prd_id`, `story_id`, `status`, `iteration`, `attempt`",
+        "`run_complete` sent when all stories pass or max iterations reached, with summary: stories completed, duration, pass/fail counts",
+        "`claude_output` messages streamed during active runs (same content as TUI log view)",
+        "Progress messages are the primary mechanism for the web app to update its UI"
+      ],
+      "priority": 17,
+      "passes": true
+    },
+    {
+      "id": "US-018",
+      "title": "Implement Project Settings via WebSocket",
+      "description": "As a web app user, I want to view and edit project settings so that I can configure Chief behavior without SSH access.",
+      "acceptanceCriteria": [
+        "`get_settings` handler returns current settings from `.chief/config.yaml`",
+        "`settings` response includes all editable fields: `max_iterations` (int, default 5), `auto_commit` (bool, default true), `commit_prefix` (string), `claude_model` (string), `test_command` (string)",
+        "`update_settings` handler: merges provided fields into existing config, writes to `.chief/config.yaml`",
+        "Response echoes back full updated settings on success, or error on failure",
+        "Settings not editable via web: `CLAUDE.md`, `init_prompt.txt`, any file outside `.chief/`",
+        "Invalid setting values return `FILESYSTEM_ERROR` with descriptive message",
+        "New config fields added to existing `internal/config` package"
+      ],
+      "priority": 18,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-019",
+      "title": "Implement Per-Story Logging",
+      "description": "As a web app user, I want to view logs for each story so that I can debug failures and understand what Claude did.",
+      "acceptanceCriteria": [
+        "During Ralph loop runs, Claude output for each story is written to `.chief/prds/\u003cid\u003e/logs/\u003cstory-id\u003e.log`",
+        "Log files contain raw Claude output including all iterations for that story",
+        "`get_logs` handler returns historical log lines for a completed story",
+        "`get_logs` supports optional `story_id` (specific story) and `lines` (count) parameters",
+        "If `story_id` is omitted, returns the most recent log activity for the PRD",
+        "Real-time log streaming uses existing `claude_output` messages during active runs",
+        "Starting a new run on the same PRD overwrites previous log files (V1 simplicity)",
+        "`log_lines` response includes `project`, `prd_id`, `story_id`, `lines[]`, and `level`"
+      ],
+      "priority": 19,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-020",
+      "title": "Implement Per-Story Diff Generation and Retrieval",
+      "description": "As a web app user, I want to see the git diff for each completed story so that I can review what changed.",
+      "acceptanceCriteria": [
+        "`get_diff` handler returns the diff for a specific story",
+        "Diff is per-story: shows the changes introduced by that story's commit(s) compared to the state before the story started",
+        "Response includes: `project`, `prd_id`, `story_id`, `files[]` (list of changed file paths), `diff_text` (unified diff format)",
+        "If auto-commit is enabled, diff is derived from the story's commit(s)",
+        "If story has not completed or has no changes, returns appropriate error",
+        "`diff` messages also sent proactively when a story completes during an active run"
+      ],
+      "priority": 20,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-021",
+      "title": "Implement Git Clone and Project Creation via WebSocket",
+      "description": "As a web app user, I want to clone repositories and create new projects from the web interface so that I can set up projects without SSH.",
+      "acceptanceCriteria": [
+        "`clone_repo` handler: runs `git clone \u003curl\u003e` in the workspace directory",
+        "Optional `directory_name` field overrides the default clone directory name",
+        "Streams `clone_progress` messages with `progress_text` and `percent` (if parseable from git output)",
+        "Sends `clone_complete` on finish with `success` bool and `error` message if failed",
+        "Uses the host's existing SSH keys/git credential helpers for authentication",
+        "`CLONE_FAILED` error for git failures (includes git error message)",
+        "`create_project` handler: creates a new empty directory in workspace, optionally runs `git init`",
+        "New projects appear in next workspace scan or immediately via fsnotify"
+      ],
+      "priority": 21,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-022",
+      "title": "Implement Version Check and `chief update` Command",
+      "description": "As a user, I want Chief to check for updates and allow self-updating so that I always have the latest version.",
+      "acceptanceCriteria": [
+        "On startup (all commands), check GitHub Releases API: `GET https://api.github.com/repos/MiniCodeMonkey/chief/releases/latest`",
+        "Compare version tag against embedded build version",
+        "For interactive CLI: print one-liner if update available: `Chief v0.5.1 available (you have v0.5.0). Run 'chief update' to upgrade.` (non-blocking)",
+        "For `chief serve`: check every 24 hours, send `update_available` over WebSocket",
+        "`chief update` command: download binary for current `GOOS`/`GOARCH`, verify SHA256 checksum, atomic rename to replace current binary",
+        "Before update: check write permissions on binary path; if insufficient, print: `Permission denied. Run 'sudo chief update' to upgrade.`",
+        "Success message: `Updated to v0.5.1. Restart 'chief serve' to apply.`",
+        "Does NOT auto-restart"
+      ],
+      "priority": 22,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-023",
+      "title": "Implement Remote Update via WebSocket",
+      "description": "As a web app user, I want to trigger Chief updates from the dashboard so that I can update remote servers without SSH.",
+      "acceptanceCriteria": [
+        "`trigger_update` handler: downloads and installs new binary (same as `chief update`)",
+        "Sends confirmation message over WebSocket before exiting",
+        "Exits with code 0 so systemd `Restart=always` picks up the new binary",
+        "If write permissions insufficient, returns `UPDATE_FAILED` error with message about permissions",
+        "If already on latest version, returns informational message (not an error)"
+      ],
+      "priority": 23,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-024",
+      "title": "Create Systemd Service and Cloud-Init Script",
+      "description": "As a user deploying to a VPS, I want a cloud-init script that sets up Chief as a systemd service so that I can get running with minimal manual steps.",
+      "acceptanceCriteria": [
+        "Systemd unit file includes `ConditionPathExists=/home/chief/.chief/credentials.yaml` so service doesn't start/restart-loop before auth",
+        "Unit file: `Type=simple`, `Restart=always`, `RestartSec=5`, `After=network-online.target`",
+        "Cloud-init script installs: chief binary, Claude Code CLI (`npm install -g @anthropic-ai/claude-code`), creates `chief` user, creates `/home/chief/projects` workspace, writes and enables systemd unit",
+        "Service is enabled but NOT started (requires auth first)",
+        "Cloud-init script is idempotent (safe to run multiple times)",
+        "Post-deploy instructions guide user through: SSH in, `chief login`, authenticate Claude Code, `sudo systemctl start chief`"
+      ],
+      "priority": 24,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-025",
+      "title": "Implement One-Time Setup Token for Automated Chief Auth",
+      "description": "As a user, I want the web app to pass a one-time setup token during VPS provisioning so that Chief can authenticate without an interactive `chief login` step.",
+      "acceptanceCriteria": [
+        "`chief login --setup-token \u003ctoken\u003e` mode: exchanges a one-time token for credentials via `POST https://chiefloop.com/oauth/device/exchange`",
+        "Token is generated by the web app during the deploy flow and passed to cloud-init as a parameter",
+        "Cloud-init writes the token to `/tmp/chief-setup-token` (or passes it as an environment variable)",
+        "After cloud-init runs, a one-shot systemd service runs `chief login --setup-token \u003ctoken\u003e` as the chief user",
+        "On success: credentials are written, token file is deleted, main chief service can start",
+        "Token is single-use and expires after 10 minutes",
+        "If token is invalid or expired, falls back to manual `chief login` with clear instructions",
+        "User still needs to authenticate Claude Code separately (unavoidable)"
+      ],
+      "priority": 25,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-026",
+      "title": "Implement WebSocket Rate Limiting",
+      "description": "As a developer, I want basic rate limiting on incoming WebSocket messages so that a buggy or compromised web app can't overwhelm chief.",
+      "acceptanceCriteria": [
+        "Token bucket rate limiter on incoming messages: 30 messages/second burst, 10 messages/second sustained",
+        "Expensive operations (`clone_repo`, `start_run`, `new_prd`) have a stricter per-type limit: 2/minute",
+        "When rate limited, chief responds with an `error` message: code `RATE_LIMITED`, includes retry-after hint",
+        "Rate limiter state resets on reconnection",
+        "Keepalive `ping` messages are exempt from rate limiting",
+        "Limits are hardcoded (not configurable) for V1"
+      ],
+      "priority": 26,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-027",
+      "title": "Implement Graceful Shutdown for `chief serve`",
+      "description": "As a user, I want `chief serve` to shut down cleanly on SIGTERM/SIGINT so that systemd restarts are seamless and no data is corrupted.",
+      "acceptanceCriteria": [
+        "SIGTERM and SIGINT handlers registered",
+        "On signal: kill all child Claude processes (both PRD sessions and Ralph loops)",
+        "Mark any in-progress stories as interrupted (`inProgress: true`) in `prd.json`",
+        "Close WebSocket connection with proper close frame",
+        "Flush and close log file if `--log-file` is used",
+        "Exit within 10 seconds (force-kill any hung processes after 5 seconds)",
+        "Log shutdown sequence: \"Shutting down...\", \"Killed N processes\", \"Goodbye.\""
+      ],
+      "priority": 27,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-028",
+      "title": "Implement WebSocket URL Configuration for Local Development",
+      "description": "As a developer working on the chiefloop.com integration, I want to point chief at a local WebSocket server so that I can develop and test without hitting production.",
+      "acceptanceCriteria": [
+        "`chief serve --ws-url ws://localhost:8080/ws/server` flag overrides the default URL",
+        "`CHIEF_WS_URL` environment variable also overrides (flag takes precedence)",
+        "`ws_url` field in `~/.chief/config.yaml` as a third option (lowest precedence)",
+        "Supports both `ws://` (unencrypted) and `wss://` (TLS) schemes",
+        "Default remains `wss://chiefloop.com/ws/server` when no override is set",
+        "When using `ws://`, chief does NOT require or attempt TLS (for local dev)",
+        "Log the target URL on startup so it's obvious which server chief is connecting to"
+      ],
+      "priority": 28,
+      "passes": true
+    }
+  ]
+}

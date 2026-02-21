@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -308,8 +309,14 @@ func (m *Manager) runLoop(instance *LoopInstance) {
 	// Update state based on result
 	instance.mu.Lock()
 	if err != nil && err != context.Canceled {
-		instance.State = LoopStateError
-		instance.Error = err
+		if errors.Is(err, ErrQuotaExhausted) {
+			// Quota exhaustion pauses the run (resumable by user)
+			instance.State = LoopStatePaused
+			instance.Error = err
+		} else {
+			instance.State = LoopStateError
+			instance.Error = err
+		}
 	} else if instance.Loop.IsPaused() {
 		instance.State = LoopStatePaused
 	} else if instance.Loop.IsStopped() {

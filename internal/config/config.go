@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -9,10 +10,45 @@ import (
 
 const configFile = ".chief/config.yaml"
 
+// UserConfig holds user-level settings from ~/.chief/config.yaml.
+type UserConfig struct {
+	WSURL string `yaml:"ws_url,omitempty"`
+}
+
+// LoadUserConfig reads the user-level config from ~/.chief/config.yaml.
+// Returns an empty UserConfig when the file doesn't exist (no error).
+func LoadUserConfig() (*UserConfig, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return &UserConfig{}, fmt.Errorf("determining home directory: %w", err)
+	}
+
+	path := filepath.Join(home, ".chief", "config.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &UserConfig{}, nil
+		}
+		return &UserConfig{}, err
+	}
+
+	cfg := &UserConfig{}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return &UserConfig{}, err
+	}
+
+	return cfg, nil
+}
+
 // Config holds project-level settings for Chief.
 type Config struct {
-	Worktree   WorktreeConfig   `yaml:"worktree"`
-	OnComplete OnCompleteConfig `yaml:"onComplete"`
+	Worktree      WorktreeConfig   `yaml:"worktree"`
+	OnComplete    OnCompleteConfig `yaml:"onComplete"`
+	MaxIterations int              `yaml:"maxIterations,omitempty"`
+	AutoCommit    *bool            `yaml:"autoCommit,omitempty"`
+	CommitPrefix  string           `yaml:"commitPrefix,omitempty"`
+	ClaudeModel   string           `yaml:"claudeModel,omitempty"`
+	TestCommand   string           `yaml:"testCommand,omitempty"`
 }
 
 // WorktreeConfig holds worktree-related settings.
@@ -26,9 +62,28 @@ type OnCompleteConfig struct {
 	CreatePR bool `yaml:"createPR"`
 }
 
+// DefaultMaxIterations is the default value for MaxIterations when not set.
+const DefaultMaxIterations = 5
+
 // Default returns a Config with zero-value defaults.
 func Default() *Config {
 	return &Config{}
+}
+
+// EffectiveMaxIterations returns MaxIterations or the default if not set.
+func (c *Config) EffectiveMaxIterations() int {
+	if c.MaxIterations > 0 {
+		return c.MaxIterations
+	}
+	return DefaultMaxIterations
+}
+
+// EffectiveAutoCommit returns AutoCommit or true if not set.
+func (c *Config) EffectiveAutoCommit() bool {
+	if c.AutoCommit != nil {
+		return *c.AutoCommit
+	}
+	return true
 }
 
 // configPath returns the full path to the config file.

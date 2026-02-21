@@ -6,7 +6,9 @@ package loop
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -138,9 +140,16 @@ func (l *Loop) Run(ctx context.Context) error {
 
 		// Run a single iteration with retry logic
 		if err := l.runIterationWithRetry(ctx); err != nil {
-			l.events <- Event{
-				Type: EventError,
-				Err:  err,
+			if errors.Is(err, ErrQuotaExhausted) {
+				l.events <- Event{
+					Type: EventQuotaExhausted,
+					Err:  err,
+				}
+			} else {
+				l.events <- Event{
+					Type: EventError,
+					Err:  err,
+				}
 			}
 			return err
 		}
@@ -250,6 +259,11 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 			return nil
 		}
 
+		// Quota errors should NOT be retried — return immediately
+		if errors.Is(err, ErrQuotaExhausted) {
+			return err
+		}
+
 		lastErr = err
 	}
 
@@ -295,10 +309,11 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		l.processOutput(stdout)
 	}()
 
-	// Log stderr to the log file
+	// Capture stderr into a buffer while also logging it
+	var stderrBuf bytes.Buffer
 	go func() {
 		defer wg.Done()
-		l.logStream(stderr, "[stderr] ")
+		l.logAndCaptureStream(stderr, "[stderr] ", &stderrBuf)
 	}()
 
 	// Wait for output processing to complete
@@ -316,6 +331,11 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		l.mu.Unlock()
 		if stopped {
 			return nil
+		}
+		// Check if this is a quota/rate-limit error
+		stderrText := stderrBuf.String()
+		if IsQuotaError(stderrText) || IsQuotaError(err.Error()) {
+			return fmt.Errorf("Claude quota exhausted: %w", ErrQuotaExhausted)
 		}
 		return fmt.Errorf("Claude exited with error: %w", err)
 	}
@@ -355,6 +375,17 @@ func (l *Loop) logStream(r io.Reader, prefix string) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		l.logLine(prefix + scanner.Text())
+	}
+}
+
+// logAndCaptureStream logs a stream with a prefix and also captures it into a buffer.
+func (l *Loop) logAndCaptureStream(r io.Reader, prefix string, buf *bytes.Buffer) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		text := scanner.Text()
+		l.logLine(prefix + text)
+		buf.WriteString(text)
+		buf.WriteByte('\n')
 	}
 }
 
