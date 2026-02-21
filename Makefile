@@ -17,7 +17,7 @@ all: build
 ## build: Build the binary
 build:
 	@mkdir -p $(BIN_DIR)
-	go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) $(MAIN_PKG)
+	go build $(LDFLAGS) -o $(BINARY_NAME) $(MAIN_PKG)
 
 ## install: Install to $GOPATH/bin
 install:
@@ -64,7 +64,7 @@ release:
 
 ## run: Build and run the TUI
 run: build
-	$(BIN_DIR)/$(BINARY_NAME)
+	$(BINARY_NAME)
 
 ## Contract fixtures — chief-uplink is the source of truth.
 ## Override FIXTURES_REPO for local dev: make sync-fixtures FIXTURES_REPO=../chief-uplink/contract/fixtures
