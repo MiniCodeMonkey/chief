@@ -49,6 +49,9 @@ type tokenResponse struct {
 func RunLogin(opts LoginOptions) error {
 	baseURL := opts.BaseURL
 	if baseURL == "" {
+		baseURL = os.Getenv("CHIEF_SERVER_URL")
+	}
+	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
 
