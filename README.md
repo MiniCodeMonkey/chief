@@ -1,5 +1,9 @@
 # Chief
 
+<p align="center">
+  <img src="assets/hero.png" alt="Chief" width="500">
+</p>
+
 Build big projects with Claude. Chief breaks your work into tasks and runs Claude Code in a loop until they're done.
 
 **[Documentation](https://minicodemonkey.github.io/chief/)** · **[Quick Start](https://minicodemonkey.github.io/chief/guide/quick-start)**
