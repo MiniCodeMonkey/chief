@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 export default defineConfig({
+  base: '/',
   title: 'Chief',
   description: 'Autonomous PRD Agent — Write a PRD, run Chief, watch your code get built.',
   head: [
