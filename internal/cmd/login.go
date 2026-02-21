@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://chiefloop.com"
+	defaultBaseURL = "https://uplink.chiefloop.com"
 	pollInterval   = 5 * time.Second
 	loginTimeout   = 5 * time.Minute
 )

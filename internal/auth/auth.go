@@ -16,7 +16,7 @@ import (
 
 const credentialsFile = "credentials.yaml"
 
-const defaultBaseURL = "https://chiefloop.com"
+const defaultBaseURL = "https://uplink.chiefloop.com"
 
 // ErrNotLoggedIn is returned when no credentials file exists.
 var ErrNotLoggedIn = errors.New("not logged in — run 'chief login' first")
@@ -27,7 +27,7 @@ var ErrSessionExpired = errors.New("session expired — run 'chief login' again"
 // refreshMu protects concurrent token refresh operations.
 var refreshMu sync.Mutex
 
-// Credentials holds authentication token data for chiefloop.com.
+// Credentials holds authentication token data for uplink.chiefloop.com.
 type Credentials struct {
 	AccessToken  string    `yaml:"access_token"`
 	RefreshToken string    `yaml:"refresh_token"`
@@ -166,7 +166,7 @@ type refreshResponse struct {
 
 // RefreshToken refreshes the access token using the refresh token.
 // It is thread-safe (mutex-protected for concurrent use by serve).
-// baseURL can be empty to use the default (https://chiefloop.com).
+// baseURL can be empty to use the default (https://uplink.chiefloop.com).
 func RefreshToken(baseURL string) (*Credentials, error) {
 	refreshMu.Lock()
 	defer refreshMu.Unlock()
@@ -230,7 +230,7 @@ func RefreshToken(baseURL string) (*Credentials, error) {
 }
 
 // RevokeDevice calls the revocation endpoint to deauthorize the device server-side.
-// baseURL can be empty to use the default (https://chiefloop.com).
+// baseURL can be empty to use the default (https://uplink.chiefloop.com).
 func RevokeDevice(accessToken, baseURL string) error {
 	if baseURL == "" {
 		baseURL = defaultBaseURL

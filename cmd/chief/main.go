@@ -112,7 +112,7 @@ Commands:
   status [name]              Show progress for a PRD (default: main)
   list                       List all PRDs with progress
   update                     Update Chief to the latest version
-  login                      Authenticate with chiefloop.com
+  login                      Authenticate with uplink.chiefloop.com
   logout                     Log out and deauthorize this device
   serve                      Start headless daemon for web app
   update                     Update Chief to the latest version
@@ -233,7 +233,7 @@ func newLoginCmd() *cobra.Command {
 
 	loginCmd := &cobra.Command{
 		Use:   "login",
-		Short: "Authenticate with chiefloop.com",
+		Short: "Authenticate with uplink.chiefloop.com",
 		Args:  cobra.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			return cmd.RunLogin(*loginOpts)
@@ -242,7 +242,7 @@ func newLoginCmd() *cobra.Command {
 
 	loginCmd.Flags().StringVar(&loginOpts.DeviceName, "name", "", "Override device name (default: hostname)")
 	loginCmd.Flags().StringVar(&loginOpts.SetupToken, "setup-token", "", "One-time setup token for automated auth")
-	loginCmd.Flags().StringVar(&loginOpts.BaseURL, "server-url", "", "Override server URL (default: https://chiefloop.com)")
+	loginCmd.Flags().StringVar(&loginOpts.BaseURL, "server-url", "", "Override server URL (default: https://uplink.chiefloop.com)")
 
 	return loginCmd
 }
@@ -264,7 +264,7 @@ func newServeCmd() *cobra.Command {
 	serveCmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start headless daemon for web app",
-		Long:  "Starts a headless daemon that connects to chiefloop.com via WebSocket and accepts commands from the web app.",
+		Long:  "Starts a headless daemon that connects to uplink.chiefloop.com via WebSocket and accepts commands from the web app.",
 		Args:  cobra.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			serveOpts.Version = Version
@@ -275,7 +275,7 @@ func newServeCmd() *cobra.Command {
 	serveCmd.Flags().StringVar(&serveOpts.Workspace, "workspace", ".", "Path to workspace directory (default: current directory)")
 	serveCmd.Flags().StringVar(&serveOpts.DeviceName, "name", "", "Override device name for this session")
 	serveCmd.Flags().StringVar(&serveOpts.LogFile, "log-file", "", "Path to log file (default: stdout)")
-	serveCmd.Flags().StringVar(&serveOpts.ServerURL, "server-url", "", "Override server URL (default: https://chiefloop.com)")
+	serveCmd.Flags().StringVar(&serveOpts.ServerURL, "server-url", "", "Override server URL (default: https://uplink.chiefloop.com)")
 
 	return serveCmd
 }

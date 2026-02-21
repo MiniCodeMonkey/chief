@@ -22,7 +22,7 @@ import (
 
 const (
 	// defaultServerURL is the default HTTP base URL for the chief server.
-	defaultServerURL = "https://chiefloop.com"
+	defaultServerURL = "https://uplink.chiefloop.com"
 )
 
 // ServeOptions contains configuration for the serve command.
