@@ -129,8 +129,6 @@ Worktrees are created when you choose "Create worktree + branch" from the start 
 
 You can merge completed branches via `m` in the picker, and clean up worktrees via `c`.
 
-For more details, see [ADR-0007: Git Worktree Isolation](/adr/0007-git-worktree-isolation).
-
 ## The `config.yaml` File
 
 Project-level settings are stored in `.chief/config.yaml`. This file is created during first-time setup or when you change settings via the Settings TUI (`,`).
