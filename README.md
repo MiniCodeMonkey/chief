@@ -4,7 +4,7 @@
   <img src="assets/hero.png" alt="Chief" width="500">
 </p>
 
-Build big projects with Claude. Chief breaks your work into tasks and runs Claude Code in a loop until they're done.
+Build big projects with AI coding agents. Chief breaks your work into tasks and runs your chosen agent in a loop until they're done.
 
 **[Documentation](https://minicodemonkey.github.io/chief/)** · **[Quick Start](https://minicodemonkey.github.io/chief/guide/quick-start)**
 
@@ -32,19 +32,34 @@ chief new
 chief
 ```
 
-Chief runs Claude in a [Ralph Wiggum loop](https://ghuntley.com/ralph/): each iteration starts with a fresh context window, but progress is persisted between runs. This lets Claude work through large projects without hitting context limits.
+Chief runs your chosen agent in a [Ralph Wiggum loop](https://ghuntley.com/ralph/): each iteration starts with a fresh context window, but progress is persisted between runs. This lets the agent work through large projects without hitting context limits.
 
-## How It Works
+## Supported Agents
 
-1. **Describe your project** as a series of tasks
-2. **Chief runs Claude** in a loop, one task at a time
-3. **One commit per task** — clean git history, easy to review
+Chief supports multiple coding agents:
 
-See the [documentation](https://minicodemonkey.github.io/chief/concepts/how-it-works) for details.
+- **Claude Code** (default) — Anthropic's CLI agent
+- **Pi** — The Pi coding agent from badlogic
+
+### Configuration
+
+Set the agent in your project's `.chief/config.yaml`:
+
+```yaml
+agent: pi  # Use Pi instead of Claude
+```
+
+Or set via environment variable:
+
+```bash
+export CHIEF_AGENT=pi
+```
 
 ## Requirements
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- At least one supported agent installed and authenticated:
+  - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (for Claude agent)
+  - [Pi CLI](https://github.com/badlogic/pi-mono) (for Pi agent)
 
 ## License
 

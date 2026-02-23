@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/minicodemonkey/chief/internal/agent"
 	"gopkg.in/yaml.v3"
 )
 
@@ -11,8 +12,19 @@ const configFile = ".chief/config.yaml"
 
 // Config holds project-level settings for Chief.
 type Config struct {
-	Worktree   WorktreeConfig   `yaml:"worktree"`
+	Agent    string            `yaml:"agent"`    // Agent to use: "claude" or "pi"
+	Worktree WorktreeConfig    `yaml:"worktree"`
 	OnComplete OnCompleteConfig `yaml:"onComplete"`
+}
+
+// AgentType returns the configured agent type.
+func (c *Config) AgentType() agent.AgentType {
+	switch c.Agent {
+	case "pi":
+		return agent.AgentPi
+	default:
+		return agent.AgentClaude
+	}
 }
 
 // WorktreeConfig holds worktree-related settings.

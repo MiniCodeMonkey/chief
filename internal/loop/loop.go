@@ -1,7 +1,7 @@
-// Package loop provides the core agent loop that orchestrates Claude Code
+// Package loop provides the core agent loop that orchestrates coding agents
 // to implement user stories. It includes the main Loop struct for single
 // PRD execution, Manager for parallel PRD execution, and Parser for
-// processing Claude's stream-json output.
+// processing agent stream-json output.
 package loop
 
 import (
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/minicodemonkey/chief/embed"
+	"github.com/minicodemonkey/chief/internal/agent"
 	"github.com/minicodemonkey/chief/internal/prd"
 )
 
@@ -35,7 +36,7 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
-// Loop manages the core agent loop that invokes Claude repeatedly until all stories are complete.
+// Loop manages the core agent loop that invokes the coding agent repeatedly until all stories are complete.
 type Loop struct {
 	prdPath     string
 	workDir     string
@@ -43,28 +44,35 @@ type Loop struct {
 	maxIter     int
 	iteration   int
 	events      chan Event
-	claudeCmd   *exec.Cmd
+	cmd         *exec.Cmd
 	logFile     *os.File
 	mu          sync.Mutex
 	stopped     bool
 	paused      bool
 	retryConfig RetryConfig
+	agentType   agent.AgentType
+	agent       agent.Agent
 }
 
-// NewLoop creates a new Loop instance.
+// NewLoop creates a new Loop instance with the default agent (Claude).
 func NewLoop(prdPath, prompt string, maxIter int) *Loop {
-	return &Loop{
-		prdPath:     prdPath,
-		prompt:      prompt,
-		maxIter:     maxIter,
-		events:      make(chan Event, 100),
-		retryConfig: DefaultRetryConfig(),
-	}
+	return NewLoopWithAgent(prdPath, "", prompt, maxIter, agent.AgentClaude)
 }
 
 // NewLoopWithWorkDir creates a new Loop instance with a configurable working directory.
 // When workDir is empty, defaults to the project root for backward compatibility.
 func NewLoopWithWorkDir(prdPath, workDir string, prompt string, maxIter int) *Loop {
+	return NewLoopWithAgent(prdPath, workDir, prompt, maxIter, agent.AgentClaude)
+}
+
+// NewLoopWithWorkDirAndAgent creates a new Loop instance with a configurable working directory and agent type.
+// When workDir is empty, defaults to the PRD directory.
+func NewLoopWithWorkDirAndAgent(prdPath, workDir string, prompt string, maxIter int, agentType agent.AgentType) *Loop {
+	return NewLoopWithAgent(prdPath, workDir, prompt, maxIter, agentType)
+}
+
+// NewLoopWithAgent creates a new Loop instance with a specific agent type.
+func NewLoopWithAgent(prdPath, workDir string, prompt string, maxIter int, agentType agent.AgentType) *Loop {
 	return &Loop{
 		prdPath:     prdPath,
 		workDir:     workDir,
@@ -72,6 +80,8 @@ func NewLoopWithWorkDir(prdPath, workDir string, prompt string, maxIter int) *Lo
 		maxIter:     maxIter,
 		events:      make(chan Event, 100),
 		retryConfig: DefaultRetryConfig(),
+		agentType:   agentType,
+		agent:       agent.NewAgent(agentType),
 	}
 }
 
@@ -210,7 +220,7 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 				Iteration:  iter,
 				RetryCount: attempt,
 				RetryMax:   config.MaxRetries,
-				Text:       fmt.Sprintf("Claude crashed, retrying (%d/%d)...", attempt, config.MaxRetries),
+				Text:       fmt.Sprintf("Agent crashed, retrying (%d/%d)...", attempt, config.MaxRetries),
 			}
 
 			// Wait before retry
@@ -256,34 +266,36 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 	return fmt.Errorf("max retries (%d) exceeded: %w", config.MaxRetries, lastErr)
 }
 
-// runIteration spawns Claude and processes its output.
+// runIteration spawns the coding agent and processes its output.
 func (l *Loop) runIteration(ctx context.Context) error {
-	// Build Claude command with required flags
+	// Build agent command with required flags
 	l.mu.Lock()
-	l.claudeCmd = exec.CommandContext(ctx, "claude",
-		"--dangerously-skip-permissions",
-		"-p", l.prompt,
-		"--output-format", "stream-json",
-		"--verbose",
-	)
+
+	// Build args slice
+	args := []string{}
+	args = append(args, l.agent.RequiredFlags()...)
+	args = append(args, l.agent.BuildPromptArgs(l.prompt)...)
+	args = append(args, l.agent.BuildOutputFormatArgs("stream-json")...)
+
+	l.cmd = exec.CommandContext(ctx, l.agent.Command(), args...)
 	// Set working directory: use workDir if configured, otherwise default to PRD directory
-	l.claudeCmd.Dir = l.effectiveWorkDir()
+	l.cmd.Dir = l.effectiveWorkDir()
 	l.mu.Unlock()
 
 	// Create pipes for stdout and stderr
-	stdout, err := l.claudeCmd.StdoutPipe()
+	stdout, err := l.cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
-	stderr, err := l.claudeCmd.StderrPipe()
+	stderr, err := l.cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	// Start the command
-	if err := l.claudeCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start Claude: %w", err)
+	if err := l.cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
 	// Process stdout in a separate goroutine
@@ -305,7 +317,7 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	wg.Wait()
 
 	// Wait for the command to finish
-	if err := l.claudeCmd.Wait(); err != nil {
+	if err := l.cmd.Wait(); err != nil {
 		// If the context was cancelled, don't treat it as an error
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -317,11 +329,11 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		if stopped {
 			return nil
 		}
-		return fmt.Errorf("Claude exited with error: %w", err)
+		return fmt.Errorf("agent exited with error: %w", err)
 	}
 
 	l.mu.Lock()
-	l.claudeCmd = nil
+	l.cmd = nil
 	l.mu.Unlock()
 
 	return nil
@@ -365,16 +377,16 @@ func (l *Loop) logLine(line string) {
 	}
 }
 
-// Stop terminates the current Claude process and stops the loop.
+// Stop terminates the current agent process and stops the loop.
 func (l *Loop) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	l.stopped = true
 
-	if l.claudeCmd != nil && l.claudeCmd.Process != nil {
+	if l.cmd != nil && l.cmd.Process != nil {
 		// Kill the process
-		l.claudeCmd.Process.Kill()
+		l.cmd.Process.Kill()
 	}
 }
 
@@ -415,11 +427,11 @@ func (l *Loop) effectiveWorkDir() string {
 	return filepath.Dir(l.prdPath)
 }
 
-// IsRunning returns whether a Claude process is currently running.
+// IsRunning returns whether an agent process is currently running.
 func (l *Loop) IsRunning() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.claudeCmd != nil && l.claudeCmd.Process != nil
+	return l.cmd != nil && l.cmd.Process != nil
 }
 
 // SetMaxIterations updates the maximum iterations limit.
@@ -448,4 +460,19 @@ func (l *Loop) DisableRetry() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.retryConfig.Enabled = false
+}
+
+// SetAgentType sets the agent type for the loop.
+func (l *Loop) SetAgentType(agentType agent.AgentType) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.agentType = agentType
+	l.agent = agent.NewAgent(agentType)
+}
+
+// AgentType returns the current agent type.
+func (l *Loop) AgentType() agent.AgentType {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.agentType
 }

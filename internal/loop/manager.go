@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/minicodemonkey/chief/embed"
+	"github.com/minicodemonkey/chief/internal/agent"
 	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/prd"
 )
@@ -73,6 +74,7 @@ type Manager struct {
 	retryConfig RetryConfig
 	baseDir        string                               // Project root directory (for CLAUDE.md etc.)
 	config         *config.Config                       // Project config for post-completion actions
+	agentType      agent.AgentType                      // Agent to use (claude, pi, etc.)
 	mu             sync.RWMutex
 	wg             sync.WaitGroup
 	onComplete     func(prdName string)                  // Callback when a PRD completes
@@ -118,11 +120,25 @@ func (m *Manager) SetPostCompleteCallback(fn func(prdName, branch, workDir strin
 	m.onPostComplete = fn
 }
 
-// SetBaseDir sets the project root directory so Claude runs from there and picks up CLAUDE.md.
+// SetBaseDir sets the project root directory so the agent runs from there and picks up AGENTS.md/CLAUDE.md.
 func (m *Manager) SetBaseDir(baseDir string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.baseDir = baseDir
+}
+
+// SetAgentType sets the agent type to use for all loops.
+func (m *Manager) SetAgentType(agentType agent.AgentType) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.agentType = agentType
+}
+
+// AgentType returns the current agent type.
+func (m *Manager) AgentType() agent.AgentType {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.agentType
 }
 
 // SetConfig sets the project config for post-completion actions.
@@ -224,7 +240,7 @@ func (m *Manager) Start(name string) error {
 
 	// Create a new loop instance, using worktree-aware constructor if WorktreeDir is set.
 	// When no worktree is configured, run from the project root (baseDir) so that
-	// CLAUDE.md and other project-level files are visible to Claude.
+	// CLAUDE.md and other project-level files are visible to the agent.
 	prompt := embed.GetPrompt(instance.PRDPath)
 	workDir := instance.WorktreeDir
 	if workDir == "" {
@@ -232,7 +248,16 @@ func (m *Manager) Start(name string) error {
 		workDir = m.baseDir
 		m.mu.RUnlock()
 	}
-	instance.Loop = NewLoopWithWorkDir(instance.PRDPath, workDir, prompt, m.maxIter)
+
+	// Get agent type from manager, default to Claude
+	m.mu.RLock()
+	agentType := m.agentType
+	m.mu.RUnlock()
+	if agentType == "" {
+		agentType = agent.AgentClaude
+	}
+
+	instance.Loop = NewLoopWithWorkDirAndAgent(instance.PRDPath, workDir, prompt, m.maxIter, agentType)
 	m.mu.RLock()
 	instance.Loop.SetRetryConfig(m.retryConfig)
 	m.mu.RUnlock()
