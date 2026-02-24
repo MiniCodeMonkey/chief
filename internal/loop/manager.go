@@ -225,7 +225,7 @@ func (m *Manager) Start(name string) error {
 	// Create a new loop instance, using worktree-aware constructor if WorktreeDir is set.
 	// When no worktree is configured, run from the project root (baseDir) so that
 	// CLAUDE.md and other project-level files are visible to Claude.
-	prompt := embed.GetPrompt(instance.PRDPath)
+	prompt := embed.GetPrompt(instance.PRDPath, prd.ProgressPath(instance.PRDPath))
 	workDir := instance.WorktreeDir
 	if workDir == "" {
 		m.mu.RLock()

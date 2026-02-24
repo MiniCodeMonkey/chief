@@ -22,9 +22,10 @@ var convertPromptTemplate string
 //go:embed detect_setup_prompt.txt
 var detectSetupPromptTemplate string
 
-// GetPrompt returns the agent prompt with the PRD path substituted.
-func GetPrompt(prdPath string) string {
-	return strings.ReplaceAll(promptTemplate, "{{PRD_PATH}}", prdPath)
+// GetPrompt returns the agent prompt with the PRD and progress paths substituted.
+func GetPrompt(prdPath, progressPath string) string {
+	result := strings.ReplaceAll(promptTemplate, "{{PRD_PATH}}", prdPath)
+	return strings.ReplaceAll(result, "{{PROGRESS_PATH}}", progressPath)
 }
 
 // GetInitPrompt returns the PRD generator prompt with the PRD directory and optional context substituted.

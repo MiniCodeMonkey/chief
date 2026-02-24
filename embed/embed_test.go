@@ -7,16 +7,27 @@ import (
 
 func TestGetPrompt(t *testing.T) {
 	prdPath := "/path/to/prd.json"
-	prompt := GetPrompt(prdPath)
+	progressPath := "/path/to/progress.md"
+	prompt := GetPrompt(prdPath, progressPath)
 
 	// Verify the PRD path placeholder was substituted
 	if strings.Contains(prompt, "{{PRD_PATH}}") {
 		t.Error("Expected {{PRD_PATH}} to be substituted")
 	}
 
+	// Verify the progress path placeholder was substituted
+	if strings.Contains(prompt, "{{PROGRESS_PATH}}") {
+		t.Error("Expected {{PROGRESS_PATH}} to be substituted")
+	}
+
 	// Verify the PRD path appears in the prompt
 	if !strings.Contains(prompt, prdPath) {
 		t.Errorf("Expected prompt to contain PRD path %q", prdPath)
+	}
+
+	// Verify the progress path appears in the prompt
+	if !strings.Contains(prompt, progressPath) {
+		t.Errorf("Expected prompt to contain progress path %q", progressPath)
 	}
 
 	// Verify the prompt contains key instructions

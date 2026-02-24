@@ -5,17 +5,17 @@ You are an autonomous coding agent working on a software project.
 ## Your Task
 
 1. Read the PRD at `{{PRD_PATH}}`
-2. Read `progress.md` if it exists (check Codebase Patterns section first)
+2. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
 3. Pick the **highest priority** user story where `passes: false` -- After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
 4. Implement that single user story
 5. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
 6. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`
 7. Update the PRD to set `passes: true` for the completed story
-8. Append your progress to `progress.md`
+8. Append your progress to `{{PROGRESS_PATH}}`
 
 ## Progress Report Format
 
-APPEND to progress.md (never replace, always append):
+APPEND to `{{PROGRESS_PATH}}` (never replace, always append):
 ```
 ## [Date/Time] - [Story ID]
 - What was implemented
@@ -31,7 +31,7 @@ The learnings section is critical - it helps future iterations avoid repeating m
 
 ## Consolidate Patterns
 
-If you discover a **reusable pattern** that future iterations should know, add it to the `## Codebase Patterns` section at the TOP of progress.md (create it if it doesn't exist). This section should consolidate the most important learnings:
+If you discover a **reusable pattern** that future iterations should know, add it to the `## Codebase Patterns` section at the TOP of `{{PROGRESS_PATH}}` (create it if it doesn't exist). This section should consolidate the most important learnings:
 
 ```
 ## Codebase Patterns
@@ -63,4 +63,4 @@ If there are still stories with `passes: false`, end your response normally (ano
 - Work on ONE story per iteration
 - Commit frequently
 - Keep CI green
-- Read the Codebase Patterns section in progress.md before starting
+- Read the Codebase Patterns section in `{{PROGRESS_PATH}}` before starting
