@@ -2,6 +2,16 @@
 
 All notable changes to Chief are documented in this file.
 
+## [0.6.1] - 2026-02-24
+
+### Bug Fixes
+- Agent prompt now uses explicit `{{PROGRESS_PATH}}` template variable so progress.md is written next to prd.json instead of the working directory
+- Fix asset URLs on custom domain by setting explicit base path
+
+### Other
+- Switch GitHub Pages deployment to chiefloop.com
+- New circular-arrow logo and hero illustration
+
 ## [0.6.0] - 2026-02-21
 
 ### Features
