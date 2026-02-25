@@ -415,7 +415,16 @@ func (sm *sessionManager) streamOutput(sessionID string, r io.Reader) {
 		} else if event != nil {
 			log.Printf("[debug] streamOutput session=%s non-text event: %s", sessionID, event.Type.String())
 		} else if line != "" {
-			// Unparseable line (e.g. stderr or status message) — forward as-is.
+			// ParseLine returned nil — this is either a stream-json event we
+			// don't handle (hook_started, hook_response, thinking blocks, result,
+			// rate_limit_event, etc.) or a non-JSON stderr line. Only forward
+			// non-JSON lines; silently skip unhandled JSON events.
+			var raw json.RawMessage
+			if json.Unmarshal([]byte(line), &raw) == nil {
+				// Valid JSON event we don't need — skip silently.
+				continue
+			}
+			// Non-JSON line (stderr output) — forward as-is.
 			outMsg := ws.PRDOutputMessage{
 				Type: ws.TypePRDOutput,
 				Payload: ws.PRDOutputPayload{
