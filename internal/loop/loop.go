@@ -6,7 +6,9 @@ package loop
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -147,6 +149,7 @@ func (l *Loop) Run(ctx context.Context) error {
 		if err := l.runIterationWithRetry(ctx); err != nil {
 			l.events <- Event{
 				Type: EventError,
+				Text: err.Error(),
 				Err:  err,
 			}
 			return err
@@ -164,6 +167,7 @@ func (l *Loop) Run(ctx context.Context) error {
 		if err != nil {
 			l.events <- Event{
 				Type: EventError,
+				Text: fmt.Sprintf("failed to load PRD: %v", err),
 				Err:  fmt.Errorf("failed to load PRD: %w", err),
 			}
 			return err
@@ -225,6 +229,9 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 				select {
 				case <-time.After(delay):
 				case <-ctx.Done():
+					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+						return newExecutionError(l.provider, ctx.Err(), "")
+					}
 					return ctx.Err()
 				}
 			}
@@ -246,6 +253,12 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 
 		// Check if this is a context cancellation (don't retry)
 		if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				if execErr, ok := asExecutionError(err); ok {
+					return execErr
+				}
+				return newExecutionError(l.provider, ctx.Err(), "")
+			}
 			return ctx.Err()
 		}
 
@@ -270,6 +283,11 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	l.mu.Lock()
 	l.agentCmd = cmd
 	l.mu.Unlock()
+	defer func() {
+		l.mu.Lock()
+		l.agentCmd = nil
+		l.mu.Unlock()
+	}()
 
 	// Create pipes for stdout and stderr
 	stdout, err := l.agentCmd.StdoutPipe()
@@ -284,7 +302,7 @@ func (l *Loop) runIteration(ctx context.Context) error {
 
 	// Start the command
 	if err := l.agentCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start %s: %w", l.provider.Name(), err)
+		return newExecutionError(l.provider, err, "")
 	}
 
 	// Process stdout in a separate goroutine
@@ -297,9 +315,10 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	}()
 
 	// Log stderr to the log file
+	var stderrBuf bytes.Buffer
 	go func() {
 		defer wg.Done()
-		l.logStream(stderr, "[stderr] ")
+		l.logStream(stderr, "[stderr] ", &stderrBuf)
 	}()
 
 	// Wait for output processing to complete
@@ -309,6 +328,9 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	if err := l.agentCmd.Wait(); err != nil {
 		// If the context was cancelled, don't treat it as an error
 		if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return newExecutionError(l.provider, ctx.Err(), stderrBuf.String())
+			}
 			return ctx.Err()
 		}
 		// Check if we were stopped intentionally
@@ -318,12 +340,8 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		if stopped {
 			return nil
 		}
-		return fmt.Errorf("%s exited with error: %w", l.provider.Name(), err)
+		return newExecutionError(l.provider, err, stderrBuf.String())
 	}
-
-	l.mu.Lock()
-	l.agentCmd = nil
-	l.mu.Unlock()
 
 	return nil
 }
@@ -351,11 +369,16 @@ func (l *Loop) processOutput(r io.Reader) {
 	}
 }
 
-// logStream logs a stream with a prefix.
-func (l *Loop) logStream(r io.Reader, prefix string) {
+// logStream logs a stream with a prefix and optionally captures it.
+func (l *Loop) logStream(r io.Reader, prefix string, capture *bytes.Buffer) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		l.logLine(prefix + scanner.Text())
+		line := scanner.Text()
+		l.logLine(prefix + line)
+		if capture != nil {
+			capture.WriteString(line)
+			capture.WriteString("\n")
+		}
 	}
 }
 

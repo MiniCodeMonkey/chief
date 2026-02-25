@@ -53,7 +53,7 @@
         "Error messages include recommended remediation steps when possible."
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-005",

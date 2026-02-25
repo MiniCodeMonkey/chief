@@ -152,11 +152,33 @@ exit 23
 	if err == nil {
 		t.Fatal("Run() expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "OpenCode exited with error") {
-		t.Fatalf("unexpected error: %v", err)
+
+	var execErr *loop.ExecutionError
+	if !errors.As(err, &execErr) {
+		t.Fatalf("expected loop.ExecutionError, got %T: %v", err, err)
 	}
-	if !strings.Contains(err.Error(), "exit status 23") {
-		t.Fatalf("expected exit status in error, got: %v", err)
+	if execErr.Kind != loop.ExecutionErrorKindNonZeroExit {
+		t.Fatalf("expected non-zero exit kind, got %s", execErr.Kind)
+	}
+	if execErr.ExitCode != 23 {
+		t.Fatalf("expected exit code 23, got %d", execErr.ExitCode)
+	}
+	if !strings.Contains(execErr.Stderr, "mock failure from opencode") {
+		t.Fatalf("expected stderr summary to include script output, got: %q", execErr.Stderr)
+	}
+	if !strings.Contains(err.Error(), "stderr:") {
+		t.Fatalf("expected labeled stderr in error message, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "remediation:") {
+		t.Fatalf("expected remediation guidance in error message, got: %v", err)
+	}
+
+	logData, readErr := os.ReadFile(filepath.Join(tmpDir, "opencode.log"))
+	if readErr != nil {
+		t.Fatalf("failed to read log file: %v", readErr)
+	}
+	if !strings.Contains(string(logData), "[stderr] mock failure from opencode") {
+		t.Fatalf("expected stderr log label, log contents: %s", string(logData))
 	}
 
 	events := drainEvents(l.Events())
@@ -164,6 +186,103 @@ exit 23
 	for _, ev := range events {
 		if ev.Type == loop.EventError {
 			hasError = true
+			if ev.Text == "" || !strings.Contains(ev.Text, "non_zero_exit") {
+				t.Fatalf("expected EventError text with explicit state, got: %+v", ev)
+			}
+			break
+		}
+	}
+	if !hasError {
+		t.Fatalf("expected EventError, got events: %+v", events)
+	}
+}
+
+func TestOpenCodeProvider_RunIntegration_MissingBinary(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createPRDFile(t, tmpDir, false)
+
+	provider := NewOpenCodeProvider(filepath.Join(tmpDir, "missing-opencode"))
+	l := loop.NewLoopWithWorkDir(prdPath, tmpDir, "prompt", 1, provider)
+	l.DisableRetry()
+
+	err := l.Run(context.Background())
+	if err == nil {
+		t.Fatal("Run() expected missing binary error, got nil")
+	}
+
+	var execErr *loop.ExecutionError
+	if !errors.As(err, &execErr) {
+		t.Fatalf("expected loop.ExecutionError, got %T: %v", err, err)
+	}
+	if execErr.Kind != loop.ExecutionErrorKindMissingBinary {
+		t.Fatalf("expected missing_binary kind, got %s", execErr.Kind)
+	}
+	if !strings.Contains(err.Error(), "agent.opencode.cliPath") {
+		t.Fatalf("expected opencode remediation hint, got: %v", err)
+	}
+
+	events := drainEvents(l.Events())
+	hasError := false
+	for _, ev := range events {
+		if ev.Type == loop.EventError {
+			hasError = true
+			if !strings.Contains(ev.Text, "missing_binary") {
+				t.Fatalf("expected explicit missing_binary state in event text, got: %s", ev.Text)
+			}
+			break
+		}
+	}
+	if !hasError {
+		t.Fatalf("expected EventError, got events: %+v", events)
+	}
+}
+
+func TestOpenCodeProvider_RunIntegration_Timeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mock shell scripts are unix-only")
+	}
+
+	tmpDir := t.TempDir()
+	prdPath := createPRDFile(t, tmpDir, false)
+
+	script := `#!/bin/sh
+set -eu
+cat >/dev/null
+sleep 5
+`
+	scriptPath := createExecutableScript(t, tmpDir, "mock-opencode-timeout", script)
+
+	provider := NewOpenCodeProvider(scriptPath)
+	l := loop.NewLoopWithWorkDir(prdPath, tmpDir, "prompt", 1, provider)
+	l.DisableRetry()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err := l.Run(ctx)
+	if err == nil {
+		t.Fatal("Run() expected timeout error, got nil")
+	}
+
+	var execErr *loop.ExecutionError
+	if !errors.As(err, &execErr) {
+		t.Fatalf("expected loop.ExecutionError, got %T: %v", err, err)
+	}
+	if execErr.Kind != loop.ExecutionErrorKindTimeout {
+		t.Fatalf("expected timeout kind, got %s", execErr.Kind)
+	}
+	if !strings.Contains(err.Error(), "remediation:") {
+		t.Fatalf("expected remediation guidance in timeout error, got: %v", err)
+	}
+
+	events := drainEvents(l.Events())
+	hasError := false
+	for _, ev := range events {
+		if ev.Type == loop.EventError {
+			hasError = true
+			if !strings.Contains(ev.Text, "timeout") {
+				t.Fatalf("expected timeout in event text, got: %s", ev.Text)
+			}
 			break
 		}
 	}

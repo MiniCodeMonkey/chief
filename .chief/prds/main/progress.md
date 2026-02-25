@@ -3,6 +3,7 @@
 - User-facing provider choices are duplicated in CLI parsing/help (`cmd/chief/main.go`) and config comments (`internal/config/config.go`), so keep those enumerations in sync with resolver changes.
 - Provider-specific runtime config belongs under `agent.<provider>` in `.chief/config.yaml`; enforce provider-specific validation in `agent.Resolve` so startup fails before loop execution.
 - Provider execution contract tests are implemented as executable mock CLI scripts in integration tests, which is the preferred way to assert real argv/stdin handling through `loop.Run`.
+- Runtime provider failures should be represented as `loop.ExecutionError` with explicit `Kind` values and remediation text, then propagated through `EventError.Text` for consistent TUI/user-facing error rendering.
 
 ## 2026-02-25 10:39:54 CET - US-001
 - Implemented first-class provider registration for `opencode` by adding `OpenCodeProvider`, wiring it into provider resolution, and updating CLI/provider validation strings to include `opencode`.
@@ -29,4 +30,13 @@
   - Use `loop.NewLoopWithWorkDir` in provider integration tests to verify CLI process behavior end-to-end instead of only unit-testing command builders.
   - Keep retry disabled in failure-path integration tests (`DisableRetry`) so expected error assertions remain deterministic and fast.
   - Validate provider command contracts inside test scripts (argv shape plus stdin capture) to catch regressions in invocation format early.
+---
+
+## 2026-02-25 10:55:50 CET - US-004
+- Implemented explicit execution error-state mapping for provider runtime failures (`missing_binary`, `timeout`, `non_zero_exit`, `process_failure`) with remediation guidance and labeled stderr summaries, and surfaced those messages consistently through loop events/TUI log rendering.
+- Files changed: `internal/loop/execution_error.go`, `internal/loop/loop.go`, `internal/tui/log.go`, `internal/agent/opencode_integration_test.go`, `.chief/prds/main/prd.json`, `.chief/prds/main/progress.md`.
+- **Learnings for future iterations:**
+  - Capture stderr while streaming to logs so failures can include concise `stderr:` context without losing full raw logs.
+  - Preserve explicit timeout classification (`ExecutionErrorKindTimeout`) instead of collapsing deadline errors to plain `context.DeadlineExceeded` if user-facing state mapping is required.
+  - When emitting `EventError`, always populate `Text` (or derive it from `Err`) so TUI history panels do not degrade to generic fallback messages.
 ---

@@ -56,6 +56,9 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 		ToolInput: event.ToolInput,
 		StoryID:   event.StoryID,
 	}
+	if event.Type == loop.EventError && entry.Text == "" && event.Err != nil {
+		entry.Text = event.Err.Error()
+	}
 
 	// Track Read tool file paths for syntax highlighting
 	if event.Type == loop.EventToolStart && event.Tool == "Read" {
