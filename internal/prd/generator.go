@@ -451,7 +451,7 @@ func WaitWithSpinner(cmd *exec.Cmd, title, message string, stderr *bytes.Buffer)
 		case err := <-done:
 			clearPanelLines(prevLines)
 			if err != nil {
-				return fmt.Errorf("Claude failed: %s", stderr.String())
+				return fmt.Errorf("agent failed: %s", stderr.String())
 			}
 			return nil
 		case <-ticker.C:
@@ -491,7 +491,7 @@ func WaitWithPanel(cmd *exec.Cmd, title, activity string, stderr *bytes.Buffer) 
 		case err := <-done:
 			clearPanelLines(prevLines)
 			if err != nil {
-				return fmt.Errorf("Claude failed: %s", stderr.String())
+				return fmt.Errorf("agent failed: %s", stderr.String())
 			}
 			return nil
 		case <-ticker.C:

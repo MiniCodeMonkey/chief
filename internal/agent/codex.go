@@ -53,7 +53,7 @@ func (p *CodexProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.
 	}
 	outPath := f.Name()
 	f.Close()
-	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "--output-last-message", "-o", outPath, "-")
+	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "-o", outPath, "-")
 	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(prompt)
 	return cmd, loop.OutputFromFile, outPath, nil
@@ -67,7 +67,7 @@ func (p *CodexProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMod
 	}
 	outPath := f.Name()
 	f.Close()
-	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "--output-last-message", "-o", outPath, "-")
+	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "-o", outPath, "-")
 	cmd.Stdin = strings.NewReader(prompt)
 	return cmd, loop.OutputFromFile, outPath, nil
 }
