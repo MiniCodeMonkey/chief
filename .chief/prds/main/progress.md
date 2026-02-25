@@ -2,6 +2,7 @@
 - Provider registration and validation are centralized in `internal/agent/resolve.go`; when adding a provider, update `Resolve` switch cases and supported-provider error text together.
 - User-facing provider choices are duplicated in CLI parsing/help (`cmd/chief/main.go`) and config comments (`internal/config/config.go`), so keep those enumerations in sync with resolver changes.
 - Provider-specific runtime config belongs under `agent.<provider>` in `.chief/config.yaml`; enforce provider-specific validation in `agent.Resolve` so startup fails before loop execution.
+- Provider execution contract tests are implemented as executable mock CLI scripts in integration tests, which is the preferred way to assert real argv/stdin handling through `loop.Run`.
 
 ## 2026-02-25 10:39:54 CET - US-001
 - Implemented first-class provider registration for `opencode` by adding `OpenCodeProvider`, wiring it into provider resolution, and updating CLI/provider validation strings to include `opencode`.
@@ -19,4 +20,13 @@
   - Prefer provider-specific config overrides (for example `agent.opencode.cliPath`) while keeping shared fallback fields (like `agent.cliPath`) to avoid breaking existing setups.
   - Validate provider-specific configuration during provider resolution, not during loop runtime, so users get immediate actionable failures.
   - Required environment variable lists should be validated for both syntax and presence to catch typos and missing shell state early.
+---
+
+## 2026-02-25 10:49:40 CET - US-003
+- Implemented OpenCode execution integration coverage using real process execution via mock `opencode` scripts to validate successful runs, non-zero exit failures, and context-canceled runs.
+- Files changed: `internal/agent/opencode_integration_test.go`, `.chief/prds/main/prd.json`, `.chief/prds/main/progress.md`.
+- **Learnings for future iterations:**
+  - Use `loop.NewLoopWithWorkDir` in provider integration tests to verify CLI process behavior end-to-end instead of only unit-testing command builders.
+  - Keep retry disabled in failure-path integration tests (`DisableRetry`) so expected error assertions remain deterministic and fast.
+  - Validate provider command contracts inside test scripts (argv shape plus stdin capture) to catch regressions in invocation format early.
 ---

@@ -26,8 +26,7 @@
         "Configuration behavior is documented in user-facing docs."
       ],
       "priority": 2,
-      "passes": true,
-      "inProgress": false
+      "passes": true
     },
     {
       "id": "US-003",
@@ -41,7 +40,7 @@
         "Integration tests cover at least one successful and one failing execution path."
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-004",
