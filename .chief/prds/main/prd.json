@@ -1,0 +1,73 @@
+{
+  "project": "Add `opencode` CLI Provider Support",
+  "description": "This feature adds first-class support for the `opencode` CLI in Chief so developer users can run PRD-to-implementation workflows through `opencode` in the same way they currently can with other supported CLIs. This matters because developers should be able to choose their preferred execution engine without losing reliability, usability, or system safeguards.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Register `opencode` as a supported provider",
+      "description": "As a developer user, I want `opencode` available as a supported provider so I can select it for my workflow.",
+      "acceptanceCriteria": [
+        "`opencode` is listed anywhere providers are defined or enumerated.",
+        "Provider validation accepts `opencode` as a valid value.",
+        "Selecting `opencode` does not break existing provider selection flows.",
+        "Automated tests cover provider registration and validation behavior."
+      ],
+      "priority": 1,
+      "passes": true,
+      "inProgress": false
+    },
+    {
+      "id": "US-002",
+      "title": "Configure `opencode` execution settings",
+      "description": "As a developer user, I want to configure required `opencode` settings so executions run with the correct environment.",
+      "acceptanceCriteria": [
+        "Configuration supports all required `opencode` runtime fields (for example: binary path and required environment variables).",
+        "Missing required configuration produces a clear, actionable error message.",
+        "Invalid configuration is rejected before execution starts.",
+        "Configuration behavior is documented in user-facing docs."
+      ],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-003",
+      "title": "Execute workflows with `opencode`",
+      "description": "As a developer user, I want Chief to execute workflows through `opencode` so I can use it as my primary CLI engine.",
+      "acceptanceCriteria": [
+        "Chief can launch `opencode` for a standard workflow invocation.",
+        "Input payloads/prompts are passed to `opencode` in the expected format.",
+        "Execution completion state is captured as success, failure, or canceled.",
+        "Exit codes and process failures are handled without crashing the host workflow.",
+        "Integration tests cover at least one successful and one failing execution path."
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-004",
+      "title": "Surface execution output and errors consistently",
+      "description": "As a developer user, I want `opencode` output and errors shown consistently so I can debug failures quickly.",
+      "acceptanceCriteria": [
+        "Standard output is captured and surfaced in the same format used by other providers.",
+        "Standard error is captured and surfaced with clear labeling.",
+        "Timeouts, missing binary, and non-zero exits map to explicit user-facing error states.",
+        "Error messages include recommended remediation steps when possible."
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-005",
+      "title": "Preserve reliability and prevent regressions",
+      "description": "As a product team, we want confidence in reliability so adding `opencode` does not degrade existing behavior.",
+      "acceptanceCriteria": [
+        "Existing provider test suite passes unchanged.",
+        "New tests for `opencode` are added to unit/integration coverage.",
+        "A reliability checklist is documented for release validation (install check, config check, run check, failure check).",
+        "No critical/high severity regressions are introduced in CI for this feature branch."
+      ],
+      "priority": 5,
+      "passes": false
+    }
+  ]
+}

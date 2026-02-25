@@ -13,12 +13,12 @@ const configFile = ".chief/config.yaml"
 type Config struct {
 	Worktree   WorktreeConfig   `yaml:"worktree"`
 	OnComplete OnCompleteConfig `yaml:"onComplete"`
-	Agent      AgentConfig     `yaml:"agent"`
+	Agent      AgentConfig      `yaml:"agent"`
 }
 
-// AgentConfig holds agent CLI settings (Claude vs Codex).
+// AgentConfig holds agent CLI settings.
 type AgentConfig struct {
-	Provider string `yaml:"provider"` // "claude" (default) | "codex"
+	Provider string `yaml:"provider"` // "claude" (default) | "codex" | "opencode"
 	CLIPath  string `yaml:"cliPath"`  // optional custom path to CLI binary
 }
 

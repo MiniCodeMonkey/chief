@@ -37,8 +37,10 @@ func Resolve(flagAgent, flagPath string, cfg *config.Config) (loop.Provider, err
 		return NewClaudeProvider(cliPath), nil
 	case "codex":
 		return NewCodexProvider(cliPath), nil
+	case "opencode":
+		return NewOpenCodeProvider(cliPath), nil
 	default:
-		return nil, fmt.Errorf("unknown agent provider %q: expected \"claude\" or \"codex\"", providerName)
+		return nil, fmt.Errorf("unknown agent provider %q: expected \"claude\", \"codex\", or \"opencode\"", providerName)
 	}
 }
 

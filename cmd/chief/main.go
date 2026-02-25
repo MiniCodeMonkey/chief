@@ -28,7 +28,7 @@ type TUIOptions struct {
 	Merge         bool
 	Force         bool
 	NoRetry       bool
-	Agent         string // --agent claude|codex
+	Agent         string // --agent claude|codex|opencode
 	AgentPath     string // --agent-path
 }
 
@@ -156,7 +156,7 @@ func parseTUIFlags() *TUIOptions {
 				i++
 				opts.Agent = os.Args[i]
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude or codex)\n")
+				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, or opencode)\n")
 				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent="):
@@ -246,7 +246,7 @@ func runNew() {
 				i++
 				flagAgent = os.Args[i]
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude or codex)\n")
+				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, or opencode)\n")
 				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent="):
@@ -298,7 +298,7 @@ func runEdit() {
 				i++
 				flagAgent = os.Args[i]
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude or codex)\n")
+				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, or opencode)\n")
 				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent="):
@@ -553,7 +553,7 @@ Commands:
   help                      Show this help message
 
 Global Options:
-  --agent <provider>        Agent CLI to use: claude (default) or codex
+  --agent <provider>        Agent CLI to use: claude (default), codex, or opencode
   --agent-path <path>       Custom path to agent CLI binary
   --max-iterations N, -n N  Set maximum iterations (default: dynamic)
   --no-retry                Disable auto-retry on agent crashes
@@ -580,6 +580,7 @@ Examples:
                             Launch auth PRD with 5 max iterations
   chief --verbose           Launch with raw agent output visible
   chief --agent codex       Use Codex CLI instead of Claude
+  chief --agent opencode    Use OpenCode CLI instead of Claude
   chief new                 Create PRD in .chief/prds/main/
   chief new auth            Create PRD in .chief/prds/auth/
   chief new auth "JWT authentication for REST API"
