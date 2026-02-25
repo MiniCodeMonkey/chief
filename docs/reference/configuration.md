@@ -127,6 +127,8 @@ Chief can use **Claude Code** (default), **Codex CLI**, or **OpenCode CLI** as t
 
 When `agent.opencode.requiredEnv` is configured, Chief validates those env vars before execution starts. Missing vars produce an actionable startup error with the missing names.
 
+For release validation of OpenCode behavior, follow the [OpenCode Reliability Checklist](/reference/opencode-reliability-checklist).
+
 ## Claude Code Configuration
 
 When using Claude, Chief invokes Claude Code under the hood. Claude Code has its own configuration:

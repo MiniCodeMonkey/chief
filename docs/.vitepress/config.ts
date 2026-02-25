@@ -85,6 +85,7 @@ export default defineConfig({
         items: [
           { text: 'CLI Commands', link: '/reference/cli' },
           { text: 'Configuration', link: '/reference/configuration' },
+          { text: 'OpenCode Reliability Checklist', link: '/reference/opencode-reliability-checklist' },
           { text: 'PRD Schema', link: '/reference/prd-schema' }
         ]
       },

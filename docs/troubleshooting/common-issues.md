@@ -6,6 +6,8 @@ description: Troubleshoot common Chief issues including Claude not found, permis
 
 Solutions to frequently encountered problems.
 
+For pre-release OpenCode validation steps, see [OpenCode Reliability Checklist](/reference/opencode-reliability-checklist).
+
 ## Agent CLI Not Found
 
 **Symptom:** Error that the agent CLI (Claude, Codex, or OpenCode) is not found.

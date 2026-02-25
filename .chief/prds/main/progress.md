@@ -4,6 +4,7 @@
 - Provider-specific runtime config belongs under `agent.<provider>` in `.chief/config.yaml`; enforce provider-specific validation in `agent.Resolve` so startup fails before loop execution.
 - Provider execution contract tests are implemented as executable mock CLI scripts in integration tests, which is the preferred way to assert real argv/stdin handling through `loop.Run`.
 - Runtime provider failures should be represented as `loop.ExecutionError` with explicit `Kind` values and remediation text, then propagated through `EventError.Text` for consistent TUI/user-facing error rendering.
+- User-facing error classifiers (for example `internal/loop/execution_error.go`) should have dedicated unit tests covering every error-kind mapping and provider-specific remediation branch.
 
 ## 2026-02-25 10:39:54 CET - US-001
 - Implemented first-class provider registration for `opencode` by adding `OpenCodeProvider`, wiring it into provider resolution, and updating CLI/provider validation strings to include `opencode`.
@@ -39,4 +40,13 @@
   - Capture stderr while streaming to logs so failures can include concise `stderr:` context without losing full raw logs.
   - Preserve explicit timeout classification (`ExecutionErrorKindTimeout`) instead of collapsing deadline errors to plain `context.DeadlineExceeded` if user-facing state mapping is required.
   - When emitting `EventError`, always populate `Text` (or derive it from `Err`) so TUI history panels do not degrade to generic fallback messages.
+---
+
+## 2026-02-25 11:00:37 CET - US-005
+- Added reliability regression coverage for execution failure classification/remediation in `internal/loop/execution_error_test.go` and documented a release validation checklist for OpenCode install/config/run/failure checks.
+- Files changed: `internal/loop/execution_error_test.go`, `docs/reference/opencode-reliability-checklist.md`, `docs/.vitepress/config.ts`, `docs/reference/configuration.md`, `docs/troubleshooting/common-issues.md`, `.chief/prds/main/prd.json`, `.chief/prds/main/progress.md`.
+- **Learnings for future iterations:**
+  - Use focused unit tests for error mapping helpers so provider-specific remediation text changes are caught before integration tests.
+  - Keep release-validation docs in the Reference section and link them from both configuration and troubleshooting pages so QA flows are discoverable.
+  - For reliability stories, validate both targeted provider suites and full-project `go test ./...`/`go vet ./...` to catch cross-provider regressions.
 ---
