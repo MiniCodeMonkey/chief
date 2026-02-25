@@ -262,7 +262,9 @@ func runNew() {
 		case strings.HasPrefix(arg, "--agent-path="):
 			flagPath = strings.TrimPrefix(arg, "--agent-path=")
 		case strings.HasPrefix(arg, "-"):
-			// skip unknown flags
+			fmt.Fprintf(os.Stderr, "Error: unknown flag: %s\n", arg)
+			fmt.Fprintf(os.Stderr, "Run 'chief --help' for usage.\n")
+			os.Exit(1)
 		default:
 			positional = append(positional, arg)
 		}
