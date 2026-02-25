@@ -14,8 +14,11 @@ Chief stores project-level settings in `.chief/config.yaml`. This file is create
 
 ```yaml
 agent:
-  provider: claude   # or "codex"
+  provider: claude   # or "codex" / "opencode"
   cliPath: ""        # optional path to CLI binary
+  opencode:
+    cliPath: ""      # optional OpenCode-specific binary path
+    requiredEnv: []  # optional env vars that must be set when provider=opencode
 worktree:
   setup: "npm install"
 onComplete:
@@ -27,8 +30,10 @@ onComplete:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `agent.provider` | string | `"claude"` | Agent CLI to use: `claude` or `codex` |
-| `agent.cliPath` | string | `""` | Optional path to the agent binary (e.g. `/usr/local/bin/codex`). If empty, Chief uses the provider name from PATH. |
+| `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, or `opencode` |
+| `agent.cliPath` | string | `""` | Optional path to the agent binary for all providers. If empty, Chief uses the provider name from PATH. |
+| `agent.opencode.cliPath` | string | `""` | Optional OpenCode-specific binary path. Used only when `agent.provider` resolves to `opencode`. |
+| `agent.opencode.requiredEnv` | string[] | `[]` | Optional list of environment variable names that must be set before running OpenCode (for example API/auth variables). Invalid names are rejected at startup. |
 | `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
 | `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
 | `onComplete.createPR` | bool | `false` | Automatically create a pull request when a PRD completes (requires `gh` CLI) |
@@ -53,6 +58,18 @@ worktree:
 onComplete:
   push: true
   createPR: true
+```
+
+**OpenCode with required env checks:**
+
+```yaml
+agent:
+  provider: opencode
+  opencode:
+    cliPath: /usr/local/bin/opencode
+    requiredEnv:
+      - OPENAI_API_KEY
+      - OPENCODE_PROFILE
 ```
 
 ## Settings TUI
@@ -88,7 +105,7 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--agent <provider>` | Agent CLI to use: `claude` or `codex` | From config / env / `claude` |
+| `--agent <provider>` | Agent CLI to use: `claude`, `codex`, or `opencode` | From config / env / `claude` |
 | `--agent-path <path>` | Custom path to the agent CLI binary | From config / env |
 | `--max-iterations <n>`, `-n` | Loop iteration limit | Dynamic |
 | `--no-retry` | Disable auto-retry on agent crashes | `false` |
@@ -96,17 +113,19 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 | `--merge` | Auto-merge progress on conversion conflicts | `false` |
 | `--force` | Auto-overwrite on conversion conflicts | `false` |
 
-Agent resolution order: `--agent` / `--agent-path` → `CHIEF_AGENT` / `CHIEF_AGENT_PATH` env vars → `agent.provider` / `agent.cliPath` in `.chief/config.yaml` → default `claude`.
+Agent resolution order: `--agent` / `--agent-path` → `CHIEF_AGENT` / `CHIEF_AGENT_PATH` env vars → `agent.provider` / provider-specific config (`agent.opencode.cliPath`) / `agent.cliPath` in `.chief/config.yaml` → default `claude`.
 
 When `--max-iterations` is not specified, Chief calculates a dynamic limit based on the number of remaining stories plus a buffer. You can also adjust the limit at runtime with `+`/`-` in the TUI.
 
 ## Agent
 
-Chief can use **Claude Code** (default) or **Codex CLI** as the agent. Choose via:
+Chief can use **Claude Code** (default), **Codex CLI**, or **OpenCode CLI** as the agent. Choose via:
 
-- **Config:** `agent.provider: codex` and optionally `agent.cliPath: /path/to/codex` in `.chief/config.yaml`
-- **Environment:** `CHIEF_AGENT=codex`, `CHIEF_AGENT_PATH=/path/to/codex`
-- **CLI:** `chief --agent codex --agent-path /path/to/codex`
+- **Config:** `agent.provider: codex|opencode` and optionally `agent.cliPath: /path/to/binary` (or `agent.opencode.cliPath` for OpenCode) in `.chief/config.yaml`
+- **Environment:** `CHIEF_AGENT=codex|opencode`, `CHIEF_AGENT_PATH=/path/to/binary`
+- **CLI:** `chief --agent codex|opencode --agent-path /path/to/binary`
+
+When `agent.opencode.requiredEnv` is configured, Chief validates those env vars before execution starts. Missing vars produce an actionable startup error with the missing names.
 
 ## Claude Code Configuration
 

@@ -18,8 +18,15 @@ type Config struct {
 
 // AgentConfig holds agent CLI settings.
 type AgentConfig struct {
-	Provider string `yaml:"provider"` // "claude" (default) | "codex" | "opencode"
-	CLIPath  string `yaml:"cliPath"`  // optional custom path to CLI binary
+	Provider string              `yaml:"provider"` // "claude" (default) | "codex" | "opencode"
+	CLIPath  string              `yaml:"cliPath"`  // optional custom path to CLI binary (all providers)
+	OpenCode OpenCodeAgentConfig `yaml:"opencode"`
+}
+
+// OpenCodeAgentConfig holds OpenCode-specific runtime settings.
+type OpenCodeAgentConfig struct {
+	CLIPath     string   `yaml:"cliPath"`     // optional provider-specific binary path
+	RequiredEnv []string `yaml:"requiredEnv"` // env vars that must be set before execution
 }
 
 // WorktreeConfig holds worktree-related settings.

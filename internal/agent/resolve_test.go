@@ -210,3 +210,85 @@ agent:
 		t.Errorf("Resolve from config: name=%q path=%q", got.Name(), got.CLIPath())
 	}
 }
+
+func TestResolve_configFileOpenCodeProviderPathPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".chief", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const yamlContent = `
+agent:
+  provider: opencode
+  cliPath: /usr/local/bin/global-cli
+  opencode:
+    cliPath: /usr/local/bin/opencode-specific
+`
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := mustResolve(t, "", "", cfg)
+	if got.Name() != "OpenCode" || got.CLIPath() != "/usr/local/bin/opencode-specific" {
+		t.Errorf("Resolve from config with provider-specific path: name=%q path=%q", got.Name(), got.CLIPath())
+	}
+}
+
+func TestResolve_OpenCodeRequiredEnv_Missing(t *testing.T) {
+	t.Setenv("CHIEF_AGENT", "")
+	t.Setenv("CHIEF_AGENT_PATH", "")
+	t.Setenv("OPENCODE_MISSING_TEST_ENV", "")
+
+	cfg := &config.Config{}
+	cfg.Agent.Provider = "opencode"
+	cfg.Agent.OpenCode.RequiredEnv = []string{"OPENCODE_MISSING_TEST_ENV"}
+
+	_, err := Resolve("", "", cfg)
+	if err == nil {
+		t.Fatal("Resolve() expected missing required env error, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing required opencode environment variables") {
+		t.Errorf("error should explain missing required env vars: %v", err)
+	}
+	if !strings.Contains(err.Error(), "OPENCODE_MISSING_TEST_ENV") {
+		t.Errorf("error should list missing env var name: %v", err)
+	}
+	if !strings.Contains(err.Error(), "agent.opencode.requiredEnv") {
+		t.Errorf("error should mention config key remediation: %v", err)
+	}
+}
+
+func TestResolve_OpenCodeRequiredEnv_InvalidName(t *testing.T) {
+	t.Setenv("CHIEF_AGENT", "")
+	t.Setenv("CHIEF_AGENT_PATH", "")
+
+	cfg := &config.Config{}
+	cfg.Agent.Provider = "opencode"
+	cfg.Agent.OpenCode.RequiredEnv = []string{"bad-name"}
+
+	_, err := Resolve("", "", cfg)
+	if err == nil {
+		t.Fatal("Resolve() expected invalid required env name error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid agent.opencode.requiredEnv entry") {
+		t.Errorf("error should mention invalid requiredEnv entry: %v", err)
+	}
+}
+
+func TestResolve_OpenCodeRequiredEnv_Present(t *testing.T) {
+	t.Setenv("CHIEF_AGENT", "")
+	t.Setenv("CHIEF_AGENT_PATH", "")
+	t.Setenv("OPENCODE_PRESENT_TEST_ENV", "set")
+
+	cfg := &config.Config{}
+	cfg.Agent.Provider = "opencode"
+	cfg.Agent.OpenCode.RequiredEnv = []string{"OPENCODE_PRESENT_TEST_ENV"}
+
+	got := mustResolve(t, "", "", cfg)
+	if got.Name() != "OpenCode" {
+		t.Errorf("Resolve() name = %q, want OpenCode", got.Name())
+	}
+}

@@ -13,8 +13,7 @@
         "Automated tests cover provider registration and validation behavior."
       ],
       "priority": 1,
-      "passes": true,
-      "inProgress": false
+      "passes": true
     },
     {
       "id": "US-002",
@@ -27,7 +26,8 @@
         "Configuration behavior is documented in user-facing docs."
       ],
       "priority": 2,
-      "passes": false
+      "passes": true,
+      "inProgress": false
     },
     {
       "id": "US-003",

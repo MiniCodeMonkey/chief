@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/loop"
 )
+
+var envVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Resolve returns the agent Provider using priority: flagAgent > CHIEF_AGENT env > config > "claude".
 // flagPath overrides the CLI path when non-empty (flag > CHIEF_AGENT_PATH > config agent.cliPath).
@@ -23,14 +27,7 @@ func Resolve(flagAgent, flagPath string, cfg *config.Config) (loop.Provider, err
 		providerName = strings.ToLower(strings.TrimSpace(cfg.Agent.Provider))
 	}
 
-	cliPath := ""
-	if flagPath != "" {
-		cliPath = flagPath
-	} else if v := os.Getenv("CHIEF_AGENT_PATH"); v != "" {
-		cliPath = strings.TrimSpace(v)
-	} else if cfg != nil && cfg.Agent.CLIPath != "" {
-		cliPath = strings.TrimSpace(cfg.Agent.CLIPath)
-	}
+	cliPath := resolveCLIPath(providerName, flagPath, cfg)
 
 	switch providerName {
 	case "claude":
@@ -38,10 +35,62 @@ func Resolve(flagAgent, flagPath string, cfg *config.Config) (loop.Provider, err
 	case "codex":
 		return NewCodexProvider(cliPath), nil
 	case "opencode":
+		if err := validateOpenCodeConfig(cfg); err != nil {
+			return nil, err
+		}
 		return NewOpenCodeProvider(cliPath), nil
 	default:
 		return nil, fmt.Errorf("unknown agent provider %q: expected \"claude\", \"codex\", or \"opencode\"", providerName)
 	}
+}
+
+func resolveCLIPath(providerName, flagPath string, cfg *config.Config) string {
+	if flagPath != "" {
+		return flagPath
+	}
+	if v := strings.TrimSpace(os.Getenv("CHIEF_AGENT_PATH")); v != "" {
+		return v
+	}
+	if cfg == nil {
+		return ""
+	}
+	if providerName == "opencode" {
+		if v := strings.TrimSpace(cfg.Agent.OpenCode.CLIPath); v != "" {
+			return v
+		}
+	}
+	return strings.TrimSpace(cfg.Agent.CLIPath)
+}
+
+func validateOpenCodeConfig(cfg *config.Config) error {
+	if cfg == nil {
+		return nil
+	}
+
+	requiredEnv := cfg.Agent.OpenCode.RequiredEnv
+	if len(requiredEnv) == 0 {
+		return nil
+	}
+
+	var missing []string
+	for _, raw := range requiredEnv {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			return fmt.Errorf("invalid agent.opencode.requiredEnv: entries must be non-empty environment variable names")
+		}
+		if !envVarNamePattern.MatchString(name) {
+			return fmt.Errorf("invalid agent.opencode.requiredEnv entry %q: expected [A-Za-z_][A-Za-z0-9_]*", raw)
+		}
+		if os.Getenv(name) == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	slices.Sort(missing)
+	return fmt.Errorf("missing required opencode environment variables: %s. Set them in your shell or adjust agent.opencode.requiredEnv in .chief/config.yaml", strings.Join(missing, ", "))
 }
 
 // CheckInstalled verifies that the provider's CLI binary is found in PATH (or at cliPath).

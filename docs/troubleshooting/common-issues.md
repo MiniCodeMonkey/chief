@@ -8,7 +8,7 @@ Solutions to frequently encountered problems.
 
 ## Agent CLI Not Found
 
-**Symptom:** Error that the agent CLI (Claude or Codex) is not found.
+**Symptom:** Error that the agent CLI (Claude, Codex, or OpenCode) is not found.
 
 ```
 Error: Claude CLI not found in PATH. Install it or set agent.cliPath in .chief/config.yaml
@@ -16,6 +16,10 @@ Error: Claude CLI not found in PATH. Install it or set agent.cliPath in .chief/c
 or
 ```
 Error: Codex CLI not found in PATH. Install it or set agent.cliPath in .chief/config.yaml
+```
+or
+```
+Error: OpenCode CLI not found in PATH. Install it or set agent.opencode.cliPath (or agent.cliPath) in .chief/config.yaml
 ```
 
 **Cause:** The chosen agent CLI isn't installed or isn't in your PATH.
@@ -33,6 +37,40 @@ Error: Codex CLI not found in PATH. Install it or set agent.cliPath in .chief/co
     cliPath: /usr/local/bin/codex
   ```
   Verify with `codex --version` (or your `cliPath`).
+- **OpenCode:** Ensure `opencode` is in PATH, or set an explicit path:
+  ```yaml
+  agent:
+    provider: opencode
+    opencode:
+      cliPath: /usr/local/bin/opencode
+  ```
+  Verify with `opencode --version` (or your configured path).
+
+## OpenCode Required Environment Variables Missing
+
+**Symptom:** Chief exits before execution with an error listing missing OpenCode env vars.
+
+```
+Error: missing required opencode environment variables: OPENAI_API_KEY. Set them in your shell or adjust agent.opencode.requiredEnv in .chief/config.yaml
+```
+
+**Cause:** `agent.opencode.requiredEnv` is configured, but one or more listed variables are not set in the current shell session.
+
+**Solution:**
+
+1. Set the missing variables in your shell (or CI environment), for example:
+   ```bash
+   export OPENAI_API_KEY=...
+   ```
+2. Or update `.chief/config.yaml` to match the variables your environment provides:
+   ```yaml
+   agent:
+     provider: opencode
+     opencode:
+       requiredEnv:
+         - OPENAI_API_KEY
+         - OPENCODE_PROFILE
+   ```
 
 ## Permission Denied
 
