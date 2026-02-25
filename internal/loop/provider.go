@@ -22,8 +22,8 @@ type Provider interface {
 	CLIPath() string
 	LoopCommand(ctx context.Context, prompt, workDir string) *exec.Cmd
 	InteractiveCommand(workDir, prompt string) *exec.Cmd
-	ConvertCommand(workDir, prompt string) (cmd *exec.Cmd, mode OutputMode, outPath string)
-	FixJSONCommand(prompt string) (cmd *exec.Cmd, mode OutputMode, outPath string)
+	ConvertCommand(workDir, prompt string) (cmd *exec.Cmd, mode OutputMode, outPath string, err error)
+	FixJSONCommand(prompt string) (cmd *exec.Cmd, mode OutputMode, outPath string, err error)
 	ParseLine(line string) *Event
 	LogFileName() string
 }

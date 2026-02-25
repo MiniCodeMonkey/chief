@@ -48,17 +48,17 @@ func (p *ClaudeProvider) InteractiveCommand(workDir, prompt string) *exec.Cmd {
 }
 
 // ConvertCommand implements loop.Provider.
-func (p *ClaudeProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.OutputMode, string) {
+func (p *ClaudeProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
 	cmd := exec.Command(p.cliPath, "-p", "--tools", "")
 	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(prompt)
-	return cmd, loop.OutputStdout, ""
+	return cmd, loop.OutputStdout, "", nil
 }
 
 // FixJSONCommand implements loop.Provider.
-func (p *ClaudeProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMode, string) {
+func (p *ClaudeProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
 	cmd := exec.Command(p.cliPath, "-p", prompt)
-	return cmd, loop.OutputStdout, ""
+	return cmd, loop.OutputStdout, "", nil
 }
 
 // ParseLine implements loop.Provider.

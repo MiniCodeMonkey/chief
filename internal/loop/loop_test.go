@@ -17,13 +17,19 @@ type mockProvider struct {
 	cliPath string // if set, used as CLI path; otherwise "claude"
 }
 
-func (m *mockProvider) Name() string                                       { return "Test" }
-func (m *mockProvider) CLIPath() string                                    { return m.path() }
-func (m *mockProvider) InteractiveCommand(_, _ string) *exec.Cmd          { return exec.Command("true") }
-func (m *mockProvider) ConvertCommand(_, _ string) (*exec.Cmd, OutputMode, string) { return exec.Command("true"), OutputStdout, "" }
-func (m *mockProvider) FixJSONCommand(_ string) (*exec.Cmd, OutputMode, string)    { return exec.Command("true"), OutputStdout, "" }
-func (m *mockProvider) ParseLine(line string) *Event                      { return ParseLine(line) }
-func (m *mockProvider) LogFileName() string                                { return "claude.log" }
+func (m *mockProvider) Name() string                              { return "Test" }
+func (m *mockProvider) CLIPath() string                            { return m.path() }
+func (m *mockProvider) InteractiveCommand(_, _ string) *exec.Cmd  { return exec.Command("true") }
+func (m *mockProvider) ParseLine(line string) *Event               { return ParseLine(line) }
+func (m *mockProvider) LogFileName() string                        { return "claude.log" }
+
+func (m *mockProvider) ConvertCommand(_, _ string) (*exec.Cmd, OutputMode, string, error) {
+	return exec.Command("true"), OutputStdout, "", nil
+}
+
+func (m *mockProvider) FixJSONCommand(_ string) (*exec.Cmd, OutputMode, string, error) {
+	return exec.Command("true"), OutputStdout, "", nil
+}
 
 func (m *mockProvider) path() string {
 	if m.cliPath != "" {

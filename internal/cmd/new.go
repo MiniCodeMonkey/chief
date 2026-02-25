@@ -21,7 +21,7 @@ type NewOptions struct {
 	Provider loop.Provider // Agent CLI provider (Claude or Codex)
 }
 
-// RunNew creates a new PRD by launching an interactive Claude session.
+// RunNew creates a new PRD by launching an interactive agent session.
 func RunNew(opts NewOptions) error {
 	// Set defaults
 	if opts.Name == "" {

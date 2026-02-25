@@ -12,6 +12,7 @@ import (
 	"github.com/minicodemonkey/chief/internal/cmd"
 	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/git"
+	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/prd"
 	"github.com/minicodemonkey/chief/internal/tui"
 )
@@ -227,37 +228,41 @@ func parseTUIFlags() *TUIOptions {
 
 func runNew() {
 	opts := cmd.NewOptions{}
-	// Parse arguments: chief new [name] [context...]
-	if len(os.Args) > 2 {
-		opts.Name = os.Args[2]
-	}
-	if len(os.Args) > 3 {
-		opts.Context = strings.Join(os.Args[3:], " ")
-	}
-	// Resolve provider (support --agent/--agent-path after "new")
-	cwd, _ := os.Getwd()
-	cfg, _ := config.Load(cwd)
 	flagAgent, flagPath := "", ""
+	var positional []string
+
+	// Parse arguments: chief new [name] [context...] [--agent X] [--agent-path X]
 	for i := 2; i < len(os.Args); i++ {
-		switch os.Args[i] {
-		case "--agent":
+		arg := os.Args[i]
+		switch {
+		case arg == "--agent":
 			if i+1 < len(os.Args) {
 				i++
 				flagAgent = os.Args[i]
 			}
-		case "--agent-path":
+		case strings.HasPrefix(arg, "--agent="):
+			flagAgent = strings.TrimPrefix(arg, "--agent=")
+		case arg == "--agent-path":
 			if i+1 < len(os.Args) {
 				i++
 				flagPath = os.Args[i]
 			}
+		case strings.HasPrefix(arg, "--agent-path="):
+			flagPath = strings.TrimPrefix(arg, "--agent-path=")
+		case strings.HasPrefix(arg, "-"):
+			// skip unknown flags
+		default:
+			positional = append(positional, arg)
 		}
 	}
-	opts.Provider = agent.Resolve(flagAgent, flagPath, cfg)
-	if err := agent.CheckInstalled(opts.Provider); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	if len(positional) > 0 {
+		opts.Name = positional[0]
+	}
+	if len(positional) > 1 {
+		opts.Context = strings.Join(positional[1:], " ")
 	}
 
+	opts.Provider = resolveProvider(flagAgent, flagPath)
 	if err := cmd.RunNew(opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -267,38 +272,37 @@ func runNew() {
 func runEdit() {
 	opts := cmd.EditOptions{}
 	flagAgent, flagPath := "", ""
-	// Parse arguments: chief edit [name] [--merge] [--force] [--agent] [--agent-path]
+
+	// Parse arguments: chief edit [name] [--merge] [--force] [--agent X] [--agent-path X]
 	for i := 2; i < len(os.Args); i++ {
 		arg := os.Args[i]
-		switch arg {
-		case "--merge":
+		switch {
+		case arg == "--merge":
 			opts.Merge = true
-		case "--force":
+		case arg == "--force":
 			opts.Force = true
-		case "--agent":
+		case arg == "--agent":
 			if i+1 < len(os.Args) {
 				i++
 				flagAgent = os.Args[i]
 			}
-		case "--agent-path":
+		case strings.HasPrefix(arg, "--agent="):
+			flagAgent = strings.TrimPrefix(arg, "--agent=")
+		case arg == "--agent-path":
 			if i+1 < len(os.Args) {
 				i++
 				flagPath = os.Args[i]
 			}
+		case strings.HasPrefix(arg, "--agent-path="):
+			flagPath = strings.TrimPrefix(arg, "--agent-path=")
 		default:
 			if opts.Name == "" && !strings.HasPrefix(arg, "-") {
 				opts.Name = arg
 			}
 		}
 	}
-	cwd, _ := os.Getwd()
-	cfg, _ := config.Load(cwd)
-	opts.Provider = agent.Resolve(flagAgent, flagPath, cfg)
-	if err := agent.CheckInstalled(opts.Provider); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
 
+	opts.Provider = resolveProvider(flagAgent, flagPath)
 	if err := cmd.RunEdit(opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -337,15 +341,28 @@ func runList() {
 	}
 }
 
-func runTUIWithOptions(opts *TUIOptions) {
-	// Resolve agent provider early (used for conversion, app, new, edit)
-	cwd, _ := os.Getwd()
+// resolveProvider loads config and resolves the agent provider, exiting on error.
+func resolveProvider(flagAgent, flagPath string) loop.Provider {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 	cfg, _ := config.Load(cwd)
-	provider := agent.Resolve(opts.Agent, opts.AgentPath, cfg)
+	provider, err := agent.Resolve(flagAgent, flagPath, cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 	if err := agent.CheckInstalled(provider); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+	return provider
+}
+
+func runTUIWithOptions(opts *TUIOptions) {
+	provider := resolveProvider(opts.Agent, opts.AgentPath)
 
 	prdPath := opts.PRDPath
 

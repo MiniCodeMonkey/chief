@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -45,36 +46,30 @@ func (p *CodexProvider) InteractiveCommand(workDir, prompt string) *exec.Cmd {
 }
 
 // ConvertCommand implements loop.Provider.
-func (p *CodexProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.OutputMode, string) {
+func (p *CodexProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
 	f, err := os.CreateTemp("", "chief-codex-convert-*.txt")
 	if err != nil {
-		// Caller will fail when running cmd; return empty path
-		cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "--output-last-message", "-o", "", "-")
-		cmd.Dir = workDir
-		cmd.Stdin = strings.NewReader(prompt)
-		return cmd, loop.OutputFromFile, ""
+		return nil, 0, "", fmt.Errorf("failed to create temp file for conversion output: %w", err)
 	}
 	outPath := f.Name()
 	f.Close()
 	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "--output-last-message", "-o", outPath, "-")
 	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(prompt)
-	return cmd, loop.OutputFromFile, outPath
+	return cmd, loop.OutputFromFile, outPath, nil
 }
 
 // FixJSONCommand implements loop.Provider.
-func (p *CodexProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMode, string) {
+func (p *CodexProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
 	f, err := os.CreateTemp("", "chief-codex-fixjson-*.txt")
 	if err != nil {
-		cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "--output-last-message", "-o", "", "-")
-		cmd.Stdin = strings.NewReader(prompt)
-		return cmd, loop.OutputFromFile, ""
+		return nil, 0, "", fmt.Errorf("failed to create temp file for fix output: %w", err)
 	}
 	outPath := f.Name()
 	f.Close()
 	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "--output-last-message", "-o", outPath, "-")
 	cmd.Stdin = strings.NewReader(prompt)
-	return cmd, loop.OutputFromFile, outPath
+	return cmd, loop.OutputFromFile, outPath, nil
 }
 
 // ParseLine implements loop.Provider.

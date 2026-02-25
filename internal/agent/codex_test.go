@@ -62,7 +62,10 @@ func TestCodexProvider_LoopCommand(t *testing.T) {
 
 func TestCodexProvider_ConvertCommand(t *testing.T) {
 	p := NewCodexProvider("codex")
-	cmd, mode, outPath := p.ConvertCommand("/prd/dir", "convert prompt")
+	cmd, mode, outPath, err := p.ConvertCommand("/prd/dir", "convert prompt")
+	if err != nil {
+		t.Fatalf("ConvertCommand unexpected error: %v", err)
+	}
 	if mode != loop.OutputFromFile {
 		t.Errorf("ConvertCommand mode = %v, want OutputFromFile", mode)
 	}
@@ -72,7 +75,6 @@ func TestCodexProvider_ConvertCommand(t *testing.T) {
 	if !strings.Contains(cmd.Path, "codex") {
 		t.Errorf("ConvertCommand Path = %q", cmd.Path)
 	}
-	// Should have -o outPath
 	foundO := false
 	for i, a := range cmd.Args {
 		if a == "-o" && i+1 < len(cmd.Args) && cmd.Args[i+1] == outPath {
@@ -90,14 +92,16 @@ func TestCodexProvider_ConvertCommand(t *testing.T) {
 
 func TestCodexProvider_FixJSONCommand(t *testing.T) {
 	p := NewCodexProvider("codex")
-	cmd, mode, outPath := p.FixJSONCommand("fix prompt")
+	cmd, mode, outPath, err := p.FixJSONCommand("fix prompt")
+	if err != nil {
+		t.Fatalf("FixJSONCommand unexpected error: %v", err)
+	}
 	if mode != loop.OutputFromFile {
 		t.Errorf("FixJSONCommand mode = %v, want OutputFromFile", mode)
 	}
 	if outPath == "" {
 		t.Error("FixJSONCommand outPath should be non-empty temp file")
 	}
-	// -o outPath present
 	foundO := false
 	for i, a := range cmd.Args {
 		if a == "-o" && i+1 < len(cmd.Args) && cmd.Args[i+1] == outPath {

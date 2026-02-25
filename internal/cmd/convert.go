@@ -18,7 +18,10 @@ func runConversionWithProvider(provider loop.Provider, absPRDDir string) (string
 		return "", fmt.Errorf("failed to read prd.md: %w", err)
 	}
 	prompt := embed.GetConvertPrompt(string(content))
-	cmd, mode, outPath := provider.ConvertCommand(absPRDDir, prompt)
+	cmd, mode, outPath, err := provider.ConvertCommand(absPRDDir, prompt)
+	if err != nil {
+		return "", fmt.Errorf("failed to prepare conversion command: %w", err)
+	}
 
 	var stdout, stderr bytes.Buffer
 	if mode == loop.OutputStdout {
@@ -50,7 +53,10 @@ func runConversionWithProvider(provider loop.Provider, absPRDDir string) (string
 
 // runFixJSONWithProvider runs the agent to fix invalid JSON.
 func runFixJSONWithProvider(provider loop.Provider, prompt string) (string, error) {
-	cmd, mode, outPath := provider.FixJSONCommand(prompt)
+	cmd, mode, outPath, err := provider.FixJSONCommand(prompt)
+	if err != nil {
+		return "", fmt.Errorf("failed to prepare fix command: %w", err)
+	}
 
 	var stdout, stderr bytes.Buffer
 	if mode == loop.OutputStdout {

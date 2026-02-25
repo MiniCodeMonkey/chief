@@ -8,11 +8,21 @@ import (
 	"testing"
 
 	"github.com/minicodemonkey/chief/internal/config"
+	"github.com/minicodemonkey/chief/internal/loop"
 )
+
+func mustResolve(t *testing.T, flagAgent, flagPath string, cfg *config.Config) loop.Provider {
+	t.Helper()
+	p, err := Resolve(flagAgent, flagPath, cfg)
+	if err != nil {
+		t.Fatalf("Resolve(%q, %q, cfg) unexpected error: %v", flagAgent, flagPath, err)
+	}
+	return p
+}
 
 func TestResolve_priority(t *testing.T) {
 	// Default: no flag, no env, nil config -> Claude
-	got := Resolve("", "", nil)
+	got := mustResolve(t, "", "", nil)
 	if got.Name() != "Claude" {
 		t.Errorf("Resolve(_, _, nil) name = %q, want Claude", got.Name())
 	}
@@ -21,7 +31,7 @@ func TestResolve_priority(t *testing.T) {
 	}
 
 	// Flag overrides everything
-	got = Resolve("codex", "", nil)
+	got = mustResolve(t, "codex", "", nil)
 	if got.Name() != "Codex" {
 		t.Errorf("Resolve(codex, _, nil) name = %q, want Codex", got.Name())
 	}
@@ -30,7 +40,7 @@ func TestResolve_priority(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Agent.Provider = "codex"
 	cfg.Agent.CLIPath = "/usr/local/bin/codex"
-	got = Resolve("", "", cfg)
+	got = mustResolve(t, "", "", cfg)
 	if got.Name() != "Codex" {
 		t.Errorf("Resolve(_, _, config codex) name = %q, want Codex", got.Name())
 	}
@@ -39,12 +49,12 @@ func TestResolve_priority(t *testing.T) {
 	}
 
 	// Flag overrides config
-	got = Resolve("claude", "", cfg)
+	got = mustResolve(t, "claude", "", cfg)
 	if got.Name() != "Claude" {
 		t.Errorf("Resolve(claude, _, config codex) name = %q, want Claude", got.Name())
 	}
 	// flag path overrides config path
-	got = Resolve("codex", "/opt/codex", cfg)
+	got = mustResolve(t, "codex", "/opt/codex", cfg)
 	if got.CLIPath() != "/opt/codex" {
 		t.Errorf("Resolve(codex, /opt/codex, cfg) CLIPath = %q, want /opt/codex", got.CLIPath())
 	}
@@ -73,7 +83,7 @@ func TestResolve_env(t *testing.T) {
 
 	// Env provider when no flag
 	os.Setenv(keyAgent, "codex")
-	got := Resolve("", "", nil)
+	got := mustResolve(t, "", "", nil)
 	if got.Name() != "Codex" {
 		t.Errorf("with CHIEF_AGENT=codex, name = %q, want Codex", got.Name())
 	}
@@ -82,7 +92,7 @@ func TestResolve_env(t *testing.T) {
 	// Env path when no flag path
 	os.Setenv(keyAgent, "codex")
 	os.Setenv(keyPath, "/env/codex")
-	got = Resolve("", "", nil)
+	got = mustResolve(t, "", "", nil)
 	if got.CLIPath() != "/env/codex" {
 		t.Errorf("with CHIEF_AGENT_PATH, CLIPath = %q, want /env/codex", got.CLIPath())
 	}
@@ -91,10 +101,19 @@ func TestResolve_env(t *testing.T) {
 }
 
 func TestResolve_normalize(t *testing.T) {
-	// Case and spaces
-	got := Resolve("  CODEX  ", "", nil)
+	got := mustResolve(t, "  CODEX  ", "", nil)
 	if got.Name() != "Codex" {
 		t.Errorf("Resolve('  CODEX  ') name = %q, want Codex", got.Name())
+	}
+}
+
+func TestResolve_unknownProvider(t *testing.T) {
+	_, err := Resolve("typo", "", nil)
+	if err == nil {
+		t.Fatal("Resolve(typo) expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "typo") {
+		t.Errorf("error should mention the bad provider name: %v", err)
 	}
 }
 
@@ -141,7 +160,7 @@ agent:
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := Resolve("", "", cfg)
+	got := mustResolve(t, "", "", cfg)
 	if got.Name() != "Codex" || got.CLIPath() != "/usr/local/bin/codex" {
 		t.Errorf("Resolve from config: name=%q path=%q", got.Name(), got.CLIPath())
 	}

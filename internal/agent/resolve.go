@@ -12,7 +12,8 @@ import (
 
 // Resolve returns the agent Provider using priority: flagAgent > CHIEF_AGENT env > config > "claude".
 // flagPath overrides the CLI path when non-empty (flag > CHIEF_AGENT_PATH > config agent.cliPath).
-func Resolve(flagAgent, flagPath string, cfg *config.Config) loop.Provider {
+// Returns an error if the resolved provider name is not recognised.
+func Resolve(flagAgent, flagPath string, cfg *config.Config) (loop.Provider, error) {
 	providerName := "claude"
 	if flagAgent != "" {
 		providerName = strings.ToLower(strings.TrimSpace(flagAgent))
@@ -32,10 +33,12 @@ func Resolve(flagAgent, flagPath string, cfg *config.Config) loop.Provider {
 	}
 
 	switch providerName {
+	case "claude":
+		return NewClaudeProvider(cliPath), nil
 	case "codex":
-		return NewCodexProvider(cliPath)
+		return NewCodexProvider(cliPath), nil
 	default:
-		return NewClaudeProvider(cliPath)
+		return nil, fmt.Errorf("unknown agent provider %q: expected \"claude\" or \"codex\"", providerName)
 	}
 }
 
