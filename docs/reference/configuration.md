@@ -18,6 +18,7 @@ agent:
   cliPath: ""        # optional path to CLI binary
   opencode:
     cliPath: ""      # optional OpenCode-specific binary path
+    model: ""        # optional OpenCode model (provider/model)
     requiredEnv: []  # optional env vars that must be set when provider=opencode
 worktree:
   setup: "npm install"
@@ -33,6 +34,7 @@ onComplete:
 | `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, or `opencode` |
 | `agent.cliPath` | string | `""` | Optional path to the agent binary for all providers. If empty, Chief uses the provider name from PATH. |
 | `agent.opencode.cliPath` | string | `""` | Optional OpenCode-specific binary path. Used only when `agent.provider` resolves to `opencode`. |
+| `agent.opencode.model` | string | `""` | Optional OpenCode model override in `provider/model` format (for example `openai/gpt-5`). |
 | `agent.opencode.requiredEnv` | string[] | `[]` | Optional list of environment variable names that must be set before running OpenCode (for example API/auth variables). Invalid names are rejected at startup. |
 | `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
 | `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
@@ -67,6 +69,7 @@ agent:
   provider: opencode
   opencode:
     cliPath: /usr/local/bin/opencode
+    model: openai/gpt-5
     requiredEnv:
       - OPENAI_API_KEY
       - OPENCODE_PROFILE
@@ -114,6 +117,7 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 | `--force` | Auto-overwrite on conversion conflicts | `false` |
 
 Agent resolution order: `--agent` / `--agent-path` → `CHIEF_AGENT` / `CHIEF_AGENT_PATH` env vars → `agent.provider` / provider-specific config (`agent.opencode.cliPath`) / `agent.cliPath` in `.chief/config.yaml` → default `claude`.
+OpenCode model resolution order: `CHIEF_OPENCODE_MODEL` env var → `agent.opencode.model` in `.chief/config.yaml` → OpenCode CLI default model.
 
 When `--max-iterations` is not specified, Chief calculates a dynamic limit based on the number of remaining stories plus a buffer. You can also adjust the limit at runtime with `+`/`-` in the TUI.
 
@@ -122,8 +126,36 @@ When `--max-iterations` is not specified, Chief calculates a dynamic limit based
 Chief can use **Claude Code** (default), **Codex CLI**, or **OpenCode CLI** as the agent. Choose via:
 
 - **Config:** `agent.provider: codex|opencode` and optionally `agent.cliPath: /path/to/binary` (or `agent.opencode.cliPath` for OpenCode) in `.chief/config.yaml`
-- **Environment:** `CHIEF_AGENT=codex|opencode`, `CHIEF_AGENT_PATH=/path/to/binary`
+- **Environment:** `CHIEF_AGENT=codex|opencode`, `CHIEF_AGENT_PATH=/path/to/binary`, optional `CHIEF_OPENCODE_MODEL=provider/model`
 - **CLI:** `chief --agent codex|opencode --agent-path /path/to/binary`
+
+### OpenCode Model Selection
+
+Chief supports OpenCode model selection through config or environment variable.
+
+Priority order:
+
+1. `CHIEF_OPENCODE_MODEL`
+2. `agent.opencode.model` in `.chief/config.yaml`
+3. OpenCode CLI default model
+
+Example using environment variable:
+
+```bash
+export CHIEF_OPENCODE_MODEL=openai/gpt-5
+chief --agent opencode
+```
+
+Example using config:
+
+```yaml
+agent:
+  provider: opencode
+  opencode:
+    model: openai/gpt-5
+```
+
+When set, Chief passes `--model <value>` to OpenCode for interactive PRD generation/editing, loop execution, and PRD conversion/fix steps.
 
 When `agent.opencode.requiredEnv` is configured, Chief validates those env vars before execution starts. Missing vars produce an actionable startup error with the missing names.
 

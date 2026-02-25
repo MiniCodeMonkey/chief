@@ -38,6 +38,7 @@ func TestSaveAndLoad(t *testing.T) {
 			CLIPath:  "/usr/local/bin/opencode-global",
 			OpenCode: OpenCodeAgentConfig{
 				CLIPath:     "/usr/local/bin/opencode",
+				Model:       "openai/gpt-5",
 				RequiredEnv: []string{"OPENAI_API_KEY", "OPENCODE_PROFILE"},
 			},
 		},
@@ -70,6 +71,9 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 	if loaded.Agent.OpenCode.CLIPath != "/usr/local/bin/opencode" {
 		t.Errorf("expected opencode cliPath %q, got %q", "/usr/local/bin/opencode", loaded.Agent.OpenCode.CLIPath)
+	}
+	if loaded.Agent.OpenCode.Model != "openai/gpt-5" {
+		t.Errorf("expected opencode model %q, got %q", "openai/gpt-5", loaded.Agent.OpenCode.Model)
 	}
 	if len(loaded.Agent.OpenCode.RequiredEnv) != 2 {
 		t.Fatalf("expected 2 requiredEnv entries, got %d", len(loaded.Agent.OpenCode.RequiredEnv))

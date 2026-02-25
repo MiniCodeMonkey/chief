@@ -26,6 +26,7 @@ type AgentConfig struct {
 // OpenCodeAgentConfig holds OpenCode-specific runtime settings.
 type OpenCodeAgentConfig struct {
 	CLIPath     string   `yaml:"cliPath"`     // optional provider-specific binary path
+	Model       string   `yaml:"model"`       // optional OpenCode model in provider/model format
 	RequiredEnv []string `yaml:"requiredEnv"` // env vars that must be set before execution
 }
 

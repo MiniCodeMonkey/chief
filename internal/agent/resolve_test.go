@@ -292,3 +292,41 @@ func TestResolve_OpenCodeRequiredEnv_Present(t *testing.T) {
 		t.Errorf("Resolve() name = %q, want OpenCode", got.Name())
 	}
 }
+
+func TestResolve_OpenCodeModelFromConfig(t *testing.T) {
+	t.Setenv("CHIEF_AGENT", "")
+	t.Setenv("CHIEF_AGENT_PATH", "")
+	t.Setenv("CHIEF_OPENCODE_MODEL", "")
+
+	cfg := &config.Config{}
+	cfg.Agent.Provider = "opencode"
+	cfg.Agent.OpenCode.Model = "openai/gpt-5"
+
+	got := mustResolve(t, "", "", cfg)
+	op, ok := got.(*OpenCodeProvider)
+	if !ok {
+		t.Fatalf("expected *OpenCodeProvider, got %T", got)
+	}
+	if op.model != "openai/gpt-5" {
+		t.Errorf("resolved model = %q, want openai/gpt-5", op.model)
+	}
+}
+
+func TestResolve_OpenCodeModelEnvOverride(t *testing.T) {
+	t.Setenv("CHIEF_AGENT", "")
+	t.Setenv("CHIEF_AGENT_PATH", "")
+	t.Setenv("CHIEF_OPENCODE_MODEL", "openai/gpt-5-mini")
+
+	cfg := &config.Config{}
+	cfg.Agent.Provider = "opencode"
+	cfg.Agent.OpenCode.Model = "openai/gpt-5"
+
+	got := mustResolve(t, "", "", cfg)
+	op, ok := got.(*OpenCodeProvider)
+	if !ok {
+		t.Fatalf("expected *OpenCodeProvider, got %T", got)
+	}
+	if op.model != "openai/gpt-5-mini" {
+		t.Errorf("resolved model = %q, want openai/gpt-5-mini", op.model)
+	}
+}

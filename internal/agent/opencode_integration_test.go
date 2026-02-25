@@ -76,19 +76,19 @@ if [ "$#" -ne 6 ]; then
   echo "unexpected arg count: $#" >&2
   exit 90
 fi
-if [ "$1" != "exec" ] || [ "$2" != "--json" ] || [ "$3" != "--yolo" ] || [ "$4" != "-C" ] || [ "$6" != "-" ]; then
+if [ "$1" != "run" ] || [ "$2" != "--format" ] || [ "$3" != "json" ] || [ "$4" != "--dir" ]; then
   echo "unexpected args: $*" >&2
   exit 91
 fi
 
 work_dir="$5"
-cat > "$work_dir/.opencode_prompt"
+printf '%s' "$6" > "$work_dir/.opencode_prompt"
 printf '%s\n' '{"type":"thread.started"}'
 printf '%s\n' '{"type":"item.completed","item":{"id":"msg_1","type":"agent_message","text":"working"}}'
 `
 	scriptPath := createExecutableScript(t, tmpDir, "mock-opencode-success", script)
 
-	provider := NewOpenCodeProvider(scriptPath)
+	provider := NewOpenCodeProvider(scriptPath, "")
 	l := loop.NewLoopWithWorkDir(prdPath, tmpDir, prompt, 1, provider)
 	l.DisableRetry()
 
@@ -133,18 +133,17 @@ func TestOpenCodeProvider_RunIntegration_Failure(t *testing.T) {
 	script := `#!/bin/sh
 set -eu
 
-if [ "$1" != "exec" ] || [ "$2" != "--json" ] || [ "$3" != "--yolo" ] || [ "$4" != "-C" ] || [ "$6" != "-" ]; then
+if [ "$1" != "run" ] || [ "$2" != "--format" ] || [ "$3" != "json" ] || [ "$4" != "--dir" ]; then
   echo "unexpected args: $*" >&2
   exit 91
 fi
 
-cat >/dev/null
 echo 'mock failure from opencode' >&2
 exit 23
 `
 	scriptPath := createExecutableScript(t, tmpDir, "mock-opencode-failure", script)
 
-	provider := NewOpenCodeProvider(scriptPath)
+	provider := NewOpenCodeProvider(scriptPath, "")
 	l := loop.NewLoopWithWorkDir(prdPath, tmpDir, "prompt", 1, provider)
 	l.DisableRetry()
 
@@ -201,7 +200,7 @@ func TestOpenCodeProvider_RunIntegration_MissingBinary(t *testing.T) {
 	tmpDir := t.TempDir()
 	prdPath := createPRDFile(t, tmpDir, false)
 
-	provider := NewOpenCodeProvider(filepath.Join(tmpDir, "missing-opencode"))
+	provider := NewOpenCodeProvider(filepath.Join(tmpDir, "missing-opencode"), "")
 	l := loop.NewLoopWithWorkDir(prdPath, tmpDir, "prompt", 1, provider)
 	l.DisableRetry()
 
@@ -247,12 +246,11 @@ func TestOpenCodeProvider_RunIntegration_Timeout(t *testing.T) {
 
 	script := `#!/bin/sh
 set -eu
-cat >/dev/null
 sleep 5
 `
 	scriptPath := createExecutableScript(t, tmpDir, "mock-opencode-timeout", script)
 
-	provider := NewOpenCodeProvider(scriptPath)
+	provider := NewOpenCodeProvider(scriptPath, "")
 	l := loop.NewLoopWithWorkDir(prdPath, tmpDir, "prompt", 1, provider)
 	l.DisableRetry()
 
@@ -302,18 +300,17 @@ func TestOpenCodeProvider_RunIntegration_Canceled(t *testing.T) {
 	script := `#!/bin/sh
 set -eu
 
-if [ "$1" != "exec" ] || [ "$2" != "--json" ] || [ "$3" != "--yolo" ] || [ "$4" != "-C" ] || [ "$6" != "-" ]; then
+if [ "$1" != "run" ] || [ "$2" != "--format" ] || [ "$3" != "json" ] || [ "$4" != "--dir" ]; then
   echo "unexpected args: $*" >&2
   exit 91
 fi
 
-cat >/dev/null
 printf '%s\n' '{"type":"thread.started"}'
 sleep 5
 `
 	scriptPath := createExecutableScript(t, tmpDir, "mock-opencode-cancel", script)
 
-	provider := NewOpenCodeProvider(scriptPath)
+	provider := NewOpenCodeProvider(scriptPath, "")
 	l := loop.NewLoopWithWorkDir(prdPath, tmpDir, "prompt", 1, provider)
 	l.DisableRetry()
 

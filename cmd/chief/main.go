@@ -232,39 +232,44 @@ func parseTUIFlags() *TUIOptions {
 	return opts
 }
 
-func runNew() {
+func exitArgParseError(err error) {
+	msg := err.Error()
+	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+	if strings.HasPrefix(msg, "unknown flag: ") {
+		fmt.Fprintf(os.Stderr, "Run 'chief --help' for usage.\n")
+	}
+	os.Exit(1)
+}
+
+func parseNewArgs(args []string) (cmd.NewOptions, string, string, error) {
 	opts := cmd.NewOptions{}
 	flagAgent, flagPath := "", ""
 	var positional []string
 
 	// Parse arguments: chief new [name] [context...] [--agent X] [--agent-path X]
-	for i := 2; i < len(os.Args); i++ {
-		arg := os.Args[i]
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch {
 		case arg == "--agent":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				flagAgent = os.Args[i]
+				flagAgent = args[i]
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, or opencode)\n")
-				os.Exit(1)
+				return opts, "", "", fmt.Errorf("--agent requires a value (claude, codex, or opencode)")
 			}
 		case strings.HasPrefix(arg, "--agent="):
 			flagAgent = strings.TrimPrefix(arg, "--agent=")
 		case arg == "--agent-path":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				flagPath = os.Args[i]
+				flagPath = args[i]
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent-path requires a value\n")
-				os.Exit(1)
+				return opts, "", "", fmt.Errorf("--agent-path requires a value")
 			}
 		case strings.HasPrefix(arg, "--agent-path="):
 			flagPath = strings.TrimPrefix(arg, "--agent-path=")
 		case strings.HasPrefix(arg, "-"):
-			fmt.Fprintf(os.Stderr, "Error: unknown flag: %s\n", arg)
-			fmt.Fprintf(os.Stderr, "Run 'chief --help' for usage.\n")
-			os.Exit(1)
+			return opts, "", "", fmt.Errorf("unknown flag: %s", arg)
 		default:
 			positional = append(positional, arg)
 		}
@@ -276,6 +281,57 @@ func runNew() {
 		opts.Context = strings.Join(positional[1:], " ")
 	}
 
+	return opts, flagAgent, flagPath, nil
+}
+
+func parseEditArgs(args []string) (cmd.EditOptions, string, string, error) {
+	opts := cmd.EditOptions{}
+	flagAgent, flagPath := "", ""
+
+	// Parse arguments: chief edit [name] [--merge] [--force] [--agent X] [--agent-path X]
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--merge":
+			opts.Merge = true
+		case arg == "--force":
+			opts.Force = true
+		case arg == "--agent":
+			if i+1 < len(args) {
+				i++
+				flagAgent = args[i]
+			} else {
+				return opts, "", "", fmt.Errorf("--agent requires a value (claude, codex, or opencode)")
+			}
+		case strings.HasPrefix(arg, "--agent="):
+			flagAgent = strings.TrimPrefix(arg, "--agent=")
+		case arg == "--agent-path":
+			if i+1 < len(args) {
+				i++
+				flagPath = args[i]
+			} else {
+				return opts, "", "", fmt.Errorf("--agent-path requires a value")
+			}
+		case strings.HasPrefix(arg, "--agent-path="):
+			flagPath = strings.TrimPrefix(arg, "--agent-path=")
+		case strings.HasPrefix(arg, "-"):
+			return opts, "", "", fmt.Errorf("unknown flag: %s", arg)
+		default:
+			if opts.Name == "" && !strings.HasPrefix(arg, "-") {
+				opts.Name = arg
+			}
+		}
+	}
+
+	return opts, flagAgent, flagPath, nil
+}
+
+func runNew() {
+	opts, flagAgent, flagPath, err := parseNewArgs(os.Args[2:])
+	if err != nil {
+		exitArgParseError(err)
+	}
+
 	opts.Provider = resolveProvider(flagAgent, flagPath)
 	if err := cmd.RunNew(opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -284,42 +340,9 @@ func runNew() {
 }
 
 func runEdit() {
-	opts := cmd.EditOptions{}
-	flagAgent, flagPath := "", ""
-
-	// Parse arguments: chief edit [name] [--merge] [--force] [--agent X] [--agent-path X]
-	for i := 2; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		switch {
-		case arg == "--merge":
-			opts.Merge = true
-		case arg == "--force":
-			opts.Force = true
-		case arg == "--agent":
-			if i+1 < len(os.Args) {
-				i++
-				flagAgent = os.Args[i]
-			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, or opencode)\n")
-				os.Exit(1)
-			}
-		case strings.HasPrefix(arg, "--agent="):
-			flagAgent = strings.TrimPrefix(arg, "--agent=")
-		case arg == "--agent-path":
-			if i+1 < len(os.Args) {
-				i++
-				flagPath = os.Args[i]
-			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent-path requires a value\n")
-				os.Exit(1)
-			}
-		case strings.HasPrefix(arg, "--agent-path="):
-			flagPath = strings.TrimPrefix(arg, "--agent-path=")
-		default:
-			if opts.Name == "" && !strings.HasPrefix(arg, "-") {
-				opts.Name = arg
-			}
-		}
+	opts, flagAgent, flagPath, err := parseEditArgs(os.Args[2:])
+	if err != nil {
+		exitArgParseError(err)
 	}
 
 	opts.Provider = resolveProvider(flagAgent, flagPath)

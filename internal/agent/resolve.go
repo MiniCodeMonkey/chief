@@ -38,7 +38,7 @@ func Resolve(flagAgent, flagPath string, cfg *config.Config) (loop.Provider, err
 		if err := validateOpenCodeConfig(cfg); err != nil {
 			return nil, err
 		}
-		return NewOpenCodeProvider(cliPath), nil
+		return NewOpenCodeProvider(cliPath, resolveOpenCodeModel(cfg)), nil
 	default:
 		return nil, fmt.Errorf("unknown agent provider %q: expected \"claude\", \"codex\", or \"opencode\"", providerName)
 	}
@@ -60,6 +60,16 @@ func resolveCLIPath(providerName, flagPath string, cfg *config.Config) string {
 		}
 	}
 	return strings.TrimSpace(cfg.Agent.CLIPath)
+}
+
+func resolveOpenCodeModel(cfg *config.Config) string {
+	if v := strings.TrimSpace(os.Getenv("CHIEF_OPENCODE_MODEL")); v != "" {
+		return v
+	}
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.Agent.OpenCode.Model)
 }
 
 func validateOpenCodeConfig(cfg *config.Config) error {

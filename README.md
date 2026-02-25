@@ -53,11 +53,13 @@ agent:
   provider: opencode              # or codex
   opencode:
     cliPath: /usr/local/bin/opencode  # optional
+    model: openai/gpt-5               # optional
     requiredEnv:
       - OPENAI_API_KEY
 ```
 
 Or run with `chief --agent opencode` (or `codex`) or set `CHIEF_AGENT=opencode`.
+Optional model override: `CHIEF_OPENCODE_MODEL=openai/gpt-5`.
 
 ## License
 
