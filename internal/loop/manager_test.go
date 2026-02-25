@@ -222,6 +222,24 @@ func TestManagerStartNonExistent(t *testing.T) {
 	}
 }
 
+func TestManagerStartRequiresProvider(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")
+
+	m := NewManager(10, nil)
+	if err := m.Register("test-prd", prdPath); err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	err := m.Start("test-prd")
+	if err == nil {
+		t.Fatal("expected provider validation error")
+	}
+	if err.Error() != "manager provider is not configured" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestManagerConcurrentAccess(t *testing.T) {
 	tmpDir := t.TempDir()
 	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")

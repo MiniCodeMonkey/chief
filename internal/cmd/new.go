@@ -15,9 +15,9 @@ import (
 
 // NewOptions contains configuration for the new command.
 type NewOptions struct {
-	Name     string       // PRD name (default: "main")
-	Context  string       // Optional context to pass to the agent
-	BaseDir  string       // Base directory for .chief/prds/ (default: current directory)
+	Name     string        // PRD name (default: "main")
+	Context  string        // Optional context to pass to the agent
+	BaseDir  string        // Base directory for .chief/prds/ (default: current directory)
 	Provider loop.Provider // Agent CLI provider (Claude or Codex)
 }
 
@@ -54,6 +54,9 @@ func RunNew(opts NewOptions) error {
 
 	// Get the init prompt with the PRD directory path
 	prompt := embed.GetInitPrompt(prdDir, opts.Context)
+	if opts.Provider == nil {
+		return fmt.Errorf("new command requires Provider to be set")
+	}
 
 	// Launch interactive agent session
 	fmt.Printf("Creating PRD in %s...\n", prdDir)
@@ -83,6 +86,9 @@ func RunNew(opts NewOptions) error {
 
 // runInteractiveAgent launches an interactive agent session in the specified directory.
 func runInteractiveAgent(provider loop.Provider, workDir, prompt string) error {
+	if provider == nil {
+		return fmt.Errorf("interactive agent requires Provider to be set")
+	}
 	cmd := provider.InteractiveCommand(workDir, prompt)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -92,9 +98,9 @@ func runInteractiveAgent(provider loop.Provider, workDir, prompt string) error {
 
 // ConvertOptions contains configuration for the conversion command.
 type ConvertOptions struct {
-	PRDDir   string       // PRD directory containing prd.md
-	Merge    bool         // Auto-merge without prompting on conversion conflicts
-	Force    bool         // Auto-overwrite without prompting on conversion conflicts
+	PRDDir   string        // PRD directory containing prd.md
+	Merge    bool          // Auto-merge without prompting on conversion conflicts
+	Force    bool          // Auto-overwrite without prompting on conversion conflicts
 	Provider loop.Provider // Agent CLI provider for conversion
 }
 

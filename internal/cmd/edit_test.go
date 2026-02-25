@@ -120,6 +120,31 @@ func TestEditOptionsDefaults(t *testing.T) {
 	}
 }
 
+func TestRunEditRequiresProvider(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdDir := filepath.Join(tmpDir, ".chief", "prds", "main")
+	if err := os.MkdirAll(prdDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+	prdMdPath := filepath.Join(prdDir, "prd.md")
+	if err := os.WriteFile(prdMdPath, []byte("# Main PRD"), 0644); err != nil {
+		t.Fatalf("Failed to create prd.md: %v", err)
+	}
+
+	opts := EditOptions{
+		Name:    "main",
+		BaseDir: tmpDir,
+	}
+
+	err := RunEdit(opts)
+	if err == nil {
+		t.Fatal("expected provider validation error")
+	}
+	if !contains(err.Error(), "Provider") {
+		t.Fatalf("expected error to mention Provider, got: %v", err)
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))

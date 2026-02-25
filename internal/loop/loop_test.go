@@ -17,11 +17,11 @@ type mockProvider struct {
 	cliPath string // if set, used as CLI path; otherwise "claude"
 }
 
-func (m *mockProvider) Name() string                              { return "Test" }
-func (m *mockProvider) CLIPath() string                            { return m.path() }
-func (m *mockProvider) InteractiveCommand(_, _ string) *exec.Cmd  { return exec.Command("true") }
-func (m *mockProvider) ParseLine(line string) *Event               { return ParseLine(line) }
-func (m *mockProvider) LogFileName() string                        { return "claude.log" }
+func (m *mockProvider) Name() string                             { return "Test" }
+func (m *mockProvider) CLIPath() string                          { return m.path() }
+func (m *mockProvider) InteractiveCommand(_, _ string) *exec.Cmd { return exec.Command("true") }
+func (m *mockProvider) ParseLine(line string) *Event             { return ParseLine(line) }
+func (m *mockProvider) LogFileName() string                      { return "claude.log" }
 
 func (m *mockProvider) ConvertCommand(_, _ string) (*exec.Cmd, OutputMode, string, error) {
 	return exec.Command("true"), OutputStdout, "", nil
@@ -437,5 +437,16 @@ func TestLoop_SetRetryConfig(t *testing.T) {
 
 	if l.retryConfig.MaxRetries != 5 {
 		t.Errorf("Expected MaxRetries 5, got %d", l.retryConfig.MaxRetries)
+	}
+}
+
+func TestLoop_RunRequiresProvider(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 1, nil)
+	err := l.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected provider validation error")
+	}
+	if err.Error() != "loop provider is not configured" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

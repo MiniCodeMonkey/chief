@@ -67,16 +67,16 @@ type ManagerEvent struct {
 
 // Manager manages multiple Loop instances for parallel PRD execution.
 type Manager struct {
-	instances     map[string]*LoopInstance
-	events        chan ManagerEvent
-	maxIter       int
-	retryConfig  RetryConfig
-	provider      Provider
-	baseDir       string                               // Project root directory (for CLAUDE.md etc.)
-	config        *config.Config                      // Project config for post-completion actions
-	mu            sync.RWMutex
-	wg            sync.WaitGroup
-	onComplete    func(prdName string)                 // Callback when a PRD completes
+	instances      map[string]*LoopInstance
+	events         chan ManagerEvent
+	maxIter        int
+	retryConfig    RetryConfig
+	provider       Provider
+	baseDir        string         // Project root directory (for CLAUDE.md etc.)
+	config         *config.Config // Project config for post-completion actions
+	mu             sync.RWMutex
+	wg             sync.WaitGroup
+	onComplete     func(prdName string)                  // Callback when a PRD completes
 	onPostComplete func(prdName, branch, workDir string) // Callback for post-completion actions (push, PR)
 }
 
@@ -210,6 +210,10 @@ func (m *Manager) Unregister(name string) error {
 
 // Start starts the loop for a specific PRD.
 func (m *Manager) Start(name string) error {
+	if m.provider == nil {
+		return fmt.Errorf("manager provider is not configured")
+	}
+
 	m.mu.Lock()
 	instance, exists := m.instances[name]
 	m.mu.Unlock()

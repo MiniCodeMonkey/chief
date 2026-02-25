@@ -32,6 +32,9 @@ func runConversionWithProvider(provider loop.Provider, absPRDDir string) (string
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
+		if outPath != "" {
+			_ = os.Remove(outPath)
+		}
 		return "", fmt.Errorf("failed to start %s: %w", provider.Name(), err)
 	}
 	if err := prd.WaitWithPanel(cmd, "Converting PRD", "Analyzing PRD...", &stderr); err != nil {
@@ -67,6 +70,9 @@ func runFixJSONWithProvider(provider loop.Provider, prompt string) (string, erro
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
+		if outPath != "" {
+			_ = os.Remove(outPath)
+		}
 		return "", fmt.Errorf("failed to start %s: %w", provider.Name(), err)
 	}
 	if err := prd.WaitWithSpinner(cmd, "Fixing JSON", "Fixing prd.json...", &stderr); err != nil {

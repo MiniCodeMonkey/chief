@@ -11,10 +11,10 @@ import (
 
 // EditOptions contains configuration for the edit command.
 type EditOptions struct {
-	Name     string       // PRD name (default: "main")
-	BaseDir  string       // Base directory for .chief/prds/ (default: current directory)
-	Merge    bool         // Auto-merge without prompting on conversion conflicts
-	Force    bool         // Auto-overwrite without prompting on conversion conflicts
+	Name     string        // PRD name (default: "main")
+	BaseDir  string        // Base directory for .chief/prds/ (default: current directory)
+	Merge    bool          // Auto-merge without prompting on conversion conflicts
+	Force    bool          // Auto-overwrite without prompting on conversion conflicts
 	Provider loop.Provider // Agent CLI provider (Claude or Codex)
 }
 
@@ -48,6 +48,9 @@ func RunEdit(opts EditOptions) error {
 
 	// Get the edit prompt with the PRD directory path
 	prompt := embed.GetEditPrompt(prdDir)
+	if opts.Provider == nil {
+		return fmt.Errorf("edit command requires Provider to be set")
+	}
 
 	// Launch interactive agent session
 	fmt.Printf("Editing PRD at %s...\n", prdDir)

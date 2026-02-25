@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -101,5 +102,20 @@ func TestRunNewRejectsExistingPRD(t *testing.T) {
 	err := RunNew(opts)
 	if err == nil {
 		t.Error("Expected error for existing PRD")
+	}
+}
+
+func TestRunNewRequiresProvider(t *testing.T) {
+	opts := NewOptions{
+		Name:    "main",
+		BaseDir: t.TempDir(),
+	}
+
+	err := RunNew(opts)
+	if err == nil {
+		t.Fatal("expected provider validation error")
+	}
+	if !strings.Contains(err.Error(), "Provider") {
+		t.Fatalf("expected error to mention Provider, got: %v", err)
 	}
 }

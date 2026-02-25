@@ -155,6 +155,9 @@ func parseTUIFlags() *TUIOptions {
 			if i+1 < len(os.Args) {
 				i++
 				opts.Agent = os.Args[i]
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude or codex)\n")
+				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent="):
 			opts.Agent = strings.TrimPrefix(arg, "--agent=")
@@ -162,6 +165,9 @@ func parseTUIFlags() *TUIOptions {
 			if i+1 < len(os.Args) {
 				i++
 				opts.AgentPath = os.Args[i]
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: --agent-path requires a value\n")
+				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent-path="):
 			opts.AgentPath = strings.TrimPrefix(arg, "--agent-path=")
@@ -239,6 +245,9 @@ func runNew() {
 			if i+1 < len(os.Args) {
 				i++
 				flagAgent = os.Args[i]
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude or codex)\n")
+				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent="):
 			flagAgent = strings.TrimPrefix(arg, "--agent=")
@@ -246,6 +255,9 @@ func runNew() {
 			if i+1 < len(os.Args) {
 				i++
 				flagPath = os.Args[i]
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: --agent-path requires a value\n")
+				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent-path="):
 			flagPath = strings.TrimPrefix(arg, "--agent-path=")
@@ -285,6 +297,9 @@ func runEdit() {
 			if i+1 < len(os.Args) {
 				i++
 				flagAgent = os.Args[i]
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude or codex)\n")
+				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent="):
 			flagAgent = strings.TrimPrefix(arg, "--agent=")
@@ -292,6 +307,9 @@ func runEdit() {
 			if i+1 < len(os.Args) {
 				i++
 				flagPath = os.Args[i]
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: --agent-path requires a value\n")
+				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent-path="):
 			flagPath = strings.TrimPrefix(arg, "--agent-path=")
@@ -348,7 +366,11 @@ func resolveProvider(flagAgent, flagPath string) loop.Provider {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	cfg, _ := config.Load(cwd)
+	cfg, err := config.Load(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to load .chief/config.yaml: %v\n", err)
+		os.Exit(1)
+	}
 	provider, err := agent.Resolve(flagAgent, flagPath, cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

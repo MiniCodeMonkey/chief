@@ -21,9 +21,9 @@ import (
 
 // RetryConfig configures automatic retry behavior on Claude crashes.
 type RetryConfig struct {
-	MaxRetries  int           // Maximum number of retry attempts (default: 3)
+	MaxRetries  int             // Maximum number of retry attempts (default: 3)
 	RetryDelays []time.Duration // Delays between retries (default: 0s, 5s, 15s)
-	Enabled     bool          // Whether retry is enabled (default: true)
+	Enabled     bool            // Whether retry is enabled (default: true)
 }
 
 // DefaultRetryConfig returns the default retry configuration.
@@ -99,6 +99,10 @@ func (l *Loop) Iteration() int {
 
 // Run executes the agent loop until completion or max iterations.
 func (l *Loop) Run(ctx context.Context) error {
+	if l.provider == nil {
+		return fmt.Errorf("loop provider is not configured")
+	}
+
 	// Open log file in PRD directory
 	prdDir := filepath.Dir(l.prdPath)
 	logPath := filepath.Join(prdDir, l.provider.LogFileName())
