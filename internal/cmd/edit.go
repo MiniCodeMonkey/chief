@@ -6,14 +6,16 @@ import (
 	"path/filepath"
 
 	"github.com/minicodemonkey/chief/embed"
+	"github.com/minicodemonkey/chief/internal/loop"
 )
 
 // EditOptions contains configuration for the edit command.
 type EditOptions struct {
-	Name    string // PRD name (default: "main")
-	BaseDir string // Base directory for .chief/prds/ (default: current directory)
-	Merge   bool   // Auto-merge without prompting on conversion conflicts
-	Force   bool   // Auto-overwrite without prompting on conversion conflicts
+	Name     string       // PRD name (default: "main")
+	BaseDir  string       // Base directory for .chief/prds/ (default: current directory)
+	Merge    bool         // Auto-merge without prompting on conversion conflicts
+	Force    bool         // Auto-overwrite without prompting on conversion conflicts
+	Provider loop.Provider // Agent CLI provider (Claude or Codex)
 }
 
 // RunEdit edits an existing PRD by launching an interactive Claude session.
@@ -47,22 +49,23 @@ func RunEdit(opts EditOptions) error {
 	// Get the edit prompt with the PRD directory path
 	prompt := embed.GetEditPrompt(prdDir)
 
-	// Launch interactive Claude session
+	// Launch interactive agent session
 	fmt.Printf("Editing PRD at %s...\n", prdDir)
-	fmt.Println("Launching Claude to help you edit your PRD...")
+	fmt.Printf("Launching %s to help you edit your PRD...\n", opts.Provider.Name())
 	fmt.Println()
 
-	if err := runInteractiveClaude(opts.BaseDir, prompt); err != nil {
-		return fmt.Errorf("Claude session failed: %w", err)
+	if err := runInteractiveAgent(opts.Provider, opts.BaseDir, prompt); err != nil {
+		return fmt.Errorf("%s session failed: %w", opts.Provider.Name(), err)
 	}
 
 	fmt.Println("\nPRD editing complete!")
 
 	// Run conversion from prd.md to prd.json with progress protection
 	convertOpts := ConvertOptions{
-		PRDDir: prdDir,
-		Merge:  opts.Merge,
-		Force:  opts.Force,
+		PRDDir:   prdDir,
+		Merge:    opts.Merge,
+		Force:    opts.Force,
+		Provider: opts.Provider,
 	}
 	if err := RunConvertWithOptions(convertOpts); err != nil {
 		return fmt.Errorf("conversion failed: %w", err)

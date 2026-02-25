@@ -13,6 +13,9 @@ Chief stores project-level settings in `.chief/config.yaml`. This file is create
 ### Format
 
 ```yaml
+agent:
+  provider: claude   # or "codex"
+  cliPath: ""        # optional path to CLI binary
 worktree:
   setup: "npm install"
 onComplete:
@@ -24,6 +27,8 @@ onComplete:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| `agent.provider` | string | `"claude"` | Agent CLI to use: `claude` or `codex` |
+| `agent.cliPath` | string | `""` | Optional path to the agent binary (e.g. `/usr/local/bin/codex`). If empty, Chief uses the provider name from PATH. |
 | `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
 | `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
 | `onComplete.createPR` | bool | `false` | Automatically create a pull request when a PRD completes (requires `gh` CLI) |
@@ -83,17 +88,29 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 
 | Flag | Description | Default |
 |------|-------------|---------|
+| `--agent <provider>` | Agent CLI to use: `claude` or `codex` | From config / env / `claude` |
+| `--agent-path <path>` | Custom path to the agent CLI binary | From config / env |
 | `--max-iterations <n>`, `-n` | Loop iteration limit | Dynamic |
-| `--no-retry` | Disable auto-retry on Claude crashes | `false` |
-| `--verbose` | Show raw Claude output in log | `false` |
+| `--no-retry` | Disable auto-retry on agent crashes | `false` |
+| `--verbose` | Show raw agent output in log | `false` |
 | `--merge` | Auto-merge progress on conversion conflicts | `false` |
 | `--force` | Auto-overwrite on conversion conflicts | `false` |
 
+Agent resolution order: `--agent` / `--agent-path` → `CHIEF_AGENT` / `CHIEF_AGENT_PATH` env vars → `agent.provider` / `agent.cliPath` in `.chief/config.yaml` → default `claude`.
+
 When `--max-iterations` is not specified, Chief calculates a dynamic limit based on the number of remaining stories plus a buffer. You can also adjust the limit at runtime with `+`/`-` in the TUI.
+
+## Agent
+
+Chief can use **Claude Code** (default) or **Codex CLI** as the agent. Choose via:
+
+- **Config:** `agent.provider: codex` and optionally `agent.cliPath: /path/to/codex` in `.chief/config.yaml`
+- **Environment:** `CHIEF_AGENT=codex`, `CHIEF_AGENT_PATH=/path/to/codex`
+- **CLI:** `chief --agent codex --agent-path /path/to/codex`
 
 ## Claude Code Configuration
 
-Chief invokes Claude Code under the hood. Claude Code has its own configuration:
+When using Claude, Chief invokes Claude Code under the hood. Claude Code has its own configuration:
 
 ```bash
 # Authentication

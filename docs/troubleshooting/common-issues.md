@@ -6,23 +6,33 @@ description: Troubleshoot common Chief issues including Claude not found, permis
 
 Solutions to frequently encountered problems.
 
-## Claude Not Found
+## Agent CLI Not Found
 
-**Symptom:** Error message about Claude Code CLI not being installed.
+**Symptom:** Error that the agent CLI (Claude or Codex) is not found.
 
 ```
-Error: Claude Code CLI not found. Please install it first.
+Error: Claude CLI not found in PATH. Install it or set agent.cliPath in .chief/config.yaml
+```
+or
+```
+Error: Codex CLI not found in PATH. Install it or set agent.cliPath in .chief/config.yaml
 ```
 
-**Cause:** Claude Code isn't installed or isn't in your PATH.
+**Cause:** The chosen agent CLI isn't installed or isn't in your PATH.
 
 **Solution:**
 
-Install Claude Code following the [official instructions](https://docs.anthropic.com/en/docs/claude-code/getting-started), then verify:
-
-```bash
-claude --version
-```
+- **Claude (default):** Install [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/getting-started), then verify:
+  ```bash
+  claude --version
+  ```
+- **Codex:** Install [Codex CLI](https://developers.openai.com/codex/cli/reference) and ensure `codex` is in PATH, or set the path in config:
+  ```yaml
+  agent:
+    provider: codex
+    cliPath: /usr/local/bin/codex
+  ```
+  Verify with `codex --version` (or your `cliPath`).
 
 ## Permission Denied
 
@@ -42,7 +52,7 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
 
 **Solution:**
 
-1. Check `claude.log` for errors:
+1. Check the agent log for errors (e.g. `claude.log` or `codex.log` in the PRD directory):
    ```bash
    tail -100 .chief/prds/your-prd/claude.log
    ```
@@ -66,7 +76,7 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
 
 **Solution:**
 
-1. Check `claude.log` for what Claude is doing:
+1. Check the agent log (e.g. `claude.log` or `codex.log`) for what the agent is doing:
    ```bash
    tail -f .chief/prds/your-prd/claude.log
    ```
@@ -97,7 +107,7 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
 
 2. Or investigate why it's taking so many iterations:
    - Story too complex? Split it
-   - Stuck in a loop? Check `claude.log`
+   - Stuck in a loop? Check the agent log (`claude.log` or `codex.log`)
    - Unclear acceptance criteria? Clarify them
 
 ## "No PRD Found"
@@ -239,4 +249,4 @@ If none of these solutions help:
 3. Open a new issue with:
    - Chief version (`chief --version`)
    - Your `prd.json` (sanitized)
-   - Relevant `claude.log` excerpts
+   - Relevant agent log excerpts (e.g. `claude.log` or `codex.log`)

@@ -14,7 +14,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
-	"github.com/minicodemonkey/chief/embed"
 )
 
 // Colors duplicated from tui/styles.go to avoid import cycle (tui → git → prd).
@@ -55,9 +54,13 @@ var waitingJokes = []string{
 
 // ConvertOptions contains configuration for PRD conversion.
 type ConvertOptions struct {
-	PRDDir string // Directory containing prd.md
-	Merge  bool   // Auto-merge progress on conversion conflicts
-	Force  bool   // Auto-overwrite on conversion conflicts
+	PRDDir   string // Directory containing prd.md
+	Merge    bool   // Auto-merge progress on conversion conflicts
+	Force    bool   // Auto-overwrite on conversion conflicts
+	// RunConversion runs the agent to convert prd.md to JSON. Required.
+	RunConversion func(absPRDDir string) (string, error)
+	// RunFixJSON runs the agent to fix invalid JSON. Required.
+	RunFixJSON func(prompt string) (string, error)
 }
 
 // ProgressConflictChoice represents the user's choice when a progress conflict is detected.
@@ -69,8 +72,7 @@ const (
 	ChoiceCancel                                  // Cancel conversion
 )
 
-// Convert converts prd.md to prd.json using Claude one-shot mode.
-// Claude receives the PRD content inline and returns JSON on stdout.
+// Convert converts prd.md to prd.json using the configured agent one-shot.
 // This function is called:
 // - After chief new (new PRD creation)
 // - After chief edit (PRD modification)
@@ -96,6 +98,10 @@ func Convert(opts ConvertOptions) error {
 		return fmt.Errorf("failed to resolve absolute path: %w", err)
 	}
 
+	if opts.RunConversion == nil || opts.RunFixJSON == nil {
+		return fmt.Errorf("conversion requires RunConversion and RunFixJSON callbacks")
+	}
+
 	// Check for existing progress before conversion
 	var existingPRD *PRD
 	hasProgress := false
@@ -104,8 +110,8 @@ func Convert(opts ConvertOptions) error {
 		hasProgress = HasProgress(existing)
 	}
 
-	// Run Claude to convert prd.md → JSON string
-	rawJSON, err := runClaudeConversion(absPRDDir)
+	// Run agent to convert prd.md → JSON string
+	rawJSON, err := opts.RunConversion(absPRDDir)
 	if err != nil {
 		return err
 	}
@@ -116,10 +122,10 @@ func Convert(opts ConvertOptions) error {
 	// Parse and validate
 	newPRD, err := parseAndValidatePRD(cleanedJSON)
 	if err != nil {
-		// Retry once: ask Claude to fix the invalid JSON
+		// Retry once: ask agent to fix the invalid JSON
 		fmt.Println("Conversion produced invalid JSON, retrying...")
 		fmt.Printf("Raw output:\n---\n%s\n---\n", cleanedJSON)
-		fixedJSON, retryErr := runClaudeJSONFix(cleanedJSON, err)
+		fixedJSON, retryErr := opts.RunFixJSON(fixPromptForRetry(cleanedJSON, err))
 		if retryErr != nil {
 			return fmt.Errorf("conversion retry failed: %w", retryErr)
 		}
@@ -180,58 +186,14 @@ func Convert(opts ConvertOptions) error {
 	return nil
 }
 
-// runClaudeConversion reads prd.md, sends content inline to Claude, and returns the JSON output.
-func runClaudeConversion(absPRDDir string) (string, error) {
-	content, err := os.ReadFile(filepath.Join(absPRDDir, "prd.md"))
-	if err != nil {
-		return "", fmt.Errorf("failed to read prd.md: %w", err)
-	}
-
-	prompt := embed.GetConvertPrompt(string(content))
-
-	cmd := exec.Command("claude", "-p", "--tools", "")
-	cmd.Dir = absPRDDir
-	cmd.Stdin = strings.NewReader(prompt)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start Claude: %w", err)
-	}
-
-	if err := waitWithPanel(cmd, "Converting PRD", "Analyzing PRD...", &stderr); err != nil {
-		return "", err
-	}
-
-	return stdout.String(), nil
-}
-
-// runClaudeJSONFix asks Claude to fix invalid JSON inline and returns the corrected output.
-func runClaudeJSONFix(badJSON string, validationErr error) (string, error) {
-	fixPrompt := fmt.Sprintf(
+// fixPromptForRetry builds the prompt for the agent to fix invalid JSON.
+func fixPromptForRetry(badJSON string, validationErr error) string {
+	return fmt.Sprintf(
 		"The following JSON is invalid. The error is: %s\n\n"+
 			"Fix the JSON (pay special attention to escaping double quotes inside string values with backslashes) "+
 			"and return ONLY the corrected JSON — no markdown fences, no explanation.\n\n%s",
 		validationErr.Error(), badJSON,
 	)
-
-	cmd := exec.Command("claude", "-p", fixPrompt)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start Claude: %w", err)
-	}
-
-	if err := waitWithSpinner(cmd, "Fixing JSON", "Fixing prd.json...", &stderr); err != nil {
-		return "", err
-	}
-
-	return stdout.String(), nil
 }
 
 // parseAndValidatePRD unmarshals a JSON string and validates it as a PRD.
@@ -464,8 +426,9 @@ func repaintBox(box string, prevLines int) int {
 	return newLines
 }
 
-// waitWithSpinner runs a bordered panel while waiting for a command to finish.
-func waitWithSpinner(cmd *exec.Cmd, title, message string, stderr *bytes.Buffer) error {
+// WaitWithSpinner runs a bordered panel while waiting for a command to finish.
+// Exported for use by cmd when running agent conversion.
+func WaitWithSpinner(cmd *exec.Cmd, title, message string, stderr *bytes.Buffer) error {
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
@@ -498,10 +461,9 @@ func waitWithSpinner(cmd *exec.Cmd, title, message string, stderr *bytes.Buffer)
 	}
 }
 
-// waitWithPanel runs a full progress panel (header, activity, progress bar, jokes)
-// while waiting for a command to finish. Unlike waitWithProgress, it does not parse
-// stdout — activity text is static.
-func waitWithPanel(cmd *exec.Cmd, title, activity string, stderr *bytes.Buffer) error {
+// WaitWithPanel runs a full progress panel (header, activity, progress bar, jokes)
+// while waiting for a command to finish. Exported for use by cmd when running agent conversion.
+func WaitWithPanel(cmd *exec.Cmd, title, activity string, stderr *bytes.Buffer) error {
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()

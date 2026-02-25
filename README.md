@@ -44,7 +44,17 @@ See the [documentation](https://minicodemonkey.github.io/chief/concepts/how-it-w
 
 ## Requirements
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** or **[Codex CLI](https://developers.openai.com/codex/cli/reference)** installed and authenticated
+
+Use Claude by default, or configure Codex in `.chief/config.yaml`:
+
+```yaml
+agent:
+  provider: codex
+  cliPath: /usr/local/bin/codex   # optional
+```
+
+Or run with `chief --agent codex` or set `CHIEF_AGENT=codex`.
 
 ## License
 

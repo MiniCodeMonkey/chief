@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/minicodemonkey/chief/internal/agent"
 	"github.com/minicodemonkey/chief/internal/loop"
 )
 
@@ -217,7 +218,7 @@ func TestGetWorktreeInfo_NoBranch(t *testing.T) {
 }
 
 func TestGetWorktreeInfo_WithBranch(t *testing.T) {
-	mgr := loop.NewManager(10)
+	mgr := loop.NewManager(10, agent.NewClaudeProvider(""))
 	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
@@ -232,7 +233,7 @@ func TestGetWorktreeInfo_WithBranch(t *testing.T) {
 
 func TestGetWorktreeInfo_WithBranchNoWorktree(t *testing.T) {
 	// Branch set but no worktree dir (branch-only mode)
-	mgr := loop.NewManager(10)
+	mgr := loop.NewManager(10, agent.NewClaudeProvider(""))
 	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
@@ -247,7 +248,7 @@ func TestGetWorktreeInfo_WithBranchNoWorktree(t *testing.T) {
 
 func TestGetWorktreeInfo_RegisteredNoBranch(t *testing.T) {
 	// Registered without worktree - should return empty (backward compatible)
-	mgr := loop.NewManager(10)
+	mgr := loop.NewManager(10, agent.NewClaudeProvider(""))
 	mgr.Register("auth", "/tmp/prd.json")
 
 	app := &App{prdName: "auth", manager: mgr}
@@ -265,7 +266,7 @@ func TestHasWorktreeInfo(t *testing.T) {
 	}
 
 	// With branch
-	mgr := loop.NewManager(10)
+	mgr := loop.NewManager(10, agent.NewClaudeProvider(""))
 	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
 	app.manager = mgr
 	if !app.hasWorktreeInfo() {
@@ -281,7 +282,7 @@ func TestEffectiveHeaderHeight_NoBranch(t *testing.T) {
 }
 
 func TestEffectiveHeaderHeight_WithBranch(t *testing.T) {
-	mgr := loop.NewManager(10)
+	mgr := loop.NewManager(10, agent.NewClaudeProvider(""))
 	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
@@ -298,7 +299,7 @@ func TestRenderWorktreeInfoLine_NoBranch(t *testing.T) {
 }
 
 func TestRenderWorktreeInfoLine_WithBranch(t *testing.T) {
-	mgr := loop.NewManager(10)
+	mgr := loop.NewManager(10, agent.NewClaudeProvider(""))
 	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
@@ -321,7 +322,7 @@ func TestRenderWorktreeInfoLine_WithBranch(t *testing.T) {
 }
 
 func TestRenderWorktreeInfoLine_BranchNoWorktree(t *testing.T) {
-	mgr := loop.NewManager(10)
+	mgr := loop.NewManager(10, agent.NewClaudeProvider(""))
 	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
 
 	app := &App{prdName: "auth", manager: mgr}

@@ -67,25 +67,27 @@ type ManagerEvent struct {
 
 // Manager manages multiple Loop instances for parallel PRD execution.
 type Manager struct {
-	instances   map[string]*LoopInstance
-	events      chan ManagerEvent
-	maxIter     int
-	retryConfig RetryConfig
-	baseDir        string                               // Project root directory (for CLAUDE.md etc.)
-	config         *config.Config                       // Project config for post-completion actions
-	mu             sync.RWMutex
-	wg             sync.WaitGroup
-	onComplete     func(prdName string)                  // Callback when a PRD completes
+	instances     map[string]*LoopInstance
+	events        chan ManagerEvent
+	maxIter       int
+	retryConfig  RetryConfig
+	provider      Provider
+	baseDir       string                               // Project root directory (for CLAUDE.md etc.)
+	config        *config.Config                      // Project config for post-completion actions
+	mu            sync.RWMutex
+	wg            sync.WaitGroup
+	onComplete    func(prdName string)                 // Callback when a PRD completes
 	onPostComplete func(prdName, branch, workDir string) // Callback for post-completion actions (push, PR)
 }
 
 // NewManager creates a new loop manager.
-func NewManager(maxIter int) *Manager {
+func NewManager(maxIter int, provider Provider) *Manager {
 	return &Manager{
 		instances:   make(map[string]*LoopInstance),
 		events:      make(chan ManagerEvent, 100),
 		maxIter:     maxIter,
 		retryConfig: DefaultRetryConfig(),
+		provider:    provider,
 	}
 }
 
@@ -232,7 +234,7 @@ func (m *Manager) Start(name string) error {
 		workDir = m.baseDir
 		m.mu.RUnlock()
 	}
-	instance.Loop = NewLoopWithWorkDir(instance.PRDPath, workDir, prompt, m.maxIter)
+	instance.Loop = NewLoopWithWorkDir(instance.PRDPath, workDir, prompt, m.maxIter, m.provider)
 	m.mu.RLock()
 	instance.Loop.SetRetryConfig(m.retryConfig)
 	m.mu.RUnlock()
