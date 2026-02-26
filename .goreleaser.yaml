@@ -87,7 +87,7 @@ brews:
       name: homebrew-chief
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
-    homepage: "https://minicodemonkey.github.io/chief/"
+    homepage: "https://chiefloop.com"
     description: "Autonomous agent loop for working through PRDs with Claude Code"
     license: "MIT"
     # Custom install script

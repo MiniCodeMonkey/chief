@@ -10,7 +10,7 @@
         <h2 class="cta-title">Ready to build something big?</h2>
         <p class="cta-subtitle">Get started in minutes with Chief</p>
         <div class="cta-buttons">
-          <a href="/chief/guide/" class="cta-button primary">
+          <a href="/guide/" class="cta-button primary">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
