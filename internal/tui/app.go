@@ -157,9 +157,10 @@ type App struct {
 	state         AppState
 	iteration     int
 	startTime     time.Time
-	selectedIndex int
-	width         int
-	height        int
+	selectedIndex      int
+	storiesScrollOffset int
+	width              int
+	height             int
 	err           error
 
 	// Loop manager for parallel PRD execution
@@ -660,6 +661,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				if a.selectedIndex > 0 {
 					a.selectedIndex--
+					if a.selectedIndex < a.storiesScrollOffset {
+						a.storiesScrollOffset = a.selectedIndex
+					}
 				}
 			}
 		case "down", "j":
@@ -670,6 +674,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				if a.selectedIndex < len(a.prd.UserStories)-1 {
 					a.selectedIndex++
+					a.adjustStoriesScroll()
 				}
 			}
 
@@ -2058,6 +2063,7 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	a.prdPath = prdPath
 	a.prdName = name
 	a.selectedIndex = 0
+	a.storiesScrollOffset = 0
 	a.state = appState
 	a.iteration = iteration
 	a.err = loopErr
@@ -2117,6 +2123,46 @@ func (a *App) GetSelectedStory() *prd.UserStory {
 	return nil
 }
 
+// storiesListHeight calculates how many story lines fit in the panel.
+// Must match the calculation in renderStoriesPanel.
+func (a *App) storiesListHeight() int {
+	fh := footerHeight
+	if a.height < 12 {
+		fh = 0
+	}
+	contentHeight := a.height - a.effectiveHeaderHeight() - fh - 2
+	if a.isNarrowMode() {
+		storiesHeight := max((contentHeight*40)/100, 5)
+		return storiesHeight - 5
+	}
+	return contentHeight - 5
+}
+
+// adjustStoriesScroll ensures the selected index is visible in the scroll window.
+func (a *App) adjustStoriesScroll() {
+	listHeight := a.storiesListHeight()
+	if listHeight <= 0 {
+		return
+	}
+	if a.selectedIndex < a.storiesScrollOffset {
+		a.storiesScrollOffset = a.selectedIndex
+	}
+	if a.selectedIndex >= a.storiesScrollOffset+listHeight {
+		a.storiesScrollOffset = a.selectedIndex - listHeight + 1
+	}
+	// Clamp
+	maxOffset := len(a.prd.UserStories) - listHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if a.storiesScrollOffset > maxOffset {
+		a.storiesScrollOffset = maxOffset
+	}
+	if a.storiesScrollOffset < 0 {
+		a.storiesScrollOffset = 0
+	}
+}
+
 // markStoryInProgress clears any existing in-progress flags and marks the
 // given story as in-progress, then saves the PRD to disk.
 func (a *App) markStoryInProgress(storyID string) {
@@ -2145,6 +2191,7 @@ func (a *App) selectStoryByID(storyID string) {
 	for i, story := range a.prd.UserStories {
 		if story.ID == storyID {
 			a.selectedIndex = i
+			a.adjustStoriesScroll()
 			return
 		}
 	}
@@ -2155,6 +2202,7 @@ func (a *App) selectInProgressStory() {
 	for i, story := range a.prd.UserStories {
 		if story.InProgress {
 			a.selectedIndex = i
+			a.adjustStoriesScroll()
 			return
 		}
 	}
@@ -2262,6 +2310,7 @@ func (a App) handlePRDUpdate(msg PRDUpdateMsg) (tea.Model, tea.Cmd) {
 
 		// Auto-select the in-progress story so the user sees its details
 		a.selectInProgressStory()
+		a.adjustStoriesScroll()
 	}
 
 	// Continue listening for changes
