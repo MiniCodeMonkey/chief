@@ -46,9 +46,10 @@ func GetEditPrompt(prdDir string) string {
 	return strings.ReplaceAll(editPromptTemplate, "{{PRD_DIR}}", prdDir)
 }
 
-// GetConvertPrompt returns the PRD converter prompt with the PRD content inlined.
-func GetConvertPrompt(prdContent string) string {
-	return strings.ReplaceAll(convertPromptTemplate, "{{PRD_CONTENT}}", prdContent)
+// GetConvertPrompt returns the PRD converter prompt with the file path substituted.
+// Claude reads the file itself using file-reading tools instead of receiving inlined content.
+func GetConvertPrompt(prdFilePath string) string {
+	return strings.ReplaceAll(convertPromptTemplate, "{{PRD_FILE_PATH}}", prdFilePath)
 }
 
 // GetDetectSetupPrompt returns the prompt for detecting project setup commands.

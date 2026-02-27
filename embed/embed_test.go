@@ -67,20 +67,25 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 }
 
 func TestGetConvertPrompt(t *testing.T) {
-	prdContent := "# My Feature\n\nA cool feature PRD."
-	prompt := GetConvertPrompt(prdContent)
+	prdFilePath := "/path/to/prds/main/prd.md"
+	prompt := GetConvertPrompt(prdFilePath)
 
 	// Verify the prompt is not empty
 	if prompt == "" {
 		t.Error("Expected GetConvertPrompt() to return non-empty prompt")
 	}
 
-	// Verify PRD content is inlined
-	if !strings.Contains(prompt, prdContent) {
-		t.Error("Expected prompt to contain the inlined PRD content")
+	// Verify file path is substituted (not inlined content)
+	if !strings.Contains(prompt, prdFilePath) {
+		t.Error("Expected prompt to contain the PRD file path")
 	}
+	if strings.Contains(prompt, "{{PRD_FILE_PATH}}") {
+		t.Error("Expected {{PRD_FILE_PATH}} to be substituted")
+	}
+
+	// Verify the old {{PRD_CONTENT}} placeholder is completely removed
 	if strings.Contains(prompt, "{{PRD_CONTENT}}") {
-		t.Error("Expected {{PRD_CONTENT}} to be substituted")
+		t.Error("Expected {{PRD_CONTENT}} placeholder to be completely removed")
 	}
 
 	// Verify key instructions are present
@@ -94,6 +99,11 @@ func TestGetConvertPrompt(t *testing.T) {
 
 	if !strings.Contains(prompt, `"passes": false`) {
 		t.Error("Expected prompt to specify passes: false default")
+	}
+
+	// Verify prompt instructs Claude to read the file
+	if !strings.Contains(prompt, "Read the PRD file") {
+		t.Error("Expected prompt to instruct Claude to read the PRD file")
 	}
 }
 

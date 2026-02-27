@@ -131,6 +131,15 @@ func Convert(opts ConvertOptions) error {
 		}
 	}
 
+	// Sanity check: warn if JSON has significantly fewer stories than markdown
+	if mdContent, readErr := os.ReadFile(prdMdPath); readErr == nil {
+		mdStoryCount := CountMarkdownStories(string(mdContent))
+		jsonStoryCount := len(newPRD.UserStories)
+		if mdStoryCount > 0 && jsonStoryCount < int(float64(mdStoryCount)*0.8) {
+			fmt.Printf("⚠️  Warning: possible truncation — JSON has %d stories but markdown has ~%d story headings\n", jsonStoryCount, mdStoryCount)
+		}
+	}
+
 	// Re-save through Go's JSON encoder to guarantee proper escaping and formatting
 	normalizedContent, err := json.MarshalIndent(newPRD, "", "  ")
 	if err != nil {
@@ -180,16 +189,13 @@ func Convert(opts ConvertOptions) error {
 	return nil
 }
 
-// runClaudeConversion reads prd.md, sends content inline to Claude, and returns the JSON output.
+// runClaudeConversion sends the PRD file path to Claude and returns the JSON output.
+// Claude reads prd.md itself using file-reading tools, avoiding token limits for large PRDs.
 func runClaudeConversion(absPRDDir string) (string, error) {
-	content, err := os.ReadFile(filepath.Join(absPRDDir, "prd.md"))
-	if err != nil {
-		return "", fmt.Errorf("failed to read prd.md: %w", err)
-	}
+	prdMdPath := filepath.Join(absPRDDir, "prd.md")
+	prompt := embed.GetConvertPrompt(prdMdPath)
 
-	prompt := embed.GetConvertPrompt(string(content))
-
-	cmd := exec.Command("claude", "-p", "--tools", "")
+	cmd := exec.Command("claude", "-p")
 	cmd.Dir = absPRDDir
 	cmd.Stdin = strings.NewReader(prompt)
 
@@ -668,6 +674,19 @@ func validateJSON(content string) error {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil
+}
+
+// CountMarkdownStories counts the approximate number of user stories in a markdown PRD
+// by counting second-level headings (## ). This is a heuristic used for truncation detection.
+func CountMarkdownStories(content string) int {
+	count := 0
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") {
+			count++
+		}
+	}
+	return count
 }
 
 // HasProgress checks if the PRD has any progress (passes: true or inProgress: true).

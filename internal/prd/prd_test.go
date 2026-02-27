@@ -443,3 +443,59 @@ func TestPRD_NextStoryContext_PromptSizeUnder10KB(t *testing.T) {
 		t.Errorf("story context is %d bytes, expected under 10KB", len(*ctx))
 	}
 }
+
+func TestCountMarkdownStories(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected int
+	}{
+		{
+			name:     "typical PRD with stories",
+			content:  "# My Project\n\nOverview text.\n\n## Story One\n\nDetails.\n\n## Story Two\n\nMore details.\n\n## Story Three\n\nEven more.",
+			expected: 3,
+		},
+		{
+			name:     "no stories",
+			content:  "# My Project\n\nJust an overview with no stories.",
+			expected: 0,
+		},
+		{
+			name:     "empty content",
+			content:  "",
+			expected: 0,
+		},
+		{
+			name:     "nested headings not counted",
+			content:  "# Project\n\n## Story One\n\n### Sub-section\n\n## Story Two\n\n### Another sub-section",
+			expected: 2,
+		},
+		{
+			name:     "heading without space not counted",
+			content:  "# Project\n\n##NotAStory\n\n## Real Story",
+			expected: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CountMarkdownStories(tt.content)
+			if got != tt.expected {
+				t.Errorf("CountMarkdownStories() = %d, want %d", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCountMarkdownStories_LargePRD(t *testing.T) {
+	// Simulate a large PRD with 100 stories
+	var content string
+	content = "# Large Project\n\nA big project.\n\n"
+	for i := 1; i <= 100; i++ {
+		content += fmt.Sprintf("## Story %d\n\nDescription for story %d.\n\n", i, i)
+	}
+	got := CountMarkdownStories(content)
+	if got != 100 {
+		t.Errorf("CountMarkdownStories() = %d, want 100", got)
+	}
+}
