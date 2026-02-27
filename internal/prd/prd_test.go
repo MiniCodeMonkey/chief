@@ -444,6 +444,54 @@ func TestPRD_NextStoryContext_PromptSizeUnder10KB(t *testing.T) {
 	}
 }
 
+func TestPRD_ExtractIDPrefix_US(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001"},
+			{ID: "US-002"},
+		},
+	}
+	if got := p.ExtractIDPrefix(); got != "US" {
+		t.Errorf("ExtractIDPrefix() = %q, want %q", got, "US")
+	}
+}
+
+func TestPRD_ExtractIDPrefix_MFR(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "MFR-001"},
+			{ID: "MFR-002"},
+		},
+	}
+	if got := p.ExtractIDPrefix(); got != "MFR" {
+		t.Errorf("ExtractIDPrefix() = %q, want %q", got, "MFR")
+	}
+}
+
+func TestPRD_ExtractIDPrefix_Default(t *testing.T) {
+	p := &PRD{
+		Project:     "Empty",
+		UserStories: []UserStory{},
+	}
+	if got := p.ExtractIDPrefix(); got != "US" {
+		t.Errorf("ExtractIDPrefix() = %q, want %q for empty PRD", got, "US")
+	}
+}
+
+func TestPRD_ExtractIDPrefix_SingleChar(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "T-001"},
+		},
+	}
+	if got := p.ExtractIDPrefix(); got != "T" {
+		t.Errorf("ExtractIDPrefix() = %q, want %q", got, "T")
+	}
+}
+
 func TestCountMarkdownStories(t *testing.T) {
 	tests := []struct {
 		name     string

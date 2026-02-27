@@ -46,10 +46,12 @@ func GetEditPrompt(prdDir string) string {
 	return strings.ReplaceAll(editPromptTemplate, "{{PRD_DIR}}", prdDir)
 }
 
-// GetConvertPrompt returns the PRD converter prompt with the file path substituted.
+// GetConvertPrompt returns the PRD converter prompt with the file path and ID prefix substituted.
 // Claude reads the file itself using file-reading tools instead of receiving inlined content.
-func GetConvertPrompt(prdFilePath string) string {
-	return strings.ReplaceAll(convertPromptTemplate, "{{PRD_FILE_PATH}}", prdFilePath)
+// The idPrefix determines the story ID convention (e.g., "US" → US-001, "MFR" → MFR-001).
+func GetConvertPrompt(prdFilePath, idPrefix string) string {
+	result := strings.ReplaceAll(convertPromptTemplate, "{{PRD_FILE_PATH}}", prdFilePath)
+	return strings.ReplaceAll(result, "{{ID_PREFIX}}", idPrefix)
 }
 
 // GetDetectSetupPrompt returns the prompt for detecting project setup commands.

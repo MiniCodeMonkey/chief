@@ -9,7 +9,7 @@ Then output ONLY the raw JSON to stdout — no markdown fences, no explanation, 
   "description": "Brief project description",
   "userStories": [
     {
-      "id": "US-001",
+      "id": "{{ID_PREFIX}}-001",
       "title": "Story Title",
       "description": "Full description of what the user story accomplishes",
       "acceptanceCriteria": [
@@ -26,7 +26,7 @@ Rules:
 1. Extract the project name from the main heading (# heading)
 2. Extract the description from the introductory paragraph
 3. For each user story:
-   - Generate sequential IDs: US-001, US-002, etc.
+   - Generate sequential IDs: {{ID_PREFIX}}-001, {{ID_PREFIX}}-002, etc.
    - Extract title from story heading
    - Extract description from story body
    - Extract acceptance criteria as an array of strings

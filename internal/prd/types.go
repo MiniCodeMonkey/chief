@@ -27,6 +27,18 @@ type PRD struct {
 	UserStories []UserStory `json:"userStories"`
 }
 
+// ExtractIDPrefix returns the ID prefix used by the stories in this PRD.
+// For example, "US" from "US-001", "MFR" from "MFR-001", "T" from "T-001".
+// Returns "US" as the default when the PRD has no stories or IDs lack a hyphen.
+func (p *PRD) ExtractIDPrefix() string {
+	for _, story := range p.UserStories {
+		if idx := strings.LastIndex(story.ID, "-"); idx > 0 {
+			return story.ID[:idx]
+		}
+	}
+	return "US"
+}
+
 // AllComplete returns true when all stories have passes: true.
 func (p *PRD) AllComplete() bool {
 	if len(p.UserStories) == 0 {

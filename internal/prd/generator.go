@@ -104,8 +104,14 @@ func Convert(opts ConvertOptions) error {
 		hasProgress = HasProgress(existing)
 	}
 
+	// Extract ID prefix from existing PRD (defaults to "US" for new PRDs)
+	idPrefix := "US"
+	if existingPRD != nil {
+		idPrefix = existingPRD.ExtractIDPrefix()
+	}
+
 	// Run Claude to convert prd.md → JSON string
-	rawJSON, err := runClaudeConversion(absPRDDir)
+	rawJSON, err := runClaudeConversion(absPRDDir, idPrefix)
 	if err != nil {
 		return err
 	}
@@ -191,9 +197,10 @@ func Convert(opts ConvertOptions) error {
 
 // runClaudeConversion sends the PRD file path to Claude and returns the JSON output.
 // Claude reads prd.md itself using file-reading tools, avoiding token limits for large PRDs.
-func runClaudeConversion(absPRDDir string) (string, error) {
+// The idPrefix determines the story ID convention (e.g., "US" → US-001, "MFR" → MFR-001).
+func runClaudeConversion(absPRDDir, idPrefix string) (string, error) {
 	prdMdPath := filepath.Join(absPRDDir, "prd.md")
-	prompt := embed.GetConvertPrompt(prdMdPath)
+	prompt := embed.GetConvertPrompt(prdMdPath, idPrefix)
 
 	cmd := exec.Command("claude", "-p")
 	cmd.Dir = absPRDDir

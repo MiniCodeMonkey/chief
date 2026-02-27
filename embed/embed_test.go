@@ -68,7 +68,7 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 
 func TestGetConvertPrompt(t *testing.T) {
 	prdFilePath := "/path/to/prds/main/prd.md"
-	prompt := GetConvertPrompt(prdFilePath)
+	prompt := GetConvertPrompt(prdFilePath, "US")
 
 	// Verify the prompt is not empty
 	if prompt == "" {
@@ -88,6 +88,14 @@ func TestGetConvertPrompt(t *testing.T) {
 		t.Error("Expected {{PRD_CONTENT}} placeholder to be completely removed")
 	}
 
+	// Verify ID prefix is substituted
+	if strings.Contains(prompt, "{{ID_PREFIX}}") {
+		t.Error("Expected {{ID_PREFIX}} to be substituted")
+	}
+	if !strings.Contains(prompt, "US-001") {
+		t.Error("Expected prompt to contain US-001 when prefix is US")
+	}
+
 	// Verify key instructions are present
 	if !strings.Contains(prompt, "JSON") {
 		t.Error("Expected prompt to mention JSON")
@@ -104,6 +112,21 @@ func TestGetConvertPrompt(t *testing.T) {
 	// Verify prompt instructs Claude to read the file
 	if !strings.Contains(prompt, "Read the PRD file") {
 		t.Error("Expected prompt to instruct Claude to read the PRD file")
+	}
+}
+
+func TestGetConvertPrompt_CustomPrefix(t *testing.T) {
+	prompt := GetConvertPrompt("/path/prd.md", "MFR")
+
+	// Verify custom prefix is used, not hardcoded US
+	if strings.Contains(prompt, "{{ID_PREFIX}}") {
+		t.Error("Expected {{ID_PREFIX}} to be substituted")
+	}
+	if !strings.Contains(prompt, "MFR-001") {
+		t.Error("Expected prompt to contain MFR-001 when prefix is MFR")
+	}
+	if !strings.Contains(prompt, "MFR-002") {
+		t.Error("Expected prompt to contain MFR-002 when prefix is MFR")
 	}
 }
 
