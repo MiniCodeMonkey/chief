@@ -13,7 +13,9 @@ Your current story:
 2. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
 3. Implement the user story above
 4. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-5. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`
+5. If checks pass, commit changes with message: `feat: [Story ID] - [Story Title]`
+   - **NEVER stage or commit `.chief/` files** — these are local working files and must stay out of version control
+   - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
 6. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
 7. Append your progress to `{{PROGRESS_PATH}}`
 

@@ -66,6 +66,22 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 	}
 }
 
+func TestGetPrompt_ChiefExclusion(t *testing.T) {
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`)
+
+	// The prompt must instruct Claude to never stage or commit .chief/ files
+	if !strings.Contains(prompt, ".chief/") {
+		t.Error("Expected prompt to contain .chief/ exclusion instruction")
+	}
+	if !strings.Contains(prompt, "NEVER stage or commit") {
+		t.Error("Expected prompt to explicitly say NEVER stage or commit .chief/ files")
+	}
+	// The commit step should not say "commit ALL changes" anymore
+	if strings.Contains(prompt, "commit ALL changes") {
+		t.Error("Expected prompt to NOT say 'commit ALL changes' — it should exclude .chief/ files")
+	}
+}
+
 func TestGetConvertPrompt(t *testing.T) {
 	prdFilePath := "/path/to/prds/main/prd.md"
 	prompt := GetConvertPrompt(prdFilePath, "US")
