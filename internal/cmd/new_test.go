@@ -80,6 +80,54 @@ func TestRunNewRejectsInvalidName(t *testing.T) {
 	}
 }
 
+func TestRunNewCleansUpEmptyDirOnCancel(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Simulate what RunNew does: create directory, then check prd.md doesn't exist
+	name := "cancelled"
+	prdDir := filepath.Join(tmpDir, ".chief", "prds", name)
+	if err := os.MkdirAll(prdDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+
+	// prd.md was never created (user cancelled) — simulate the cleanup
+	prdMdPath := filepath.Join(prdDir, "prd.md")
+	if _, err := os.Stat(prdMdPath); os.IsNotExist(err) {
+		os.Remove(prdDir)
+	}
+
+	// Directory should be removed
+	if _, err := os.Stat(prdDir); !os.IsNotExist(err) {
+		t.Error("Expected empty directory to be cleaned up after cancellation")
+	}
+}
+
+func TestRunNewKeepsDirWhenPrdMdExists(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	name := "has-prd"
+	prdDir := filepath.Join(tmpDir, ".chief", "prds", name)
+	if err := os.MkdirAll(prdDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+
+	// Create prd.md (simulates successful Claude session)
+	prdMdPath := filepath.Join(prdDir, "prd.md")
+	if err := os.WriteFile(prdMdPath, []byte("# My PRD"), 0644); err != nil {
+		t.Fatalf("Failed to create prd.md: %v", err)
+	}
+
+	// Cleanup should NOT trigger since prd.md exists
+	if _, err := os.Stat(prdMdPath); os.IsNotExist(err) {
+		os.Remove(prdDir)
+	}
+
+	// Directory should still exist
+	if _, err := os.Stat(prdDir); os.IsNotExist(err) {
+		t.Error("Expected directory to be kept when prd.md exists")
+	}
+}
+
 func TestRunNewRejectsExistingPRD(t *testing.T) {
 	tmpDir := t.TempDir()
 

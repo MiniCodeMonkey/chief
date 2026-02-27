@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"unicode/utf8"
 
@@ -841,6 +843,121 @@ func TestOrphanedWorktreeNotTracked(t *testing.T) {
 	}
 	if !p.CanClean() {
 		t.Error("expected CanClean() to return true for orphaned worktree without PRD")
+	}
+}
+
+// --- Empty Directory Filtering Tests ---
+
+func TestRefreshIgnoresEmptyDirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
+
+	// Create an empty directory (simulates cancelled chief new)
+	emptyDir := filepath.Join(prdsDir, "cancelled")
+	if err := os.MkdirAll(emptyDir, 0755); err != nil {
+		t.Fatalf("Failed to create empty dir: %v", err)
+	}
+
+	p := &PRDPicker{
+		basePath: tmpDir,
+		entries:  make([]PRDEntry, 0),
+	}
+	p.Refresh()
+
+	if len(p.entries) != 0 {
+		t.Errorf("expected 0 entries for empty directory, got %d", len(p.entries))
+	}
+}
+
+func TestRefreshShowsDirectoryWithPrdMdOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
+
+	// Create directory with only prd.md (no json yet)
+	prdDir := filepath.Join(prdsDir, "in-progress")
+	if err := os.MkdirAll(prdDir, 0755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prdDir, "prd.md"), []byte("# My PRD"), 0644); err != nil {
+		t.Fatalf("Failed to create prd.md: %v", err)
+	}
+
+	p := &PRDPicker{
+		basePath: tmpDir,
+		entries:  make([]PRDEntry, 0),
+	}
+	p.Refresh()
+
+	if len(p.entries) != 1 {
+		t.Fatalf("expected 1 entry for directory with prd.md, got %d", len(p.entries))
+	}
+	if p.entries[0].Name != "in-progress" {
+		t.Errorf("expected entry name 'in-progress', got %q", p.entries[0].Name)
+	}
+}
+
+func TestRefreshShowsDirectoryWithPrdJsonOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
+
+	// Create directory with only prd.json
+	prdDir := filepath.Join(prdsDir, "converted")
+	if err := os.MkdirAll(prdDir, 0755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+	prdJSON := `{"project":"test","userStories":[]}`
+	if err := os.WriteFile(filepath.Join(prdDir, "prd.json"), []byte(prdJSON), 0644); err != nil {
+		t.Fatalf("Failed to create prd.json: %v", err)
+	}
+
+	p := &PRDPicker{
+		basePath: tmpDir,
+		entries:  make([]PRDEntry, 0),
+	}
+	p.Refresh()
+
+	if len(p.entries) != 1 {
+		t.Fatalf("expected 1 entry for directory with prd.json, got %d", len(p.entries))
+	}
+	if p.entries[0].Name != "converted" {
+		t.Errorf("expected entry name 'converted', got %q", p.entries[0].Name)
+	}
+}
+
+func TestRefreshMixedDirectories(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
+
+	// Empty directory (should be filtered)
+	if err := os.MkdirAll(filepath.Join(prdsDir, "empty"), 0755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+
+	// Directory with prd.md (should be shown)
+	validDir := filepath.Join(prdsDir, "valid")
+	if err := os.MkdirAll(validDir, 0755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(validDir, "prd.md"), []byte("# PRD"), 0644); err != nil {
+		t.Fatalf("Failed to create prd.md: %v", err)
+	}
+
+	// Another empty directory (should be filtered)
+	if err := os.MkdirAll(filepath.Join(prdsDir, "also-empty"), 0755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+
+	p := &PRDPicker{
+		basePath: tmpDir,
+		entries:  make([]PRDEntry, 0),
+	}
+	p.Refresh()
+
+	if len(p.entries) != 1 {
+		t.Errorf("expected 1 entry (filtering 2 empty dirs), got %d", len(p.entries))
+	}
+	if len(p.entries) > 0 && p.entries[0].Name != "valid" {
+		t.Errorf("expected entry name 'valid', got %q", p.entries[0].Name)
 	}
 }
 
