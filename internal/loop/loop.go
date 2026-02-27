@@ -37,18 +37,19 @@ func DefaultRetryConfig() RetryConfig {
 
 // Loop manages the core agent loop that invokes Claude repeatedly until all stories are complete.
 type Loop struct {
-	prdPath     string
-	workDir     string
-	prompt      string
-	maxIter     int
-	iteration   int
-	events      chan Event
-	claudeCmd   *exec.Cmd
-	logFile     *os.File
-	mu          sync.Mutex
-	stopped     bool
-	paused      bool
-	retryConfig RetryConfig
+	prdPath      string
+	workDir      string
+	prompt       string
+	buildPrompt  func() (string, error) // optional: rebuild prompt each iteration
+	maxIter      int
+	iteration    int
+	events       chan Event
+	claudeCmd    *exec.Cmd
+	logFile      *os.File
+	mu           sync.Mutex
+	stopped      bool
+	paused       bool
+	retryConfig  RetryConfig
 }
 
 // NewLoop creates a new Loop instance.
@@ -76,10 +77,30 @@ func NewLoopWithWorkDir(prdPath, workDir string, prompt string, maxIter int) *Lo
 }
 
 // NewLoopWithEmbeddedPrompt creates a new Loop instance using the embedded agent prompt.
-// The PRD path placeholder in the prompt is automatically substituted.
+// The prompt is rebuilt on each iteration to inline the current story context.
 func NewLoopWithEmbeddedPrompt(prdPath string, maxIter int) *Loop {
-	prompt := embed.GetPrompt(prdPath, prd.ProgressPath(prdPath))
-	return NewLoop(prdPath, prompt, maxIter)
+	l := NewLoop(prdPath, "", maxIter)
+	l.buildPrompt = promptBuilderForPRD(prdPath)
+	return l
+}
+
+// promptBuilderForPRD returns a function that loads the PRD and builds a prompt
+// with the next story inlined. This is called before each iteration so that
+// newly completed stories are skipped.
+func promptBuilderForPRD(prdPath string) func() (string, error) {
+	return func() (string, error) {
+		p, err := prd.LoadPRD(prdPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to load PRD for prompt: %w", err)
+		}
+
+		storyCtx := p.NextStoryContext()
+		if storyCtx == nil {
+			return "", fmt.Errorf("all stories are complete")
+		}
+
+		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), *storyCtx), nil
+	}
 }
 
 // Events returns the channel for receiving events from the loop.
@@ -128,6 +149,21 @@ func (l *Loop) Run(ctx context.Context) error {
 				Iteration: currentIter - 1,
 			}
 			return nil
+		}
+
+		// Rebuild prompt if builder is set (inlines the current story each iteration)
+		if l.buildPrompt != nil {
+			prompt, err := l.buildPrompt()
+			if err != nil {
+				l.events <- Event{
+					Type:      EventComplete,
+					Iteration: currentIter,
+				}
+				return nil
+			}
+			l.mu.Lock()
+			l.prompt = prompt
+			l.mu.Unlock()
 		}
 
 		// Send iteration start event

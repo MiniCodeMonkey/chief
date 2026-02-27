@@ -8,16 +8,18 @@ import (
 func TestGetPrompt(t *testing.T) {
 	prdPath := "/path/to/prd.json"
 	progressPath := "/path/to/progress.md"
-	prompt := GetPrompt(prdPath, progressPath)
+	storyContext := `{"id":"US-001","title":"Test Story"}`
+	prompt := GetPrompt(prdPath, progressPath, storyContext)
 
-	// Verify the PRD path placeholder was substituted
+	// Verify all placeholders were substituted
 	if strings.Contains(prompt, "{{PRD_PATH}}") {
 		t.Error("Expected {{PRD_PATH}} to be substituted")
 	}
-
-	// Verify the progress path placeholder was substituted
 	if strings.Contains(prompt, "{{PROGRESS_PATH}}") {
 		t.Error("Expected {{PROGRESS_PATH}} to be substituted")
+	}
+	if strings.Contains(prompt, "{{STORY_CONTEXT}}") {
+		t.Error("Expected {{STORY_CONTEXT}} to be substituted")
 	}
 
 	// Verify the PRD path appears in the prompt
@@ -28,6 +30,11 @@ func TestGetPrompt(t *testing.T) {
 	// Verify the progress path appears in the prompt
 	if !strings.Contains(prompt, progressPath) {
 		t.Errorf("Expected prompt to contain progress path %q", progressPath)
+	}
+
+	// Verify the story context is inlined in the prompt
+	if !strings.Contains(prompt, storyContext) {
+		t.Error("Expected prompt to contain inlined story context")
 	}
 
 	// Verify the prompt contains key instructions
@@ -41,6 +48,15 @@ func TestGetPrompt(t *testing.T) {
 
 	if !strings.Contains(prompt, "passes: true") {
 		t.Error("Expected prompt to contain passes: true instruction")
+	}
+}
+
+func TestGetPrompt_NoFileReadInstruction(t *testing.T) {
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`)
+
+	// The prompt should NOT instruct Claude to read the PRD file
+	if strings.Contains(prompt, "Read the PRD") {
+		t.Error("Expected prompt to NOT contain 'Read the PRD' file-read instruction")
 	}
 }
 

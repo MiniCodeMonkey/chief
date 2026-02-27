@@ -4,14 +4,18 @@ You are an autonomous coding agent working on a software project.
 
 ## Your Task
 
-1. Read the PRD at `{{PRD_PATH}}`
-2. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
-3. Pick the **highest priority** user story where `passes: false` -- After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
-4. Implement that single user story
-5. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-6. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`
-7. Update the PRD to set `passes: true` for the completed story
-8. Append your progress to `{{PROGRESS_PATH}}`
+Your current story:
+<story>
+{{STORY_CONTEXT}}
+</story>
+
+1. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
+2. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
+3. Implement the user story above
+4. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
+5. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`
+6. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
+7. Append your progress to `{{PROGRESS_PATH}}`
 
 ## Progress Report Format
 

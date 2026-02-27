@@ -22,10 +22,14 @@ var convertPromptTemplate string
 //go:embed detect_setup_prompt.txt
 var detectSetupPromptTemplate string
 
-// GetPrompt returns the agent prompt with the PRD and progress paths substituted.
-func GetPrompt(prdPath, progressPath string) string {
+// GetPrompt returns the agent prompt with the PRD path, progress path, and
+// current story context substituted. The storyContext is the JSON of the
+// current story to work on, inlined directly into the prompt so that the
+// agent does not need to read the entire prd.json file.
+func GetPrompt(prdPath, progressPath, storyContext string) string {
 	result := strings.ReplaceAll(promptTemplate, "{{PRD_PATH}}", prdPath)
-	return strings.ReplaceAll(result, "{{PROGRESS_PATH}}", progressPath)
+	result = strings.ReplaceAll(result, "{{PROGRESS_PATH}}", progressPath)
+	return strings.ReplaceAll(result, "{{STORY_CONTEXT}}", storyContext)
 }
 
 // GetInitPrompt returns the PRD generator prompt with the PRD directory and optional context substituted.

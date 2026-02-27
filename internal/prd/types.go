@@ -3,6 +3,12 @@
 // for changes, and converting between prd.md and prd.json formats.
 package prd
 
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
 // UserStory represents a single user story in a PRD.
 type UserStory struct {
 	ID                 string   `json:"id"`
@@ -58,4 +64,30 @@ func (p *PRD) NextStory() *UserStory {
 		}
 	}
 	return next
+}
+
+// NextStoryContext returns the next story to work on as a formatted string
+// suitable for inlining into the agent prompt. Returns nil when all stories
+// are complete.
+func (p *PRD) NextStoryContext() *string {
+	story := p.NextStory()
+	if story == nil {
+		return nil
+	}
+
+	data, err := json.MarshalIndent(story, "", "  ")
+	if err != nil {
+		// Fallback to a simple text format
+		var b strings.Builder
+		fmt.Fprintf(&b, "ID: %s\nTitle: %s\nDescription: %s\n", story.ID, story.Title, story.Description)
+		fmt.Fprintf(&b, "Acceptance Criteria:\n")
+		for _, ac := range story.AcceptanceCriteria {
+			fmt.Fprintf(&b, "- %s\n", ac)
+		}
+		result := b.String()
+		return &result
+	}
+
+	result := string(data)
+	return &result
 }
