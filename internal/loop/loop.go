@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/minicodemonkey/chief/embed"
@@ -25,6 +26,9 @@ type RetryConfig struct {
 	RetryDelays []time.Duration // Delays between retries (default: 0s, 5s, 15s)
 	Enabled     bool          // Whether retry is enabled (default: true)
 }
+
+// DefaultWatchdogTimeout is the default duration of silence before the watchdog kills a hung process.
+const DefaultWatchdogTimeout = 5 * time.Minute
 
 // DefaultRetryConfig returns the default retry configuration.
 func DefaultRetryConfig() RetryConfig {
@@ -46,20 +50,23 @@ type Loop struct {
 	events       chan Event
 	claudeCmd    *exec.Cmd
 	logFile      *os.File
-	mu           sync.Mutex
-	stopped      bool
-	paused       bool
-	retryConfig  RetryConfig
+	mu               sync.Mutex
+	stopped          bool
+	paused           bool
+	retryConfig      RetryConfig
+	lastOutputTime   time.Time
+	watchdogTimeout  time.Duration
 }
 
 // NewLoop creates a new Loop instance.
 func NewLoop(prdPath, prompt string, maxIter int) *Loop {
 	return &Loop{
-		prdPath:     prdPath,
-		prompt:      prompt,
-		maxIter:     maxIter,
-		events:      make(chan Event, 100),
-		retryConfig: DefaultRetryConfig(),
+		prdPath:         prdPath,
+		prompt:          prompt,
+		maxIter:         maxIter,
+		events:          make(chan Event, 100),
+		retryConfig:     DefaultRetryConfig(),
+		watchdogTimeout: DefaultWatchdogTimeout,
 	}
 }
 
@@ -67,12 +74,13 @@ func NewLoop(prdPath, prompt string, maxIter int) *Loop {
 // When workDir is empty, defaults to the project root for backward compatibility.
 func NewLoopWithWorkDir(prdPath, workDir string, prompt string, maxIter int) *Loop {
 	return &Loop{
-		prdPath:     prdPath,
-		workDir:     workDir,
-		prompt:      prompt,
-		maxIter:     maxIter,
-		events:      make(chan Event, 100),
-		retryConfig: DefaultRetryConfig(),
+		prdPath:         prdPath,
+		workDir:         workDir,
+		prompt:          prompt,
+		maxIter:         maxIter,
+		events:          make(chan Event, 100),
+		retryConfig:     DefaultRetryConfig(),
+		watchdogTimeout: DefaultWatchdogTimeout,
 	}
 }
 
@@ -304,6 +312,9 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	)
 	// Set working directory: use workDir if configured, otherwise default to PRD directory
 	l.claudeCmd.Dir = l.effectiveWorkDir()
+	// Initialize watchdog state
+	l.lastOutputTime = time.Now()
+	watchdogTimeout := l.watchdogTimeout
 	l.mu.Unlock()
 
 	// Create pipes for stdout and stderr
@@ -320,6 +331,13 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	// Start the command
 	if err := l.claudeCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start Claude: %w", err)
+	}
+
+	// Start watchdog goroutine to detect hung processes
+	watchdogDone := make(chan struct{})
+	var watchdogFired atomic.Bool
+	if watchdogTimeout > 0 {
+		go l.runWatchdog(watchdogTimeout, watchdogDone, &watchdogFired)
 	}
 
 	// Process stdout in a separate goroutine
@@ -340,6 +358,9 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	// Wait for output processing to complete
 	wg.Wait()
 
+	// Stop watchdog
+	close(watchdogDone)
+
 	// Wait for the command to finish
 	if err := l.claudeCmd.Wait(); err != nil {
 		// If the context was cancelled, don't treat it as an error
@@ -353,6 +374,10 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		if stopped {
 			return nil
 		}
+		// Check if the watchdog killed the process
+		if watchdogFired.Load() {
+			return fmt.Errorf("watchdog timeout: no output for %s", watchdogTimeout)
+		}
 		return fmt.Errorf("Claude exited with error: %w", err)
 	}
 
@@ -361,6 +386,59 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	l.mu.Unlock()
 
 	return nil
+}
+
+// runWatchdog monitors lastOutputTime and kills the process if no output is received
+// within the timeout duration. It stops when watchdogDone is closed.
+func (l *Loop) runWatchdog(timeout time.Duration, done <-chan struct{}, fired *atomic.Bool) {
+	// Check interval scales with timeout: 1/5 of timeout, clamped to [10ms, 10s]
+	checkInterval := timeout / 5
+	if checkInterval < 10*time.Millisecond {
+		checkInterval = 10 * time.Millisecond
+	}
+	if checkInterval > 10*time.Second {
+		checkInterval = 10 * time.Second
+	}
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			l.mu.Lock()
+			lastOutput := l.lastOutputTime
+			stopped := l.stopped
+			l.mu.Unlock()
+
+			if stopped {
+				return
+			}
+
+			if time.Since(lastOutput) > timeout {
+				fired.Store(true)
+
+				// Emit watchdog timeout event
+				l.mu.Lock()
+				iter := l.iteration
+				l.mu.Unlock()
+				l.events <- Event{
+					Type:      EventWatchdogTimeout,
+					Iteration: iter,
+					Text:      fmt.Sprintf("No output for %s, killing hung process", timeout),
+				}
+
+				// Kill the process
+				l.mu.Lock()
+				if l.claudeCmd != nil && l.claudeCmd.Process != nil {
+					l.claudeCmd.Process.Kill()
+				}
+				l.mu.Unlock()
+				return
+			}
+		case <-done:
+			return
+		}
+	}
 }
 
 // processOutput reads stdout line by line, logs it, and parses events.
@@ -372,6 +450,11 @@ func (l *Loop) processOutput(r io.Reader) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		// Update last output time for watchdog
+		l.mu.Lock()
+		l.lastOutputTime = time.Now()
+		l.mu.Unlock()
 
 		// Log raw output
 		l.logLine(line)
@@ -484,4 +567,19 @@ func (l *Loop) DisableRetry() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.retryConfig.Enabled = false
+}
+
+// SetWatchdogTimeout sets the watchdog timeout duration.
+// Setting timeout to 0 disables the watchdog.
+func (l *Loop) SetWatchdogTimeout(timeout time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.watchdogTimeout = timeout
+}
+
+// WatchdogTimeout returns the current watchdog timeout duration.
+func (l *Loop) WatchdogTimeout() time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.watchdogTimeout
 }

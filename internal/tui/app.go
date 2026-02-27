@@ -979,6 +979,10 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		if isCurrentPRD {
 			a.lastActivity = event.Text
 		}
+	case loop.EventWatchdogTimeout:
+		if isCurrentPRD {
+			a.lastActivity = event.Text
+		}
 	}
 
 	// Reload PRD from disk only on meaningful state changes (not every event)

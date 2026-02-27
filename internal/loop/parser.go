@@ -31,6 +31,8 @@ const (
 	EventError
 	// EventRetrying is emitted when retrying after a crash.
 	EventRetrying
+	// EventWatchdogTimeout is emitted when the watchdog kills a hung process.
+	EventWatchdogTimeout
 )
 
 // String returns the string representation of an EventType.
@@ -56,6 +58,8 @@ func (e EventType) String() string {
 		return "Error"
 	case EventRetrying:
 		return "Retrying"
+	case EventWatchdogTimeout:
+		return "WatchdogTimeout"
 	default:
 		return "Unknown"
 	}
