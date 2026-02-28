@@ -26,10 +26,12 @@ var detectSetupPromptTemplate string
 // current story context substituted. The storyContext is the JSON of the
 // current story to work on, inlined directly into the prompt so that the
 // agent does not need to read the entire prd.json file.
-func GetPrompt(prdPath, progressPath, storyContext string) string {
+func GetPrompt(prdPath, progressPath, storyContext, storyID, storyTitle string) string {
 	result := strings.ReplaceAll(promptTemplate, "{{PRD_PATH}}", prdPath)
 	result = strings.ReplaceAll(result, "{{PROGRESS_PATH}}", progressPath)
-	return strings.ReplaceAll(result, "{{STORY_CONTEXT}}", storyContext)
+	result = strings.ReplaceAll(result, "{{STORY_CONTEXT}}", storyContext)
+	result = strings.ReplaceAll(result, "{{STORY_ID}}", storyID)
+	return strings.ReplaceAll(result, "{{STORY_TITLE}}", storyTitle)
 }
 
 // GetInitPrompt returns the PRD generator prompt with the PRD directory and optional context substituted.

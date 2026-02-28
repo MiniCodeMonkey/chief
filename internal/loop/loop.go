@@ -102,12 +102,14 @@ func promptBuilderForPRD(prdPath string) func() (string, error) {
 			return "", fmt.Errorf("failed to load PRD for prompt: %w", err)
 		}
 
-		storyCtx := p.NextStoryContext()
-		if storyCtx == nil {
+		story := p.NextStory()
+		if story == nil {
 			return "", fmt.Errorf("all stories are complete")
 		}
 
-		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), *storyCtx), nil
+		storyCtx := p.NextStoryContext()
+
+		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), *storyCtx, story.ID, story.Title), nil
 	}
 }
 

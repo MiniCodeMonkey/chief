@@ -9,7 +9,7 @@ func TestGetPrompt(t *testing.T) {
 	prdPath := "/path/to/prd.json"
 	progressPath := "/path/to/progress.md"
 	storyContext := `{"id":"US-001","title":"Test Story"}`
-	prompt := GetPrompt(prdPath, progressPath, storyContext)
+	prompt := GetPrompt(prdPath, progressPath, storyContext, "US-001", "Test Story")
 
 	// Verify all placeholders were substituted
 	if strings.Contains(prompt, "{{PRD_PATH}}") {
@@ -20,6 +20,17 @@ func TestGetPrompt(t *testing.T) {
 	}
 	if strings.Contains(prompt, "{{STORY_CONTEXT}}") {
 		t.Error("Expected {{STORY_CONTEXT}} to be substituted")
+	}
+	if strings.Contains(prompt, "{{STORY_ID}}") {
+		t.Error("Expected {{STORY_ID}} to be substituted")
+	}
+	if strings.Contains(prompt, "{{STORY_TITLE}}") {
+		t.Error("Expected {{STORY_TITLE}} to be substituted")
+	}
+
+	// Verify the commit message contains the exact story ID and title
+	if !strings.Contains(prompt, "feat: US-001 - Test Story") {
+		t.Error("Expected prompt to contain exact commit message 'feat: US-001 - Test Story'")
 	}
 
 	// Verify the PRD path appears in the prompt
@@ -52,7 +63,7 @@ func TestGetPrompt(t *testing.T) {
 }
 
 func TestGetPrompt_NoFileReadInstruction(t *testing.T) {
-	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`)
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
 
 	// The prompt should NOT instruct Claude to read the PRD file
 	if strings.Contains(prompt, "Read the PRD") {
@@ -67,7 +78,7 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 }
 
 func TestGetPrompt_ChiefExclusion(t *testing.T) {
-	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`)
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
 
 	// The prompt must instruct Claude to never stage or commit .chief/ files
 	if !strings.Contains(prompt, ".chief/") {
