@@ -21,6 +21,7 @@ your-project/
     │       ├── prd.md          # Human-readable PRD (you write this)
     │       ├── prd.json        # Machine-readable PRD (Chief reads/writes)
     │       ├── progress.md     # Progress log (Chief appends after each story)
+    │       ├── knowledge.json  # Structured knowledge base (patterns, learnings)
     │       └── claude.log      # Raw Claude output (for debugging)
     └── worktrees/              # Isolated checkouts for parallel PRDs
         └── my-feature/         # Git worktree (full project checkout)
@@ -76,6 +77,7 @@ Key fields:
 | `userStories[].title` | string | Short story title |
 | `userStories[].description` | string | User story in "As a... I want... so that..." format |
 | `userStories[].acceptanceCriteria` | array | List of criteria that must be met |
+| `userStories[].dependsOn` | array | Story IDs that must pass before this story runs (optional) |
 | `userStories[].priority` | number | Execution order (lower = higher priority) |
 | `userStories[].passes` | boolean | Whether the story is complete |
 | `userStories[].inProgress` | boolean | Whether Chief is currently working on this story |
@@ -105,6 +107,31 @@ A typical entry looks like:
 ```
 
 The `Codebase Patterns` section at the top of this file consolidates reusable patterns discovered across iterations — things like naming conventions, file locations, and architectural decisions that future iterations should follow.
+
+### `knowledge.json`
+
+The structured knowledge base for cross-iteration learning. This is the primary machine-readable store that Claude reads at the start of each iteration to understand what previous iterations built, which patterns they discovered, and what approaches failed.
+
+```json
+{
+  "patterns": [
+    "Use Zod for input validation",
+    "Middleware follows req.user convention"
+  ],
+  "completedStories": {
+    "US-001": {
+      "filesChanged": ["src/routes/register.ts", "tests/register.test.ts"],
+      "approach": "Added registration route following existing route patterns",
+      "learnings": ["JWT secret is in JWT_SECRET env var"],
+      "criteriaResults": [
+        { "criterion": "Registration form with email and password", "passed": true, "evidence": "Form renders at /register" }
+      ]
+    }
+  }
+}
+```
+
+This file is created automatically during the first iteration and updated after each story. See [Knowledge Base](/concepts/knowledge-base) for the complete schema and how the agent uses it.
 
 ### `claude.log`
 
@@ -185,15 +212,18 @@ A single project can have multiple PRDs, each tracking a separate feature or ini
 │   ├── auth-system/
 │   │   ├── prd.md
 │   │   ├── prd.json
-│   │   └── progress.md
+│   │   ├── progress.md
+│   │   └── knowledge.json
 │   ├── payment-integration/
 │   │   ├── prd.md
 │   │   ├── prd.json
-│   │   └── progress.md
+│   │   ├── progress.md
+│   │   └── knowledge.json
 │   └── admin-dashboard/
 │       ├── prd.md
 │       ├── prd.json
-│       └── progress.md
+│       ├── progress.md
+│       └── knowledge.json
 └── worktrees/
     ├── auth-system/
     └── payment-integration/
@@ -247,6 +277,7 @@ This shares:
 - `prd.md`: Your requirements, the source of truth for what to build
 - `prd.json`: Story state and progress, so collaborators see what's done
 - `progress.md`: Implementation history and learnings, valuable project context
+- `knowledge.json`: Structured knowledge base, so the agent picks up where it left off
 
 The `claude.log` files are large, regenerated each run, and only useful for debugging.
 

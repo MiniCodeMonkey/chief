@@ -24,6 +24,7 @@ interface UserStory {
   title: string;                 // Short title
   description: string;           // Full description
   acceptanceCriteria: string[];  // What must be true
+  dependsOn?: string[];          // Story IDs this depends on
   priority: number;              // Lower = higher priority
   passes: boolean;               // Is this complete?
   inProgress: boolean;           // Being worked on?
@@ -62,6 +63,7 @@ interface UserStory {
         "Remember me checkbox",
         "Redirect to dashboard on success"
       ],
+      "dependsOn": ["US-001"],
       "priority": 2,
       "passes": false,
       "inProgress": false
@@ -103,9 +105,19 @@ Array of strings, each describing a requirement. Claude uses these to know when 
 - One requirement per item
 - 3-7 items per story
 
+### dependsOn
+
+Optional array of story IDs that must have `passes: true` before this story can be selected. If omitted or empty, the story has no dependencies.
+
+**Format:** Array of story ID strings matching other stories in the same PRD.
+
+**Example:** `["US-001", "US-002"]` — this story won't run until both US-001 and US-002 are complete.
+
+Chief detects circular dependencies (e.g., US-001 depends on US-002 and US-002 depends on US-001) and reports an error instead of looping forever.
+
 ### priority
 
-Lower numbers = higher priority. Chief always picks the incomplete story with the lowest priority number first.
+Lower numbers = higher priority. Chief always picks the incomplete story with the lowest priority number first, among stories whose dependencies are all satisfied.
 
 **Range:** Positive integers, typically 1-100
 

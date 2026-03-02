@@ -77,6 +77,7 @@ export default defineConfig({
           { text: 'How Chief Works', link: '/concepts/how-it-works' },
           { text: 'The Ralph Loop', link: '/concepts/ralph-loop' },
           { text: 'PRD Format', link: '/concepts/prd-format' },
+          { text: 'Knowledge Base', link: '/concepts/knowledge-base' },
           { text: 'The .chief Directory', link: '/concepts/chief-directory' }
         ]
       },

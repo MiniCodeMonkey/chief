@@ -12,15 +12,17 @@ Each PRD lives in its own subdirectory inside `.chief/prds/`:
 
 ```
 .chief/prds/my-feature/
-├── prd.md        # Human-readable context for Claude
-├── prd.json      # Structured data Chief reads and updates
-├── progress.md   # Auto-generated progress log
-└── claude.log    # Raw Claude output from each iteration
+├── prd.md          # Human-readable context for Claude
+├── prd.json        # Structured data Chief reads and updates
+├── progress.md     # Auto-generated progress log
+├── knowledge.json  # Structured knowledge base for cross-iteration learning
+└── claude.log      # Raw Claude output from each iteration
 ```
 
 - **`prd.md`** — Written by you. Provides context, background, and guidance.
 - **`prd.json`** — The source of truth. Chief reads, updates, and drives execution from this file.
 - **`progress.md`** — Written by Claude. Tracks what was done, what changed, and what was learned.
+- **`knowledge.json`** — Written by Claude. Structured knowledge base storing patterns, completed story records, and failure history. See [Knowledge Base](/concepts/knowledge-base) for details.
 - **`claude.log`** — Written by Chief. Raw output from Claude for debugging.
 
 ## prd.md — The Human-Readable File
@@ -89,6 +91,7 @@ Each story in the `userStories` array has the following fields:
 | `title` | `string` | Yes | — | Short, descriptive title. Keep under 50 characters. |
 | `description` | `string` | Yes | — | Full description. User story format recommended. |
 | `acceptanceCriteria` | `string[]` | Yes | — | List of requirements. Claude uses these to know when the story is done. |
+| `dependsOn` | `string[]` | No | `[]` | Story IDs this story depends on. Story won't be selected until all dependencies pass. |
 | `priority` | `number` | Yes | — | Execution order. Lower number = higher priority. |
 | `passes` | `boolean` | Yes | `false` | Whether the story has been completed and verified. |
 | `inProgress` | `boolean` | Yes | `false` | Whether Claude is currently working on this story. |
@@ -119,25 +122,47 @@ Each story in the `userStories` array has the following fields:
 
 ## Story Selection Logic
 
-Chief picks the next story to work on using a simple, deterministic algorithm:
+Chief picks the next story to work on using a deterministic algorithm that respects both priority and dependencies:
 
 ```
 1. Filter stories where passes = false
-2. Sort remaining stories by priority (ascending)
-3. Pick the first one
-4. Set inProgress = true on that story
-5. Start the iteration
+2. Filter out stories whose dependencies haven't all passed yet
+3. Filter out stories that have been exhausted (3 failed attempts)
+4. Sort remaining stories by priority (ascending)
+5. Pick the first one
+6. Set inProgress = true on that story
+7. Start the iteration
 ```
+
+If a story has `inProgress: true` from a previous interrupted iteration, Chief picks it up first regardless of priority or dependencies.
 
 ### How Priority Works
 
-Priority is a number where **lower = higher priority**. Chief always picks the lowest-numbered incomplete story:
+Priority is a number where **lower = higher priority**. Chief always picks the lowest-numbered incomplete story whose dependencies are satisfied:
 
-| Story | Priority | Passes | Selected? |
-|-------|----------|--------|-----------|
-| US-001 | 1 | `true` | No — already complete |
-| US-002 | 2 | `false` | **Yes — lowest priority number with passes: false** |
-| US-003 | 3 | `false` | No — US-002 goes first |
+| Story | Priority | Passes | DependsOn | Selected? |
+|-------|----------|--------|-----------|-----------|
+| US-001 | 1 | `true` | — | No — already complete |
+| US-002 | 2 | `false` | — | **Yes — lowest priority, no unmet dependencies** |
+| US-003 | 3 | `false` | `["US-002"]` | No — US-002 hasn't passed yet |
+
+### How Dependencies Work
+
+Stories can declare dependencies on other stories using the `dependsOn` field. A story won't be selected for execution until all of its dependencies have `passes: true`.
+
+```json
+{
+  "id": "US-003",
+  "title": "Frontend Forms",
+  "dependsOn": ["US-001", "US-002"],
+  "priority": 3,
+  "passes": false
+}
+```
+
+In this example, US-003 won't be picked until both US-001 and US-002 are complete, regardless of its priority number.
+
+If Chief detects a circular dependency (incomplete stories remain but none are eligible), it reports an error instead of looping forever.
 
 ### What `inProgress` Does
 
@@ -280,18 +305,20 @@ A story should represent one logical piece of work. If a story has more than 5�
 ]
 ```
 
-### Order Stories by Dependency
+### Declare Story Dependencies
 
-Use priority to ensure foundational stories are completed before dependent ones. Claude works through stories sequentially, so earlier stories can set up what later stories need.
+Use the `dependsOn` field to explicitly declare when one story requires another to be completed first. Chief will automatically enforce the correct execution order, even if priorities would otherwise select a blocked story.
 
 ```json
 [
   { "id": "US-001", "title": "Database Schema", "priority": 1 },
-  { "id": "US-002", "title": "API Endpoints", "priority": 2 },
-  { "id": "US-003", "title": "Frontend Forms", "priority": 3 },
-  { "id": "US-004", "title": "Integration Tests", "priority": 4 }
+  { "id": "US-002", "title": "API Endpoints", "priority": 2, "dependsOn": ["US-001"] },
+  { "id": "US-003", "title": "Frontend Forms", "priority": 3, "dependsOn": ["US-002"] },
+  { "id": "US-004", "title": "Integration Tests", "priority": 4, "dependsOn": ["US-002", "US-003"] }
 ]
 ```
+
+Priority is still used as a tiebreaker among stories that have all their dependencies satisfied. When in doubt, use both `dependsOn` for correctness and sensible priority numbers for readability.
 
 ### Use Consistent ID Patterns
 
@@ -317,5 +344,6 @@ Running `chief new` scaffolds both files with a template. You can also run `chie
 ## What's Next
 
 - [PRD Schema Reference](/reference/prd-schema) — Complete TypeScript type definitions and field details
+- [Knowledge Base](/concepts/knowledge-base) — How Chief learns across iterations with knowledge.json
 - [The .chief Directory](/concepts/chief-directory) — Understanding the full directory structure
 - [How Chief Works](/concepts/how-it-works) — How Chief uses these files during execution

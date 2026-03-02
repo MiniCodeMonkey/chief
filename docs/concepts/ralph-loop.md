@@ -88,44 +88,81 @@ Chief reads all the files it needs to understand the current situation:
 | File | What Chief Learns |
 |------|-------------------|
 | `prd.json` | Which stories are complete (`passes: true`), which are pending, and which is in progress |
-| `progress.md` | What happened in previous iterations: learnings, patterns, and context |
+| `knowledge.json` | Structured knowledge base: patterns, completed story records, previous failure attempts |
+| `progress.md` | Human-readable log of previous iterations: learnings, patterns, and context |
 | Codebase files | Current state of the code (via Claude's file reading) |
 
-This step ensures Claude always has fresh, accurate information about what's done and what's left to do.
+This step ensures Claude always has fresh, accurate information about what's done and what's left to do. The `knowledge.json` file is the primary machine-readable knowledge store, while `progress.md` remains a human-readable audit trail.
 
 ### 2. Select Next Story
 
-Chief picks the next story to work on by looking at `prd.json`:
+Chief picks the next story to work on by looking at `prd.json` and `knowledge.json`:
 
 1. Find all stories where `passes: false`
-2. Sort by `priority` (lowest number = highest priority)
-3. Pick the first one
+2. Filter out stories whose `dependsOn` dependencies haven't all passed yet
+3. Filter out stories that have been exhausted (3 failed attempts in `knowledge.json`)
+4. Sort by `priority` (lowest number = highest priority)
+5. Pick the first one
 
 If a story has `inProgress: true`, Chief continues with that story instead of starting a new one. This handles cases where Claude was interrupted mid-story.
+
+If no eligible story can be found but incomplete stories remain (due to circular dependencies or all remaining stories being exhausted), Chief reports an error.
 
 ### 3. Build Prompt
 
 Chief constructs a prompt that tells Claude exactly what to do. The prompt includes:
 
 - **The user story**: ID, title, description, and acceptance criteria
-- **Instructions**: Read the PRD, pick the next story, implement it, run checks, commit
-- **Progress context**: Any patterns or learnings from `progress.md`
+- **Knowledge context**: Patterns and completed story records from `knowledge.json`
+- **Progress context**: Patterns and learnings from `progress.md`
+- **Instructions**: A 3-phase workflow (Analyze → Implement → Verify)
 
-Here's a simplified version of what Claude receives:
+#### The 3-Phase Workflow
 
-```markdown
-## Your Task
+Claude follows a structured workflow for each story:
 
-1. Read the PRD at `.chief/prds/your-prd/prd.json`
-2. Read `progress.md` if it exists (check Codebase Patterns first)
-3. Pick the highest priority story where `passes: false`
-4. Mark it as `inProgress: true` in the PRD
-5. Implement that single user story
-6. Run quality checks (typecheck, lint, test)
-7. If checks pass, commit with message: `feat: [Story ID] - [Story Title]`
-8. Update the PRD to set `passes: true` and `inProgress: false`
-9. Append your progress to `progress.md`
 ```
+    ┌──────────────────┐
+    │  1. ANALYZE       │  Read code, identify patterns,
+    │     (mandatory)   │  plan approach, check for
+    │                   │  previous failed attempts
+    └────────┬─────────┘
+             │
+             ▼
+    ┌──────────────────┐
+    │  2. IMPLEMENT     │  Write code following the
+    │                   │  planned approach and
+    │                   │  existing conventions
+    └────────┬─────────┘
+             │
+             ▼
+    ┌──────────────────┐     any fail    ┌────────────────┐
+    │  3. VERIFY        │───────────────▶│ Record failure  │
+    │     (mandatory)   │                │ End iteration   │
+    └────────┬─────────┘                └────────────────┘
+             │ all pass
+             ▼
+    ┌──────────────────┐
+    │  Commit & update  │
+    └──────────────────┘
+```
+
+**Phase 1 — Analyze** (before any code is written):
+- Read `knowledge.json` for patterns and previous story records
+- Check if this story has previous failed attempts (see [Smart Retry](#smart-retry))
+- Read relevant source files and identify existing conventions
+- Outline the approach in 3–5 bullet points
+- Write the approach to `knowledge.json` before implementing
+
+**Phase 2 — Implement**:
+- Build the feature following the planned approach
+- Follow codebase patterns identified during analysis
+
+**Phase 3 — Verify** (after implementation):
+- Check each acceptance criterion one by one
+- Record results in `knowledge.json` as `criteriaResults` (pass/fail with evidence)
+- If ALL criteria pass: run quality checks, commit, mark story as passed
+- If ANY criterion fails: record failure analysis, do NOT commit, end iteration
 
 The prompt is embedded directly in Chief's code. There's no external template file to manage.
 
@@ -225,6 +262,30 @@ You can also take manual actions from the completion screen:
 - `l` — Switch to another PRD
 - `q` — Quit Chief
 
+## Cross-Iteration Learning
+
+Each iteration of the loop starts fresh — Claude has no memory of previous sessions. To bridge this gap, Chief uses two complementary files:
+
+- **`knowledge.json`** — Machine-readable knowledge base. Claude reads it at the start of each iteration to understand what previous iterations built, which patterns they discovered, and what approaches failed. See [Knowledge Base](/concepts/knowledge-base) for the full schema.
+- **`progress.md`** — Human-readable audit trail. Provides the same information in a format that's easy for developers to read and review.
+
+The `knowledge.json` file stores:
+- **Patterns**: Reusable conventions discovered across iterations (e.g., "use `sql<number>` template for aggregations")
+- **Completed story records**: For each story — files changed, approach taken, learnings, and per-criterion verification results
+- **Failure attempts**: Previous failed approaches with analysis of what went wrong
+
+This means each iteration is smarter than the last. Claude can avoid repeating mistakes, follow established conventions, and build on previous work coherently.
+
+## Smart Retry
+
+When a story fails (tests fail, acceptance criteria not met), Chief doesn't just retry blindly. The smart retry system ensures each attempt learns from the last:
+
+1. **Failure recording**: When verification fails, Claude records the failed criteria, its approach, and a failure analysis in `knowledge.json`
+2. **Next iteration reads history**: The next iteration sees previous attempts and is instructed to choose a *different* strategy
+3. **Maximum 3 attempts**: After 3 failed attempts, the story is marked as exhausted and skipped. Chief moves on to the next eligible story.
+
+The TUI shows the current attempt count (e.g., "Attempt 2/3") for stories with previous failures, and "Exhausted (3/3 attempts)" for stories that have hit the limit.
+
 ## Why "Ralph"?
 
 The name comes from [Ralph Wiggum loops](https://ghuntley.com/ralph/), a pattern coined by Geoffrey Huntley. The idea: instead of fighting context window limits with one long session, you run the AI in a loop. Each iteration starts fresh but reads persisted state from the previous run.
@@ -233,6 +294,7 @@ Chief's implementation was inspired by [snarktank/ralph](https://github.com/snar
 
 ## What's Next
 
+- [Knowledge Base](/concepts/knowledge-base): How knowledge.json enables cross-iteration learning
 - [The .chief Directory](/concepts/chief-directory): Where all this state lives
 - [PRD Format](/concepts/prd-format): How to write effective user stories
 - [CLI Reference](/reference/cli): Running Chief with different options
