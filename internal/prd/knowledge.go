@@ -10,6 +10,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// MaxAttempts is the maximum number of failed attempts before a story is skipped.
+const MaxAttempts = 3
+
 // CriteriaResult holds the verification result for a single acceptance criterion.
 type CriteriaResult struct {
 	Criterion string `json:"criterion"`
@@ -17,18 +20,38 @@ type CriteriaResult struct {
 	Evidence  string `json:"evidence"`
 }
 
-// CompletedStoryRecord holds structured data about a completed story.
+// Attempt records a single failed implementation attempt for a story.
+type Attempt struct {
+	Approach        string           `json:"approach"`
+	CriteriaResults []CriteriaResult `json:"criteriaResults,omitempty"`
+	FailureAnalysis string           `json:"failureAnalysis"`
+}
+
+// CompletedStoryRecord holds structured data about a completed or in-progress story.
 type CompletedStoryRecord struct {
 	FilesChanged    []string          `json:"filesChanged"`
 	Approach        string            `json:"approach"`
 	Learnings       []string          `json:"learnings"`
 	CriteriaResults []CriteriaResult  `json:"criteriaResults,omitempty"`
+	Attempts        []Attempt         `json:"attempts,omitempty"`
 }
 
 // Knowledge represents the structured knowledge base (knowledge.json).
 type Knowledge struct {
 	Patterns         []string                        `json:"patterns"`
 	CompletedStories map[string]CompletedStoryRecord `json:"completedStories"`
+}
+
+// ExhaustedStoryIDs returns a set of story IDs that have reached MaxAttempts
+// failed attempts and should be skipped by NextStory.
+func (k *Knowledge) ExhaustedStoryIDs() map[string]bool {
+	exhausted := make(map[string]bool)
+	for id, record := range k.CompletedStories {
+		if len(record.Attempts) >= MaxAttempts {
+			exhausted[id] = true
+		}
+	}
+	return exhausted
 }
 
 // KnowledgePath returns the knowledge.json path for a given prd.json path.

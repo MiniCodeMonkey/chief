@@ -405,6 +405,94 @@ func TestPRD_NextStory_DependencyWithPriorityTiebreaker(t *testing.T) {
 	}
 }
 
+func TestPRD_NextStory_SkipExhaustedStories(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: false},
+			{ID: "US-002", Priority: 2, Passes: false},
+			{ID: "US-003", Priority: 3, Passes: false},
+		},
+	}
+
+	// US-001 is exhausted, should skip to US-002
+	skipIDs := map[string]bool{"US-001": true}
+	next, err := p.NextStory(skipIDs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected non-nil story")
+	}
+	if next.ID != "US-002" {
+		t.Errorf("expected US-002 (US-001 skipped), got %s", next.ID)
+	}
+}
+
+func TestPRD_NextStory_SkipAllExhausted(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: false},
+			{ID: "US-002", Priority: 2, Passes: false},
+		},
+	}
+
+	// All stories exhausted — should return error (same as circular dep)
+	skipIDs := map[string]bool{"US-001": true, "US-002": true}
+	next, err := p.NextStory(skipIDs)
+	if next != nil {
+		t.Errorf("expected nil when all stories exhausted, got %v", next)
+	}
+	if err == nil {
+		t.Fatal("expected error when all stories exhausted, got nil")
+	}
+}
+
+func TestPRD_NextStory_SkipDoesNotAffectInProgress(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: false, InProgress: true},
+			{ID: "US-002", Priority: 2, Passes: false},
+		},
+	}
+
+	// US-001 is in the skip list but also InProgress — InProgress takes precedence
+	skipIDs := map[string]bool{"US-001": true}
+	next, err := p.NextStory(skipIDs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected non-nil story")
+	}
+	if next.ID != "US-001" {
+		t.Errorf("expected in-progress US-001 (skip doesn't affect in-progress), got %s", next.ID)
+	}
+}
+
+func TestPRD_NextStory_NilSkipIDs(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: false},
+		},
+	}
+
+	// Passing nil skipIDs should work fine (backward compatible)
+	next, err := p.NextStory(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected non-nil story")
+	}
+	if next.ID != "US-001" {
+		t.Errorf("expected US-001, got %s", next.ID)
+	}
+}
+
 func TestUserStory_Fields(t *testing.T) {
 	story := UserStory{
 		ID:                 "US-TEST",

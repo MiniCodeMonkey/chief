@@ -102,7 +102,15 @@ func promptBuilderForPRD(prdPath string) func() (string, error) {
 			return "", fmt.Errorf("failed to load PRD for prompt: %w", err)
 		}
 
-		story, err := p.NextStory()
+		// Load knowledge to check for exhausted stories (3+ failed attempts)
+		knowledgePath := prd.KnowledgePath(prdPath)
+		knowledge, _ := prd.LoadKnowledge(knowledgePath)
+		var skipIDs map[string]bool
+		if knowledge != nil {
+			skipIDs = knowledge.ExhaustedStoryIDs()
+		}
+
+		story, err := p.NextStory(skipIDs)
 		if err != nil {
 			return "", fmt.Errorf("story selection failed: %w", err)
 		}
@@ -110,12 +118,12 @@ func promptBuilderForPRD(prdPath string) func() (string, error) {
 			return "", fmt.Errorf("all stories are complete")
 		}
 
-		storyCtx, err := p.NextStoryContext()
+		storyCtx, err := p.NextStoryContext(skipIDs)
 		if err != nil {
 			return "", fmt.Errorf("story context failed: %w", err)
 		}
 
-		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), prd.KnowledgePath(prdPath), *storyCtx, story.ID, story.Title), nil
+		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), knowledgePath, *storyCtx, story.ID, story.Title), nil
 	}
 }
 

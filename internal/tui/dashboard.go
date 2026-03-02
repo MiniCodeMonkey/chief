@@ -490,7 +490,18 @@ func (a *App) renderDetailsPanel(width, height int) string {
 		statusText = "Pending"
 		statusStyle = statusPendingStyle
 	}
-	content.WriteString(fmt.Sprintf("%s %s  │  Priority: %d\n", statusIcon, statusStyle.Render(statusText), story.Priority))
+
+	// Show attempt count for stories with failed attempts
+	attemptInfo := ""
+	if a.knowledge != nil {
+		if record, ok := a.knowledge.CompletedStories[story.ID]; ok && len(record.Attempts) > 0 {
+			attemptInfo = fmt.Sprintf("  │  Attempt %d/%d", len(record.Attempts)+1, prd.MaxAttempts)
+			if len(record.Attempts) >= prd.MaxAttempts {
+				attemptInfo = fmt.Sprintf("  │  %s", statusFailedStyle.Render(fmt.Sprintf("Exhausted (%d/%d attempts)", len(record.Attempts), prd.MaxAttempts)))
+			}
+		}
+	}
+	content.WriteString(fmt.Sprintf("%s %s  │  Priority: %d%s\n", statusIcon, statusStyle.Render(statusText), story.Priority, attemptInfo))
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-4)))
 	content.WriteString("\n\n")
 

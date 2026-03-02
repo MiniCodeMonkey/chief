@@ -78,10 +78,16 @@ func (p *PRD) depsResolved(story *UserStory) bool {
 //   - Lowest priority story with passes: false whose dependencies are all satisfied, or
 //   - nil if all stories are complete
 //
-// Returns an error if incomplete stories remain but none are eligible (circular or
-// unresolvable dependencies).
-func (p *PRD) NextStory() (*UserStory, error) {
-	// First, check for any in-progress story (interrupted)
+// An optional skipIDs map can be passed to exclude specific story IDs (e.g., stories
+// that have exhausted their retry attempts). Returns an error if incomplete stories
+// remain but none are eligible (circular or unresolvable dependencies, or all skipped).
+func (p *PRD) NextStory(skipIDs ...map[string]bool) (*UserStory, error) {
+	skip := map[string]bool{}
+	if len(skipIDs) > 0 && skipIDs[0] != nil {
+		skip = skipIDs[0]
+	}
+
+	// First, check for any in-progress story (interrupted) — not skippable
 	for i := range p.UserStories {
 		if p.UserStories[i].InProgress {
 			return &p.UserStories[i], nil
@@ -95,6 +101,9 @@ func (p *PRD) NextStory() (*UserStory, error) {
 		story := &p.UserStories[i]
 		if !story.Passes {
 			hasIncomplete = true
+			if skip[story.ID] {
+				continue
+			}
 			if p.depsResolved(story) {
 				if next == nil || story.Priority < next.Priority {
 					next = story
@@ -115,8 +124,9 @@ func (p *PRD) NextStory() (*UserStory, error) {
 // NextStoryContext returns the next story to work on as a formatted string
 // suitable for inlining into the agent prompt. Returns nil when all stories
 // are complete. Returns an error if dependencies are unresolvable.
-func (p *PRD) NextStoryContext() (*string, error) {
-	story, err := p.NextStory()
+// An optional skipIDs map can be passed to exclude exhausted stories.
+func (p *PRD) NextStoryContext(skipIDs ...map[string]bool) (*string, error) {
+	story, err := p.NextStory(skipIDs...)
 	if err != nil {
 		return nil, err
 	}

@@ -191,6 +191,124 @@ func TestLoadKnowledge_NoCriteriaResults(t *testing.T) {
 	}
 }
 
+func TestLoadSaveKnowledge_Attempts(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "knowledge.json")
+
+	original := &Knowledge{
+		Patterns: []string{},
+		CompletedStories: map[string]CompletedStoryRecord{
+			"US-005": {
+				FilesChanged: []string{"knowledge.go"},
+				Approach:     "Current approach",
+				Learnings:    []string{},
+				Attempts: []Attempt{
+					{
+						Approach: "First failed approach",
+						CriteriaResults: []CriteriaResult{
+							{Criterion: "Tests pass", Passed: false, Evidence: "2 tests failed"},
+						},
+						FailureAnalysis: "Did not handle edge case X",
+					},
+					{
+						Approach:        "Second failed approach",
+						CriteriaResults: []CriteriaResult{},
+						FailureAnalysis: "Wrong abstraction, should use Y instead",
+					},
+				},
+			},
+		},
+	}
+
+	if err := SaveKnowledge(path, original); err != nil {
+		t.Fatalf("SaveKnowledge failed: %v", err)
+	}
+
+	loaded, err := LoadKnowledge(path)
+	if err != nil {
+		t.Fatalf("LoadKnowledge failed: %v", err)
+	}
+
+	record := loaded.CompletedStories["US-005"]
+	if len(record.Attempts) != 2 {
+		t.Fatalf("expected 2 attempts, got %d", len(record.Attempts))
+	}
+	if record.Attempts[0].Approach != "First failed approach" {
+		t.Errorf("unexpected first attempt approach: %q", record.Attempts[0].Approach)
+	}
+	if record.Attempts[0].FailureAnalysis != "Did not handle edge case X" {
+		t.Errorf("unexpected first attempt failureAnalysis: %q", record.Attempts[0].FailureAnalysis)
+	}
+	if len(record.Attempts[0].CriteriaResults) != 1 {
+		t.Fatalf("expected 1 criteria result in first attempt, got %d", len(record.Attempts[0].CriteriaResults))
+	}
+	if record.Attempts[0].CriteriaResults[0].Passed {
+		t.Error("expected first attempt criteria to have failed")
+	}
+	if record.Attempts[1].FailureAnalysis != "Wrong abstraction, should use Y instead" {
+		t.Errorf("unexpected second attempt failureAnalysis: %q", record.Attempts[1].FailureAnalysis)
+	}
+}
+
+func TestLoadKnowledge_NoAttempts(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "knowledge.json")
+
+	// Write JSON without attempts field (backward compatibility)
+	content := `{"patterns": [], "completedStories": {"US-001": {"filesChanged": ["a.go"], "approach": "test", "learnings": []}}}`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	k, err := LoadKnowledge(path)
+	if err != nil {
+		t.Fatalf("LoadKnowledge failed: %v", err)
+	}
+
+	record := k.CompletedStories["US-001"]
+	if record.Attempts != nil {
+		t.Errorf("expected nil Attempts for old format, got %v", record.Attempts)
+	}
+}
+
+func TestKnowledge_ExhaustedStoryIDs(t *testing.T) {
+	k := &Knowledge{
+		Patterns: []string{},
+		CompletedStories: map[string]CompletedStoryRecord{
+			"US-001": {Attempts: []Attempt{{}, {}, {}}},       // 3 attempts = exhausted
+			"US-002": {Attempts: []Attempt{{}, {}}},           // 2 attempts = not exhausted
+			"US-003": {Attempts: nil},                         // no attempts = not exhausted
+			"US-004": {Attempts: []Attempt{{}, {}, {}, {}}},   // 4 attempts = exhausted
+		},
+	}
+
+	exhausted := k.ExhaustedStoryIDs()
+	if !exhausted["US-001"] {
+		t.Error("expected US-001 to be exhausted (3 attempts)")
+	}
+	if exhausted["US-002"] {
+		t.Error("expected US-002 to NOT be exhausted (2 attempts)")
+	}
+	if exhausted["US-003"] {
+		t.Error("expected US-003 to NOT be exhausted (no attempts)")
+	}
+	if !exhausted["US-004"] {
+		t.Error("expected US-004 to be exhausted (4 attempts)")
+	}
+}
+
+func TestKnowledge_ExhaustedStoryIDs_Empty(t *testing.T) {
+	k := &Knowledge{
+		Patterns:         []string{},
+		CompletedStories: map[string]CompletedStoryRecord{},
+	}
+
+	exhausted := k.ExhaustedStoryIDs()
+	if len(exhausted) != 0 {
+		t.Errorf("expected empty exhausted set, got %d", len(exhausted))
+	}
+}
+
 func TestLoadKnowledge_EmptyCompletedStories(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "knowledge.json")

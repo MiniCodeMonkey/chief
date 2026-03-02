@@ -10,17 +10,24 @@ Your current story:
 </story>
 
 1. Read `{{KNOWLEDGE_PATH}}` if it exists — review the `patterns` array and `completedStories` to understand what previous iterations changed and learned. Pay special attention to the `completedStories` section: each record shows which files were changed, the approach taken, and learnings from that iteration. Use this as architectural context for your own implementation.
-2. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
-3. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
-4. **Analysis Phase** (mandatory — do this BEFORE writing any code):
+2. **Failure Recovery** (check BEFORE starting work):
+   - Look at the current story's record in `{{KNOWLEDGE_PATH}}`. If it has an `attempts` array with previous failed attempts, you MUST:
+     a. Read each previous attempt's `approach`, `criteriaResults`, and `failureAnalysis`
+     b. Understand WHY each previous attempt failed
+     c. **Do NOT retry the same approach.** Read the previous failure analysis and choose a different strategy.
+     d. If there are already 3 attempts recorded, this story has been exhausted — skip it, emit a warning, and end the iteration (the loop will automatically move to the next eligible story)
+   - If no `attempts` array exists, this is a fresh attempt — proceed normally
+3. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
+4. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
+5. **Analysis Phase** (mandatory — do this BEFORE writing any code):
    a. Read the relevant source files for the areas you will change
    b. Identify existing patterns and conventions in the codebase (naming, error handling, test style, module structure)
    c. List the files that will need changes
    d. Think step by step: reason about edge cases, potential regressions, and interactions with existing code before coding
    e. Outline your implementation approach in 3-5 bullet points
    f. Write your approach to `{{KNOWLEDGE_PATH}}` under the current story's `approach` field in `completedStories` BEFORE starting implementation — this serves as your plan and helps future iterations understand your intent even if implementation is interrupted
-5. Implement the user story
-6. **Verification Phase** (mandatory — do this AFTER implementation, BEFORE committing):
+6. Implement the user story
+7. **Verification Phase** (mandatory — do this AFTER implementation, BEFORE committing):
    a. Go through each acceptance criterion from the story ONE BY ONE
    b. For each criterion, verify whether your implementation satisfies it — check the actual code, run specific tests, or inspect behavior
    c. Record the result for each criterion in `{{KNOWLEDGE_PATH}}` under the story record's `criteriaResults` field:
@@ -30,15 +37,18 @@ Your current story:
         { "criterion": "Another criterion", "passed": false, "evidence": "What failed and why" }
       ]
       ```
-   d. If **ALL** criteria pass: proceed to step 7 (quality checks and commit)
-   e. If **ANY** criterion fails: do NOT commit, do NOT mark the story as passed — instead, document what failed and why in `{{KNOWLEDGE_PATH}}` and end the iteration. The next iteration will read your failure analysis and retry with a different approach.
-7. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-8. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
+   d. If **ALL** criteria pass: proceed to step 8 (quality checks and commit)
+   e. If **ANY** criterion fails: do NOT commit, do NOT mark the story as passed. Instead:
+      1. Write a `failureAnalysis` explaining what went wrong and why
+      2. Move the current attempt's `approach`, `criteriaResults`, and `failureAnalysis` into the `attempts` array in `{{KNOWLEDGE_PATH}}`
+      3. End the iteration — the next iteration will read your failure analysis and retry with a different approach
+8. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
+9. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
    - **NEVER stage or commit `.chief/` files** — these are local working files and must stay out of version control
    - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
-9. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
-10. Update `{{KNOWLEDGE_PATH}}` with the final record for the completed story (see Knowledge Base section below) — update the `approach` field written during analysis, and add `filesChanged`, `learnings`, and `criteriaResults`
-11. Append your progress to `{{PROGRESS_PATH}}` (see Progress Report Format below)
+10. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
+11. Update `{{KNOWLEDGE_PATH}}` with the final record for the completed story (see Knowledge Base section below) — update the `approach` field written during analysis, and add `filesChanged`, `learnings`, and `criteriaResults`
+12. Append your progress to `{{PROGRESS_PATH}}` (see Progress Report Format below)
 
 ## Knowledge Base
 
@@ -54,6 +64,13 @@ Your current story:
       "learnings": ["Learning 1", "Learning 2"],
       "criteriaResults": [
         { "criterion": "Acceptance criterion text", "passed": true, "evidence": "How it was verified" }
+      ],
+      "attempts": [
+        {
+          "approach": "What was tried in a previous failed attempt",
+          "criteriaResults": [{ "criterion": "...", "passed": false, "evidence": "..." }],
+          "failureAnalysis": "Why this approach failed and what should be tried differently"
+        }
       ]
     }
   }
