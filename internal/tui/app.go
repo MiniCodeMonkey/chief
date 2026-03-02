@@ -26,6 +26,11 @@ type ProgressUpdateMsg struct {
 	Entries map[string][]prd.ProgressEntry
 }
 
+// KnowledgeUpdateMsg is sent when knowledge.json changes.
+type KnowledgeUpdateMsg struct {
+	Knowledge *prd.Knowledge
+}
+
 // AppState represents the current state of the application.
 type AppState int
 
@@ -171,9 +176,11 @@ type App struct {
 	lastActivity string
 
 	// File watching
-	watcher         *prd.Watcher
-	progressWatcher *prd.ProgressWatcher
-	progress        map[string][]prd.ProgressEntry
+	watcher          *prd.Watcher
+	progressWatcher  *prd.ProgressWatcher
+	progress         map[string][]prd.ProgressEntry
+	knowledgeWatcher *prd.KnowledgeWatcher
+	knowledge        *prd.Knowledge
 
 	// View mode
 	viewMode  ViewMode
@@ -301,6 +308,10 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 	progressWatcher, _ := prd.NewProgressWatcher(prdPath)
 	progress, _ := prd.ParseProgress(prd.ProgressPath(prdPath))
 
+	// Create knowledge watcher and load initial knowledge
+	knowledgeWatcher, _ := prd.NewKnowledgeWatcher(prdPath)
+	knowledge, _ := prd.LoadKnowledge(prd.KnowledgePath(prdPath))
+
 	// Create loop manager for parallel PRD execution
 	manager := loop.NewManager(maxIter)
 	manager.SetBaseDir(baseDir)
@@ -325,8 +336,10 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 		maxIter:       maxIter,
 		manager:       manager,
 		watcher:         watcher,
-		progressWatcher: progressWatcher,
-		progress:        progress,
+		progressWatcher:  progressWatcher,
+		progress:         progress,
+		knowledgeWatcher: knowledgeWatcher,
+		knowledge:        knowledge,
 		viewMode:        ViewDashboard,
 		logViewer:     NewLogViewer(),
 		diffViewer:    NewDiffViewer(baseDir),
@@ -378,11 +391,17 @@ func (a App) Init() tea.Cmd {
 		_ = a.progressWatcher.Start()
 	}
 
+	// Start the knowledge watcher
+	if a.knowledgeWatcher != nil {
+		_ = a.knowledgeWatcher.Start()
+	}
+
 	return tea.Batch(
 		tea.EnterAltScreen,
 		a.listenForPRDChanges(),
 		a.listenForManagerEvents(),
 		a.listenForProgressChanges(),
+		a.listenForKnowledgeChanges(),
 	)
 }
 
@@ -477,6 +496,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProgressUpdateMsg:
 		a.progress = msg.Entries
 		return a, a.listenForProgressChanges()
+
+	case KnowledgeUpdateMsg:
+		a.knowledge = msg.Knowledge
+		return a, a.listenForKnowledgeChanges()
 
 	case PRDUpdateMsg:
 		return a.handlePRDUpdate(msg)
@@ -2028,6 +2051,14 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	}
 	a.progress, _ = prd.ParseProgress(prd.ProgressPath(prdPath))
 
+	// Create new knowledge watcher and load initial knowledge
+	newKnowledgeWatcher, err := prd.NewKnowledgeWatcher(prdPath)
+	if err == nil {
+		a.knowledgeWatcher = newKnowledgeWatcher
+		_ = a.knowledgeWatcher.Start()
+	}
+	a.knowledge, _ = prd.LoadKnowledge(prd.KnowledgePath(prdPath))
+
 	// Get the state from the manager for this PRD
 	loopState, iteration, loopErr := a.manager.GetState(name)
 	appState := StateReady
@@ -2277,6 +2308,20 @@ func (a *App) listenForProgressChanges() tea.Cmd {
 	}
 }
 
+// listenForKnowledgeChanges listens for knowledge.json file changes and returns them as messages.
+func (a *App) listenForKnowledgeChanges() tea.Cmd {
+	if a.knowledgeWatcher == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		k, ok := <-a.knowledgeWatcher.Events()
+		if !ok {
+			return nil
+		}
+		return KnowledgeUpdateMsg{Knowledge: k}
+	}
+}
+
 // listenForPRDChanges listens for PRD file changes and returns them as messages.
 func (a *App) listenForPRDChanges() tea.Cmd {
 	if a.watcher == nil {
@@ -2324,5 +2369,8 @@ func (a *App) stopWatcher() {
 	}
 	if a.progressWatcher != nil {
 		a.progressWatcher.Stop()
+	}
+	if a.knowledgeWatcher != nil {
+		a.knowledgeWatcher.Stop()
 	}
 }

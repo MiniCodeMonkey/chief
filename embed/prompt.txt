@@ -9,19 +9,53 @@ Your current story:
 {{STORY_CONTEXT}}
 </story>
 
-1. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
-2. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
-3. Implement the user story above
-4. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-5. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
+1. Read `{{KNOWLEDGE_PATH}}` if it exists — review the `patterns` array and `completedStories` to understand what previous iterations changed and learned
+2. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
+3. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
+4. Implement the user story above
+5. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
+6. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
    - **NEVER stage or commit `.chief/` files** — these are local working files and must stay out of version control
    - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
-6. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
-7. Append your progress to `{{PROGRESS_PATH}}`
+7. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
+8. Update `{{KNOWLEDGE_PATH}}` with a record for the completed story (see Knowledge Base section below)
+9. Append your progress to `{{PROGRESS_PATH}}` (see Progress Report Format below)
+
+## Knowledge Base
+
+`{{KNOWLEDGE_PATH}}` is the primary machine-readable knowledge store. After completing a story, update it:
+
+1. Add/update the story record in `completedStories`:
+```json
+{
+  "completedStories": {
+    "{{STORY_ID}}": {
+      "filesChanged": ["path/to/file1.go", "path/to/file2.go"],
+      "approach": "Brief description of the implementation approach",
+      "learnings": ["Learning 1", "Learning 2"]
+    }
+  }
+}
+```
+
+2. Add any reusable patterns to the `patterns` array (general insights, not story-specific details):
+```json
+{
+  "patterns": ["Use X for Y", "Always check Z when changing W"]
+}
+```
+
+If `{{KNOWLEDGE_PATH}}` does not exist, create it with this schema:
+```json
+{
+  "patterns": [],
+  "completedStories": {}
+}
+```
 
 ## Progress Report Format
 
-APPEND to `{{PROGRESS_PATH}}` (never replace, always append):
+APPEND to `{{PROGRESS_PATH}}` (never replace, always append) as a human-readable log:
 ```
 ## [Date/Time] - [Story ID]
 - What was implemented
@@ -69,4 +103,4 @@ If there are still stories with `passes: false`, end your response normally (ano
 - Work on ONE story per iteration
 - Commit frequently
 - Keep CI green
-- Read the Codebase Patterns section in `{{PROGRESS_PATH}}` before starting
+- Read the patterns from `{{KNOWLEDGE_PATH}}` and `{{PROGRESS_PATH}}` before starting

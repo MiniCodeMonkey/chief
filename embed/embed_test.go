@@ -8,8 +8,9 @@ import (
 func TestGetPrompt(t *testing.T) {
 	prdPath := "/path/to/prd.json"
 	progressPath := "/path/to/progress.md"
+	knowledgePath := "/path/to/knowledge.json"
 	storyContext := `{"id":"US-001","title":"Test Story"}`
-	prompt := GetPrompt(prdPath, progressPath, storyContext, "US-001", "Test Story")
+	prompt := GetPrompt(prdPath, progressPath, knowledgePath, storyContext, "US-001", "Test Story")
 
 	// Verify all placeholders were substituted
 	if strings.Contains(prompt, "{{PRD_PATH}}") {
@@ -17,6 +18,9 @@ func TestGetPrompt(t *testing.T) {
 	}
 	if strings.Contains(prompt, "{{PROGRESS_PATH}}") {
 		t.Error("Expected {{PROGRESS_PATH}} to be substituted")
+	}
+	if strings.Contains(prompt, "{{KNOWLEDGE_PATH}}") {
+		t.Error("Expected {{KNOWLEDGE_PATH}} to be substituted")
 	}
 	if strings.Contains(prompt, "{{STORY_CONTEXT}}") {
 		t.Error("Expected {{STORY_CONTEXT}} to be substituted")
@@ -43,6 +47,11 @@ func TestGetPrompt(t *testing.T) {
 		t.Errorf("Expected prompt to contain progress path %q", progressPath)
 	}
 
+	// Verify the knowledge path appears in the prompt
+	if !strings.Contains(prompt, knowledgePath) {
+		t.Errorf("Expected prompt to contain knowledge path %q", knowledgePath)
+	}
+
 	// Verify the story context is inlined in the prompt
 	if !strings.Contains(prompt, storyContext) {
 		t.Error("Expected prompt to contain inlined story context")
@@ -63,7 +72,7 @@ func TestGetPrompt(t *testing.T) {
 }
 
 func TestGetPrompt_NoFileReadInstruction(t *testing.T) {
-	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", "/path/knowledge.json", `{"id":"US-001"}`, "US-001", "Test Story")
 
 	// The prompt should NOT instruct Claude to read the PRD file
 	if strings.Contains(prompt, "Read the PRD") {
@@ -78,7 +87,7 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 }
 
 func TestGetPrompt_ChiefExclusion(t *testing.T) {
-	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", "/path/knowledge.json", `{"id":"US-001"}`, "US-001", "Test Story")
 
 	// The prompt must instruct Claude to never stage or commit .chief/ files
 	if !strings.Contains(prompt, ".chief/") {

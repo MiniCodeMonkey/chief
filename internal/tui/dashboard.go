@@ -509,8 +509,44 @@ func (a *App) renderDetailsPanel(width, height int) string {
 		content.WriteString("\n")
 	}
 
-	// Progress (from progress.md)
-	if entries, ok := a.progress[story.ID]; ok && len(entries) > 0 {
+	// Progress (prefer knowledge.json, fall back to progress.md)
+	if a.knowledge != nil {
+		if record, ok := a.knowledge.CompletedStories[story.ID]; ok {
+			content.WriteString("\n")
+			content.WriteString(labelStyle.Render("Progress"))
+			content.WriteString("\n")
+			if record.Approach != "" {
+				content.WriteString(wrapText("Approach: "+record.Approach, width-4))
+				content.WriteString("\n")
+			}
+			if len(record.FilesChanged) > 0 {
+				content.WriteString("Files changed:\n")
+				for _, f := range record.FilesChanged {
+					content.WriteString(wrapText("  • "+f, width-6))
+					content.WriteString("\n")
+				}
+			}
+			if len(record.Learnings) > 0 {
+				content.WriteString("Learnings:\n")
+				for _, l := range record.Learnings {
+					content.WriteString(wrapText("  • "+l, width-6))
+					content.WriteString("\n")
+				}
+			}
+		} else if entries, ok := a.progress[story.ID]; ok && len(entries) > 0 {
+			// Fall back to progress.md when no knowledge.json record exists
+			content.WriteString("\n")
+			content.WriteString(labelStyle.Render("Progress"))
+			content.WriteString("\n")
+			for _, entry := range entries {
+				rendered := renderGlamour(entry.Content, width-4)
+				if rendered != "" {
+					content.WriteString(rendered)
+					content.WriteString("\n")
+				}
+			}
+		}
+	} else if entries, ok := a.progress[story.ID]; ok && len(entries) > 0 {
 		content.WriteString("\n")
 		content.WriteString(labelStyle.Render("Progress"))
 		content.WriteString("\n")

@@ -115,7 +115,7 @@ func promptBuilderForPRD(prdPath string) func() (string, error) {
 			return "", fmt.Errorf("story context failed: %w", err)
 		}
 
-		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), *storyCtx, story.ID, story.Title), nil
+		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), prd.KnowledgePath(prdPath), *storyCtx, story.ID, story.Title), nil
 	}
 }
 
