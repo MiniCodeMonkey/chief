@@ -601,11 +601,17 @@ func (a *App) renderDetailsPanelContent(width int) string {
 	content.WriteString(labelStyle.Render("Acceptance Criteria"))
 	content.WriteString("\n")
 
-	// Build a map of criterion text -> result for quick lookup
+	// Build a map of criterion text -> result for quick lookup.
+	// Prefer top-level CriteriaResults; fall back to the latest Attempt's results
+	// (for stories with failed attempts where top-level results may be empty).
 	criteriaMap := map[string]prd.CriteriaResult{}
 	if a.knowledge != nil {
 		if record, ok := a.knowledge.CompletedStories[story.ID]; ok {
-			for _, cr := range record.CriteriaResults {
+			results := record.CriteriaResults
+			if len(results) == 0 && len(record.Attempts) > 0 {
+				results = record.Attempts[len(record.Attempts)-1].CriteriaResults
+			}
+			for _, cr := range results {
 				criteriaMap[cr.Criterion] = cr
 			}
 		}
