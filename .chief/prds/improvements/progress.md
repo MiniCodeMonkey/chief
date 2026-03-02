@@ -12,6 +12,7 @@
 - TUI message types (e.g., `KnowledgeUpdateMsg`) must be handled in the main `Update()` switch
 - `CompletedStoryRecord` optional fields use `omitempty` (e.g., `CriteriaResults`, `Attempts`) for backward-compatible JSON
 - `NextStory()` accepts optional `skipIDs ...map[string]bool` variadic — backward-compatible, callers that don't need skipping just omit the argument
+- TUI blocked-story detection uses `isStoryBlocked()` / `unblockedDeps()` / `storyStatusIcon()` on `*App` — computed locally from public `DependsOn`/`Passes` fields
 - `promptBuilderForPRD` in loop.go loads both PRD and knowledge.json each iteration — it's the integration point for story selection logic
 - Details panel uses a two-step render: `renderDetailsPanelContent()` builds full content, `renderDetailsPanel()` clips to visible window with scroll offset
 - Lipgloss `Height()` doesn't clip content — always split lines and render visible slice manually for scrollable panels
@@ -120,4 +121,19 @@
   - `detailsPanelDimensions()` must mirror the calculations in `renderDashboard()` and `renderStackedDashboard()` exactly
   - Story selection resets happen in multiple places: j/k navigation, `selectStoryByID()`, `selectInProgressStory()`, and PRD switch — all must reset `detailsScrollOffset`
   - `J/K` (uppercase) is cleanly separated from `j/k` (lowercase) in Bubble Tea key handling
+---
+
+## 2026-03-03 - US-007
+- Displayed story dependencies in TUI: details panel "Dependencies" section and blocked indicator in stories list
+- Added `IconBlocked = "⊘"` and `statusBlockedStyle` (WarningColor) to `styles.go`
+- Added `isStoryBlocked()`, `unblockedDeps()`, and `storyStatusIcon()` helper methods to `dashboard.go`
+- Details panel shows "Dependencies" section with each dep ID, its status icon, and label (passed/in-progress/pending) — only when story has dependencies
+- Stories list shows `⊘` icon and "Blocked by: US-001, US-002" text for blocked stories, replacing the title
+- Details panel status line shows "Blocked" text with yellow styling for blocked stories
+- Files changed: `internal/tui/styles.go`, `internal/tui/dashboard.go`
+- **Learnings for future iterations:**
+  - `PRD.depsResolved()` is unexported — TUI must compute blocked status locally using public fields (`DependsOn`, `Passes`)
+  - Building a passed-map in each helper is fine for small story counts but could be optimized to a shared map if performance becomes an issue
+  - The stories list loop uses value copies (`story := a.prd.UserStories[i]`), so methods expecting `*UserStory` need `&story`
+  - `GetStatusIcon` was not modified — a new `storyStatusIcon` method was added to `App` to keep the existing API stable while adding blocked awareness
 ---
