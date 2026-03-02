@@ -114,6 +114,10 @@ func (h *HelpOverlay) GetCategories() []ShortcutCategory {
 			Shortcuts: []Shortcut{
 				{Key: "j / ↓", Description: "Next story"},
 				{Key: "k / ↑", Description: "Previous story"},
+				{Key: "J (shift+j)", Description: "Scroll details down"},
+				{Key: "K (shift+k)", Description: "Scroll details up"},
+				{Key: "Home", Description: "Details: jump to top"},
+				{Key: "End", Description: "Details: jump to bottom"},
 			},
 		}
 		return []ShortcutCategory{loopControl, prdControl, views, navigation, general}

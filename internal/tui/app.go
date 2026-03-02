@@ -162,8 +162,9 @@ type App struct {
 	state         AppState
 	iteration     int
 	startTime     time.Time
-	selectedIndex      int
-	storiesScrollOffset int
+	selectedIndex        int
+	storiesScrollOffset  int
+	detailsScrollOffset  int
 	width              int
 	height             int
 	err           error
@@ -684,6 +685,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				if a.selectedIndex > 0 {
 					a.selectedIndex--
+					a.detailsScrollOffset = 0
 					if a.selectedIndex < a.storiesScrollOffset {
 						a.storiesScrollOffset = a.selectedIndex
 					}
@@ -697,8 +699,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				if a.selectedIndex < len(a.prd.UserStories)-1 {
 					a.selectedIndex++
+					a.detailsScrollOffset = 0
 					a.adjustStoriesScroll()
 				}
+			}
+
+		// Details panel scrolling (dashboard view only)
+		case "J":
+			if a.viewMode == ViewDashboard {
+				a.scrollDetailsDown()
+			}
+		case "K":
+			if a.viewMode == ViewDashboard {
+				a.scrollDetailsUp()
+			}
+		case "home":
+			if a.viewMode == ViewDashboard {
+				a.scrollDetailsToTop()
+			}
+		case "end":
+			if a.viewMode == ViewDashboard {
+				a.scrollDetailsToBottom()
 			}
 
 		// Log/diff scrolling
@@ -2095,6 +2116,7 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	a.prdName = name
 	a.selectedIndex = 0
 	a.storiesScrollOffset = 0
+	a.detailsScrollOffset = 0
 	a.state = appState
 	a.iteration = iteration
 	a.err = loopErr
@@ -2222,6 +2244,7 @@ func (a *App) selectStoryByID(storyID string) {
 	for i, story := range a.prd.UserStories {
 		if story.ID == storyID {
 			a.selectedIndex = i
+			a.detailsScrollOffset = 0
 			a.adjustStoriesScroll()
 			return
 		}
@@ -2233,6 +2256,7 @@ func (a *App) selectInProgressStory() {
 	for i, story := range a.prd.UserStories {
 		if story.InProgress {
 			a.selectedIndex = i
+			a.detailsScrollOffset = 0
 			a.adjustStoriesScroll()
 			return
 		}

@@ -256,13 +256,13 @@ func (a *App) renderFooter() string {
 		// Dashboard view shortcuts
 		switch a.state {
 		case StateReady, StatePaused:
-			shortcuts = []string{"s: start", "d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"s: start", "d: diff", "e: edit", "t: log", "n: new", "l: list", "J/K: details", "?: help", "q: quit"}
 		case StateRunning:
-			shortcuts = []string{"p: pause", "x: stop", "d: diff", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"p: pause", "x: stop", "d: diff", "t: log", "n: new", "l: list", "J/K: details", "?: help", "q: quit"}
 		case StateStopped, StateError:
-			shortcuts = []string{"s: retry", "d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"s: retry", "d: diff", "e: edit", "t: log", "n: new", "l: list", "J/K: details", "?: help", "q: quit"}
 		default:
-			shortcuts = []string{"d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"d: diff", "e: edit", "t: log", "n: new", "l: list", "J/K: details", "?: help", "q: quit"}
 		}
 	}
 	shortcutsStr := footerStyle.Render(strings.Join(shortcuts, "  │  "))
@@ -447,21 +447,11 @@ func (a *App) renderStoriesPanel(width, height int) string {
 	return panelStyle.Width(width).Height(height).Render(content.String())
 }
 
-// renderDetailsPanel renders the details panel for the selected story.
-func (a *App) renderDetailsPanel(width, height int) string {
-	// Check for empty PRD state first
-	if len(a.prd.UserStories) == 0 {
-		return a.renderEmptyPRDPanel(width, height)
-	}
-
-	// Check for error state - show error details instead of story details
-	if a.state == StateError {
-		return a.renderErrorPanel(width, height)
-	}
-
+// renderDetailsPanelContent builds the full (unclipped) details content for the selected story.
+func (a *App) renderDetailsPanelContent(width int) string {
 	story := a.GetSelectedStory()
 	if story == nil {
-		return panelStyle.Width(width).Height(height).Render("No stories in PRD")
+		return "No stories in PRD"
 	}
 
 	var content strings.Builder
@@ -602,7 +592,114 @@ func (a *App) renderDetailsPanel(width, height int) string {
 		}
 	}
 
-	return panelStyle.Width(width).Height(height).Render(content.String())
+	return content.String()
+}
+
+// renderDetailsPanel renders the details panel for the selected story with scroll support.
+func (a *App) renderDetailsPanel(width, height int) string {
+	// Check for empty PRD state first
+	if len(a.prd.UserStories) == 0 {
+		return a.renderEmptyPRDPanel(width, height)
+	}
+
+	// Check for error state - show error details instead of story details
+	if a.state == StateError {
+		return a.renderErrorPanel(width, height)
+	}
+
+	fullContent := a.renderDetailsPanelContent(width)
+
+	// Available height inside the panel (subtract 2 for top/bottom border)
+	innerHeight := height - 2
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+
+	// Split content into lines and clip to visible window
+	lines := strings.Split(fullContent, "\n")
+	totalLines := len(lines)
+
+	// Remove trailing empty line from final newline
+	if totalLines > 0 && lines[totalLines-1] == "" {
+		lines = lines[:totalLines-1]
+		totalLines = len(lines)
+	}
+
+	// Reserve 1 line for scroll indicator when content overflows
+	hasOverflow := totalLines > innerHeight
+	visibleHeight := innerHeight
+	if hasOverflow {
+		visibleHeight = innerHeight - 1 // reserve last line for indicator
+	}
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
+	// Clamp scroll offset
+	maxOffset := totalLines - visibleHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if a.detailsScrollOffset > maxOffset {
+		a.detailsScrollOffset = maxOffset
+	}
+	if a.detailsScrollOffset < 0 {
+		a.detailsScrollOffset = 0
+	}
+
+	// Take the visible slice
+	endIdx := a.detailsScrollOffset + visibleHeight
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+	visibleLines := lines[a.detailsScrollOffset:endIdx]
+	clipped := strings.Join(visibleLines, "\n")
+
+	// Add scroll indicator if content overflows
+	if hasOverflow {
+		pct := 0
+		if maxOffset > 0 {
+			pct = a.detailsScrollOffset * 100 / maxOffset
+		}
+		var indicator string
+		if a.detailsScrollOffset == 0 {
+			indicator = SubtitleStyle.Render("▼ more below")
+		} else if a.detailsScrollOffset >= maxOffset {
+			indicator = SubtitleStyle.Render("▲ more above")
+		} else {
+			indicator = SubtitleStyle.Render(fmt.Sprintf("▲▼ %d%%  (J/K scroll, Home/End jump)", pct))
+		}
+		clipped = clipped + "\n" + indicator
+	}
+
+	return panelStyle.Width(width).Height(height).Render(clipped)
+}
+
+// detailsMaxOffset returns the maximum scroll offset for the details panel.
+func (a *App) detailsMaxOffset(width, height int) int {
+	fullContent := a.renderDetailsPanelContent(width)
+	lines := strings.Split(fullContent, "\n")
+	totalLines := len(lines)
+	if totalLines > 0 && lines[totalLines-1] == "" {
+		totalLines--
+	}
+	innerHeight := height - 2
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+	// When overflowing, reserve 1 line for indicator
+	visibleHeight := innerHeight
+	if totalLines > innerHeight {
+		visibleHeight = innerHeight - 1
+	}
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+	maxOff := totalLines - visibleHeight
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	return maxOff
 }
 
 // renderErrorPanel renders the error details panel when in error state.
@@ -753,6 +850,54 @@ func (a *App) renderProgressBar(width int) string {
 		progressBarEmptyStyle.Render(strings.Repeat("░", emptyWidth))
 
 	return fmt.Sprintf("%s %3.0f%% %d/%d", bar, percentage, completedStories, totalStories)
+}
+
+// detailsPanelDimensions returns the width and height used for the details panel.
+// Must match the calculations in renderDashboard / renderStackedDashboard.
+func (a *App) detailsPanelDimensions() (width, height int) {
+	fh := footerHeight
+	if a.height < 12 {
+		fh = 0
+	}
+	contentHeight := a.height - a.effectiveHeaderHeight() - fh - 2
+
+	if a.isNarrowMode() {
+		storiesHeight := max((contentHeight*40)/100, 5)
+		height = contentHeight - storiesHeight - 1
+		width = a.width - 2
+	} else {
+		storiesWidth := (a.width * storiesPanelPct / 100) - 2
+		width = a.width - storiesWidth - 4
+		height = contentHeight
+	}
+	return width, height
+}
+
+// scrollDetailsUp scrolls the details panel content up by one line.
+func (a *App) scrollDetailsUp() {
+	if a.detailsScrollOffset > 0 {
+		a.detailsScrollOffset--
+	}
+}
+
+// scrollDetailsDown scrolls the details panel content down by one line.
+func (a *App) scrollDetailsDown() {
+	w, h := a.detailsPanelDimensions()
+	maxOff := a.detailsMaxOffset(w, h)
+	if a.detailsScrollOffset < maxOff {
+		a.detailsScrollOffset++
+	}
+}
+
+// scrollDetailsToTop scrolls the details panel to the top.
+func (a *App) scrollDetailsToTop() {
+	a.detailsScrollOffset = 0
+}
+
+// scrollDetailsToBottom scrolls the details panel to the bottom.
+func (a *App) scrollDetailsToBottom() {
+	w, h := a.detailsPanelDimensions()
+	a.detailsScrollOffset = a.detailsMaxOffset(w, h)
 }
 
 // formatDuration formats a duration in a human-readable way.
