@@ -1,0 +1,158 @@
+{
+  "project": "Smarter Agent Workflow \u0026 TUI Improvements",
+  "description": "Upgrades Chief's agent workflow from a blind executor to a thinking engineer — an agent that plans before coding, verifies each acceptance criterion individually, learns structured lessons across iterations, respects story dependencies, and recovers intelligently from failures. Also fixes the TUI details panel overflow issue where long content pushes the view out of bounds.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Story dependency declaration and resolution",
+      "description": "As a PRD author, I want to declare dependencies between stories (e.g., US-003 depends on US-001) so that stories execute in the correct order regardless of priority numbers.",
+      "acceptanceCriteria": [
+        "UserStory struct in internal/prd/types.go has a new DependsOn []string field (JSON: \"dependsOn\")",
+        "NextStory() in internal/prd/types.go skips stories whose dependencies haven't all passed yet",
+        "If a story has dependsOn: [\"US-001\", \"US-002\"], it is only picked when both US-001 and US-002 have passes: true",
+        "Priority is still used as tiebreaker among eligible (unblocked) stories",
+        "convert_prompt.txt is updated so the prd.md → prd.json conversion understands the dependsOn field",
+        "Circular dependency detection: if no eligible story can be found but incomplete stories remain, emit an error event instead of looping forever",
+        "Unit tests cover: basic dependency ordering, multi-dependency, circular detection, empty dependsOn treated as no dependencies",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true
+    },
+    {
+      "id": "US-002",
+      "title": "Structured knowledge base replacing free-text progress",
+      "description": "As the agent loop, I want a structured knowledge base (JSON) instead of free-text progress.md so that cross-iteration learning is reliable and parseable rather than dependent on Claude correctly reading markdown.",
+      "acceptanceCriteria": [
+        "New file knowledge.json is created alongside prd.json in the PRD directory with schema: { \"patterns\": [...], \"completedStories\": { \"US-001\": { \"filesChanged\": [...], \"approach\": \"...\", \"learnings\": [...] } } }",
+        "New internal/prd/knowledge.go file with types: Knowledge, CompletedStoryRecord, and functions: LoadKnowledge(), SaveKnowledge(), KnowledgePath()",
+        "The agent prompt (embed/prompt.txt) instructs Claude to read knowledge.json at the start and update it after completing a story (instead of appending to progress.md)",
+        "progress.md is still appended to as a human-readable log, but knowledge.json is the primary machine-readable knowledge store",
+        "The TUI progress display (renderDetailsPanel in dashboard.go) reads from knowledge.json for completed story records and falls back to progress.md entries if no knowledge.json record exists",
+        "A prd.KnowledgeWatcher watches knowledge.json for changes (similar to ProgressWatcher)",
+        "Unit tests cover: load/save round-trip, missing file returns empty knowledge, knowledge path derivation",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true
+    },
+    {
+      "id": "US-003",
+      "title": "Pre-implementation analysis phase in agent prompt",
+      "description": "As an autonomous agent, I want to analyze the codebase and plan my approach before writing code so that I make fewer mistakes and produce more coherent implementations.",
+      "acceptanceCriteria": [
+        "The agent prompt (embed/prompt.txt) adds a mandatory \"Analysis Phase\" before implementation with these steps: (1) Read relevant source files, (2) Identify existing patterns and conventions, (3) List files that will need changes, (4) Outline the implementation approach in 3-5 bullet points",
+        "The analysis output is written to the approach field in knowledge.json for the current story before implementation begins",
+        "The prompt instructs Claude to read the completedStories section of knowledge.json to understand what previous iterations changed and how (architectural context)",
+        "The prompt includes a \"Think step by step\" instruction that requires Claude to reason about edge cases before coding",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true
+    },
+    {
+      "id": "US-004",
+      "title": "Individual acceptance criteria verification protocol",
+      "description": "As an autonomous agent, I want to verify each acceptance criterion individually and report pass/fail per criterion so that partial failures are visible and the next retry knows exactly what still needs work.",
+      "acceptanceCriteria": [
+        "The agent prompt (embed/prompt.txt) adds a \"Verification Phase\" after implementation where Claude must check each acceptance criterion one by one",
+        "The prompt instructs Claude to write verification results to knowledge.json under the story record: \"criteriaResults\": [{ \"criterion\": \"...\", \"passed\": true/false, \"evidence\": \"...\" }]",
+        "Only when ALL criteria pass does Claude mark the story as passes: true in prd.json",
+        "If any criterion fails, Claude must NOT commit and must NOT mark the story as passed — instead it should document what failed and why in knowledge.json and end the iteration (allowing smart retry on next iteration)",
+        "The TUI details panel shows per-criterion pass/fail status when viewing a completed or in-progress story (green checkmark or red X next to each criterion), reading from knowledge.json",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true
+    },
+    {
+      "id": "US-005",
+      "title": "Smart retry with failure analysis",
+      "description": "As an autonomous agent, when a story implementation fails (tests fail, criteria not met), I want to analyze WHY it failed and adjust my approach before retrying so that I don't repeat the same mistake.",
+      "acceptanceCriteria": [
+        "The agent prompt (embed/prompt.txt) adds a \"Failure Recovery\" section: when reading knowledge.json and finding a story with criteriaResults containing failures, Claude must first analyze the failure, then plan a different approach before re-implementing",
+        "Failed attempt records are preserved in knowledge.json under \"attempts\": [{ \"approach\": \"...\", \"criteriaResults\": [...], \"failureAnalysis\": \"...\" }] so the next iteration can see what was tried and why it failed",
+        "The prompt explicitly instructs: \"Do NOT retry the same approach. Read the previous failure analysis and choose a different strategy.\"",
+        "If a story fails 3 times (3 attempt records in knowledge.json), Claude should skip it and move to the next eligible story, emitting a warning",
+        "The TUI shows attempt count for failed stories (e.g., \"Attempt 2/3\" next to status)",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true
+    },
+    {
+      "id": "US-006",
+      "title": "Fix details panel content overflow",
+      "description": "As a TUI user, I want the right-side details panel to handle long content properly so that text doesn't push the view out of bounds and become invisible.",
+      "acceptanceCriteria": [
+        "The details panel (renderDetailsPanel in dashboard.go) clips content to the panel height instead of letting it overflow",
+        "When content exceeds the panel height, a scroll position indicator is shown (e.g., percentage or \"▼ more below\")",
+        "The j/k keys scroll the details panel content when the details panel has overflowing content (in addition to scrolling the stories list — the panel that scrolls depends on which has focus or a simple rule like: stories list scrolls to change selection, a separate key pair like J/K or ctrl+j/ctrl+k scrolls the details panel)",
+        "Home/End keys jump to top/bottom of details panel content",
+        "The panel remembers scroll position per story (switching between stories resets to top)",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true
+    },
+    {
+      "id": "US-007",
+      "title": "Display story dependencies in TUI",
+      "description": "As a TUI user, I want to see story dependencies in the details panel so I understand why a story is blocked or what order things will execute in.",
+      "acceptanceCriteria": [
+        "The details panel shows a \"Dependencies\" section listing dependency story IDs with their status (passed/pending/in-progress)",
+        "Blocked stories show a \"Blocked by: US-001, US-002\" indicator in the stories list (left panel) using a distinct icon or color",
+        "The stories list icon for blocked stories is visually distinct from pending stories (e.g., ⊘ for blocked vs ○ for pending)",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false
+    },
+    {
+      "id": "US-008",
+      "title": "Display per-criterion verification results in TUI",
+      "description": "As a TUI user, I want to see which acceptance criteria passed or failed for each story so I can understand implementation progress at a granular level.",
+      "acceptanceCriteria": [
+        "The details panel \"Acceptance Criteria\" section reads from knowledge.json criteriaResults when available",
+        "Each criterion shows a status icon: ✓ green for passed, ✗ red for failed, • gray for not yet verified",
+        "Failed criteria show the evidence/reason text below the criterion",
+        "Attempt count is shown if the story has multiple attempts (e.g., \"Attempt 2/3\")",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false
+    },
+    {
+      "id": "US-009",
+      "title": "Update documentation for new features",
+      "description": "As a Chief user reading the docs, I want the documentation to accurately describe the new features (story dependencies, knowledge base, 3-phase workflow, smart retry, details panel scrolling) so I can understand and use them effectively.",
+      "acceptanceCriteria": [
+        "docs/concepts/prd-format.md updated: document the dependsOn field in the prd.md and prd.json sections, add example showing story dependencies, update the \"Story Selection Logic\" section to include dependency resolution, add knowledge.json to the file structure listing",
+        "docs/reference/prd-schema.md updated: add dependsOn field to the UserStory TypeScript interface, add field details section for dependsOn, update the full example to include a story with dependencies",
+        "docs/concepts/ralph-loop.md updated: update the loop flowchart to show the 3-phase workflow (Analyze → Implement → Verify), add a section explaining knowledge.json and how cross-iteration learning works, document smart retry behavior (failure analysis, max 3 attempts, skip-and-continue), update the \"Read State\" table to include knowledge.json",
+        "docs/concepts/chief-directory.md updated (if it exists): add knowledge.json to the directory structure listing with description",
+        "New doc page or section documenting the knowledge base: explain knowledge.json schema, how patterns are accumulated, how failure records are preserved, and how the agent uses this for smarter decisions",
+        "All doc code examples use valid syntax and match the actual implementation",
+        "Typecheck passes (for any config.ts changes if sidebar entries are added)"
+      ],
+      "priority": 9,
+      "passes": false
+    },
+    {
+      "id": "US-010",
+      "title": "Update CHANGELOG.md for release",
+      "description": "As a project maintainer, I want the CHANGELOG.md updated with a new version entry documenting all changes in this release so that users can see what's new and the release follows the existing changelog conventions.",
+      "acceptanceCriteria": [
+        "New version entry added at the top of CHANGELOG.md following the existing format (## [version] - date, with ### Features, ### Bug Fixes subsections)",
+        "Version number follows semver: this is a minor release (new features, no breaking changes) — use the next minor version after 0.6.1 (i.e., 0.7.0)",
+        "Features section lists: story dependencies (dependsOn field), structured knowledge base (knowledge.json), pre-implementation analysis phase, individual acceptance criteria verification, smart retry with failure analysis, details panel scrolling fix, dependency and verification display in TUI",
+        "Bug Fixes section lists: details panel content overflow fix",
+        "Comparison link added at the bottom of the file following existing convention ([0.7.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.6.1...v0.7.0)",
+        "The date field uses the actual current date at time of implementation",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false
+    }
+  ]
+}
