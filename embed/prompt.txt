@@ -9,17 +9,24 @@ Your current story:
 {{STORY_CONTEXT}}
 </story>
 
-1. Read `{{KNOWLEDGE_PATH}}` if it exists — review the `patterns` array and `completedStories` to understand what previous iterations changed and learned
+1. Read `{{KNOWLEDGE_PATH}}` if it exists — review the `patterns` array and `completedStories` to understand what previous iterations changed and learned. Pay special attention to the `completedStories` section: each record shows which files were changed, the approach taken, and learnings from that iteration. Use this as architectural context for your own implementation.
 2. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
 3. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
-4. Implement the user story above
-5. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-6. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
+4. **Analysis Phase** (mandatory — do this BEFORE writing any code):
+   a. Read the relevant source files for the areas you will change
+   b. Identify existing patterns and conventions in the codebase (naming, error handling, test style, module structure)
+   c. List the files that will need changes
+   d. Think step by step: reason about edge cases, potential regressions, and interactions with existing code before coding
+   e. Outline your implementation approach in 3-5 bullet points
+   f. Write your approach to `{{KNOWLEDGE_PATH}}` under the current story's `approach` field in `completedStories` BEFORE starting implementation — this serves as your plan and helps future iterations understand your intent even if implementation is interrupted
+5. Implement the user story
+6. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
+7. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
    - **NEVER stage or commit `.chief/` files** — these are local working files and must stay out of version control
    - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
-7. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
-8. Update `{{KNOWLEDGE_PATH}}` with a record for the completed story (see Knowledge Base section below)
-9. Append your progress to `{{PROGRESS_PATH}}` (see Progress Report Format below)
+8. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
+9. Update `{{KNOWLEDGE_PATH}}` with the final record for the completed story (see Knowledge Base section below) — update the `approach` field written during analysis, and add `filesChanged` and `learnings`
+10. Append your progress to `{{PROGRESS_PATH}}` (see Progress Report Format below)
 
 ## Knowledge Base
 
@@ -101,6 +108,7 @@ If there are still stories with `passes: false`, end your response normally (ano
 ## Important
 
 - Work on ONE story per iteration
+- **Always complete the Analysis Phase before writing any code** — skipping analysis leads to rework
 - Commit frequently
 - Keep CI green
 - Read the patterns from `{{KNOWLEDGE_PATH}}` and `{{PROGRESS_PATH}}` before starting
