@@ -10,11 +10,19 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// CriteriaResult holds the verification result for a single acceptance criterion.
+type CriteriaResult struct {
+	Criterion string `json:"criterion"`
+	Passed    bool   `json:"passed"`
+	Evidence  string `json:"evidence"`
+}
+
 // CompletedStoryRecord holds structured data about a completed story.
 type CompletedStoryRecord struct {
-	FilesChanged []string `json:"filesChanged"`
-	Approach     string   `json:"approach"`
-	Learnings    []string `json:"learnings"`
+	FilesChanged    []string          `json:"filesChanged"`
+	Approach        string            `json:"approach"`
+	Learnings       []string          `json:"learnings"`
+	CriteriaResults []CriteriaResult  `json:"criteriaResults,omitempty"`
 }
 
 // Knowledge represents the structured knowledge base (knowledge.json).

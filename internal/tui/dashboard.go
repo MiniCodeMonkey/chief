@@ -500,13 +500,45 @@ func (a *App) renderDetailsPanel(width, height int) string {
 	content.WriteString(wrapText(story.Description, width-4))
 	content.WriteString("\n\n")
 
-	// Acceptance Criteria
+	// Acceptance Criteria (with per-criterion verification results from knowledge.json)
 	content.WriteString(labelStyle.Render("Acceptance Criteria"))
 	content.WriteString("\n")
+
+	// Build a map of criterion text -> result for quick lookup
+	criteriaMap := map[string]prd.CriteriaResult{}
+	if a.knowledge != nil {
+		if record, ok := a.knowledge.CompletedStories[story.ID]; ok {
+			for _, cr := range record.CriteriaResults {
+				criteriaMap[cr.Criterion] = cr
+			}
+		}
+	}
+
 	for _, criterion := range story.AcceptanceCriteria {
-		wrapped := wrapText("• "+criterion, width-6)
-		content.WriteString(wrapped)
-		content.WriteString("\n")
+		if cr, ok := criteriaMap[criterion]; ok {
+			var icon string
+			if cr.Passed {
+				icon = statusPassedStyle.Render(IconPassed)
+			} else {
+				icon = statusFailedStyle.Render(IconFailed)
+			}
+			wrapped := wrapText(icon+" "+criterion, width-6)
+			content.WriteString(wrapped)
+			content.WriteString("\n")
+			// Show evidence for failed criteria
+			if !cr.Passed && cr.Evidence != "" {
+				evidenceStyle := lipgloss.NewStyle().Foreground(MutedColor)
+				wrapped := wrapText("  "+cr.Evidence, width-8)
+				content.WriteString(evidenceStyle.Render(wrapped))
+				content.WriteString("\n")
+			}
+		} else {
+			// Not yet verified — gray dot
+			icon := lipgloss.NewStyle().Foreground(MutedColor).Render("•")
+			wrapped := wrapText(icon+" "+criterion, width-6)
+			content.WriteString(wrapped)
+			content.WriteString("\n")
+		}
 	}
 
 	// Progress (prefer knowledge.json, fall back to progress.md)

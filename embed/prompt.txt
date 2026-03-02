@@ -20,13 +20,25 @@ Your current story:
    e. Outline your implementation approach in 3-5 bullet points
    f. Write your approach to `{{KNOWLEDGE_PATH}}` under the current story's `approach` field in `completedStories` BEFORE starting implementation — this serves as your plan and helps future iterations understand your intent even if implementation is interrupted
 5. Implement the user story
-6. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-7. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
+6. **Verification Phase** (mandatory — do this AFTER implementation, BEFORE committing):
+   a. Go through each acceptance criterion from the story ONE BY ONE
+   b. For each criterion, verify whether your implementation satisfies it — check the actual code, run specific tests, or inspect behavior
+   c. Record the result for each criterion in `{{KNOWLEDGE_PATH}}` under the story record's `criteriaResults` field:
+      ```json
+      "criteriaResults": [
+        { "criterion": "The exact criterion text", "passed": true, "evidence": "How you verified it" },
+        { "criterion": "Another criterion", "passed": false, "evidence": "What failed and why" }
+      ]
+      ```
+   d. If **ALL** criteria pass: proceed to step 7 (quality checks and commit)
+   e. If **ANY** criterion fails: do NOT commit, do NOT mark the story as passed — instead, document what failed and why in `{{KNOWLEDGE_PATH}}` and end the iteration. The next iteration will read your failure analysis and retry with a different approach.
+7. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
+8. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
    - **NEVER stage or commit `.chief/` files** — these are local working files and must stay out of version control
    - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
-8. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
-9. Update `{{KNOWLEDGE_PATH}}` with the final record for the completed story (see Knowledge Base section below) — update the `approach` field written during analysis, and add `filesChanged` and `learnings`
-10. Append your progress to `{{PROGRESS_PATH}}` (see Progress Report Format below)
+9. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
+10. Update `{{KNOWLEDGE_PATH}}` with the final record for the completed story (see Knowledge Base section below) — update the `approach` field written during analysis, and add `filesChanged`, `learnings`, and `criteriaResults`
+11. Append your progress to `{{PROGRESS_PATH}}` (see Progress Report Format below)
 
 ## Knowledge Base
 
@@ -39,7 +51,10 @@ Your current story:
     "{{STORY_ID}}": {
       "filesChanged": ["path/to/file1.go", "path/to/file2.go"],
       "approach": "Brief description of the implementation approach",
-      "learnings": ["Learning 1", "Learning 2"]
+      "learnings": ["Learning 1", "Learning 2"],
+      "criteriaResults": [
+        { "criterion": "Acceptance criterion text", "passed": true, "evidence": "How it was verified" }
+      ]
     }
   }
 }
