@@ -15,6 +15,7 @@ type UserStory struct {
 	Title              string   `json:"title"`
 	Description        string   `json:"description"`
 	AcceptanceCriteria []string `json:"acceptanceCriteria"`
+	DependsOn          []string `json:"dependsOn,omitempty"`
 	Priority           int      `json:"priority"`
 	Passes             bool     `json:"passes"`
 	InProgress         bool     `json:"inProgress,omitempty"`
@@ -52,39 +53,75 @@ func (p *PRD) AllComplete() bool {
 	return true
 }
 
+// depsResolved returns true if all of a story's DependsOn IDs have passes: true.
+func (p *PRD) depsResolved(story *UserStory) bool {
+	if len(story.DependsOn) == 0 {
+		return true
+	}
+	passed := make(map[string]bool, len(p.UserStories))
+	for _, s := range p.UserStories {
+		if s.Passes {
+			passed[s.ID] = true
+		}
+	}
+	for _, dep := range story.DependsOn {
+		if !passed[dep] {
+			return false
+		}
+	}
+	return true
+}
+
 // NextStory returns the next story to work on.
 // It returns:
 //   - First story with inProgress: true (interrupted story), or
-//   - Lowest priority story with passes: false, or
+//   - Lowest priority story with passes: false whose dependencies are all satisfied, or
 //   - nil if all stories are complete
-func (p *PRD) NextStory() *UserStory {
+//
+// Returns an error if incomplete stories remain but none are eligible (circular or
+// unresolvable dependencies).
+func (p *PRD) NextStory() (*UserStory, error) {
 	// First, check for any in-progress story (interrupted)
 	for i := range p.UserStories {
 		if p.UserStories[i].InProgress {
-			return &p.UserStories[i]
+			return &p.UserStories[i], nil
 		}
 	}
 
-	// Find the lowest priority story that hasn't passed
+	// Find the lowest priority story that hasn't passed and has dependencies met
 	var next *UserStory
+	hasIncomplete := false
 	for i := range p.UserStories {
 		story := &p.UserStories[i]
 		if !story.Passes {
-			if next == nil || story.Priority < next.Priority {
-				next = story
+			hasIncomplete = true
+			if p.depsResolved(story) {
+				if next == nil || story.Priority < next.Priority {
+					next = story
+				}
 			}
 		}
 	}
-	return next
+
+	if next != nil {
+		return next, nil
+	}
+	if hasIncomplete {
+		return nil, fmt.Errorf("no eligible story found: incomplete stories remain but all have unresolved dependencies (possible circular dependency)")
+	}
+	return nil, nil
 }
 
 // NextStoryContext returns the next story to work on as a formatted string
 // suitable for inlining into the agent prompt. Returns nil when all stories
-// are complete.
-func (p *PRD) NextStoryContext() *string {
-	story := p.NextStory()
+// are complete. Returns an error if dependencies are unresolvable.
+func (p *PRD) NextStoryContext() (*string, error) {
+	story, err := p.NextStory()
+	if err != nil {
+		return nil, err
+	}
 	if story == nil {
-		return nil
+		return nil, nil
 	}
 
 	data, err := json.MarshalIndent(story, "", "  ")
@@ -97,9 +134,9 @@ func (p *PRD) NextStoryContext() *string {
 			fmt.Fprintf(&b, "- %s\n", ac)
 		}
 		result := b.String()
-		return &result
+		return &result, nil
 	}
 
 	result := string(data)
-	return &result
+	return &result, nil
 }

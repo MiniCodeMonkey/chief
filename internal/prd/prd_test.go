@@ -159,7 +159,10 @@ func TestPRD_NextStory_EmptyPRD(t *testing.T) {
 		UserStories: []UserStory{},
 	}
 
-	next := p.NextStory()
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if next != nil {
 		t.Errorf("expected nil for empty PRD, got %v", next)
 	}
@@ -174,7 +177,10 @@ func TestPRD_NextStory_AllComplete(t *testing.T) {
 		},
 	}
 
-	next := p.NextStory()
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if next != nil {
 		t.Errorf("expected nil when all complete, got %v", next)
 	}
@@ -190,7 +196,10 @@ func TestPRD_NextStory_InterruptedStory(t *testing.T) {
 		},
 	}
 
-	next := p.NextStory()
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if next == nil {
 		t.Fatal("expected non-nil story")
 	}
@@ -209,7 +218,10 @@ func TestPRD_NextStory_LowestPriority(t *testing.T) {
 		},
 	}
 
-	next := p.NextStory()
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if next == nil {
 		t.Fatal("expected non-nil story")
 	}
@@ -228,7 +240,10 @@ func TestPRD_NextStory_SkipsCompleted(t *testing.T) {
 		},
 	}
 
-	next := p.NextStory()
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if next == nil {
 		t.Fatal("expected non-nil story")
 	}
@@ -247,12 +262,146 @@ func TestPRD_NextStory_InterruptedTakesPrecedence(t *testing.T) {
 		},
 	}
 
-	next := p.NextStory()
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if next == nil {
 		t.Fatal("expected non-nil story")
 	}
 	if next.ID != "US-002" {
 		t.Errorf("expected in-progress story US-002 to take precedence, got %s", next.ID)
+	}
+}
+
+func TestPRD_NextStory_BasicDependencyOrdering(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 2, Passes: false},
+			{ID: "US-002", Priority: 1, Passes: false, DependsOn: []string{"US-001"}},
+		},
+	}
+
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected non-nil story")
+	}
+	// US-002 has higher priority (1) but depends on US-001, so US-001 should be picked
+	if next.ID != "US-001" {
+		t.Errorf("expected US-001 (dependency of US-002), got %s", next.ID)
+	}
+}
+
+func TestPRD_NextStory_MultiDependency(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: true},
+			{ID: "US-002", Priority: 2, Passes: false},
+			{ID: "US-003", Priority: 3, Passes: false, DependsOn: []string{"US-001", "US-002"}},
+		},
+	}
+
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected non-nil story")
+	}
+	// US-003 depends on US-001 (passed) and US-002 (not passed), so US-002 is picked
+	if next.ID != "US-002" {
+		t.Errorf("expected US-002 (US-003 blocked by US-002), got %s", next.ID)
+	}
+}
+
+func TestPRD_NextStory_MultiDependencyAllSatisfied(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: true},
+			{ID: "US-002", Priority: 2, Passes: true},
+			{ID: "US-003", Priority: 3, Passes: false, DependsOn: []string{"US-001", "US-002"}},
+		},
+	}
+
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected non-nil story")
+	}
+	if next.ID != "US-003" {
+		t.Errorf("expected US-003 (all deps satisfied), got %s", next.ID)
+	}
+}
+
+func TestPRD_NextStory_CircularDependency(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: false, DependsOn: []string{"US-002"}},
+			{ID: "US-002", Priority: 2, Passes: false, DependsOn: []string{"US-001"}},
+		},
+	}
+
+	next, err := p.NextStory()
+	if next != nil {
+		t.Errorf("expected nil for circular dependency, got %v", next)
+	}
+	if err == nil {
+		t.Fatal("expected error for circular dependency, got nil")
+	}
+}
+
+func TestPRD_NextStory_EmptyDependsOnTreatedAsNoDependencies(t *testing.T) {
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: false, DependsOn: []string{}},
+			{ID: "US-002", Priority: 2, Passes: false},
+		},
+	}
+
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected non-nil story")
+	}
+	if next.ID != "US-001" {
+		t.Errorf("expected US-001 (empty dependsOn = no deps), got %s", next.ID)
+	}
+}
+
+func TestPRD_NextStory_DependencyWithPriorityTiebreaker(t *testing.T) {
+	// Two stories are eligible (no deps), priority breaks the tie
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Priority: 1, Passes: true},
+			{ID: "US-002", Priority: 3, Passes: false},
+			{ID: "US-003", Priority: 2, Passes: false},
+			{ID: "US-004", Priority: 4, Passes: false, DependsOn: []string{"US-001"}},
+		},
+	}
+
+	next, err := p.NextStory()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected non-nil story")
+	}
+	// US-003 has lowest priority among eligible stories (US-002=3, US-003=2, US-004=4)
+	if next.ID != "US-003" {
+		t.Errorf("expected US-003 (lowest priority among eligible), got %s", next.ID)
 	}
 }
 
@@ -316,7 +465,10 @@ func TestPRD_NextStoryContext_ReturnsHighestPriority(t *testing.T) {
 		},
 	}
 
-	ctx := p.NextStoryContext()
+	ctx, err := p.NextStoryContext()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ctx == nil {
 		t.Fatal("expected non-nil context")
 	}
@@ -340,7 +492,10 @@ func TestPRD_NextStoryContext_ReturnsNilWhenAllComplete(t *testing.T) {
 		},
 	}
 
-	ctx := p.NextStoryContext()
+	ctx, err := p.NextStoryContext()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ctx != nil {
 		t.Errorf("expected nil when all stories complete, got %q", *ctx)
 	}
@@ -355,7 +510,10 @@ func TestPRD_NextStoryContext_SkipsPassingStories(t *testing.T) {
 		},
 	}
 
-	ctx := p.NextStoryContext()
+	ctx, err := p.NextStoryContext()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ctx == nil {
 		t.Fatal("expected non-nil context")
 	}
@@ -375,7 +533,10 @@ func TestPRD_NextStoryContext_EmptyPRD(t *testing.T) {
 		UserStories: []UserStory{},
 	}
 
-	ctx := p.NextStoryContext()
+	ctx, err := p.NextStoryContext()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ctx != nil {
 		t.Errorf("expected nil for empty PRD, got %q", *ctx)
 	}
@@ -396,7 +557,10 @@ func TestPRD_NextStoryContext_ValidJSON(t *testing.T) {
 		},
 	}
 
-	ctx := p.NextStoryContext()
+	ctx, err := p.NextStoryContext()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ctx == nil {
 		t.Fatal("expected non-nil context")
 	}
@@ -435,7 +599,10 @@ func TestPRD_NextStoryContext_PromptSizeUnder10KB(t *testing.T) {
 		UserStories: stories,
 	}
 
-	ctx := p.NextStoryContext()
+	ctx, err := p.NextStoryContext()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if ctx == nil {
 		t.Fatal("expected non-nil context for 300-story PRD")
 	}

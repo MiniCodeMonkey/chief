@@ -16,6 +16,7 @@ Then output ONLY the raw JSON to stdout — no markdown fences, no explanation, 
         "First acceptance criterion",
         "Second acceptance criterion"
       ],
+      "dependsOn": ["{{ID_PREFIX}}-002"],
       "priority": 1,
       "passes": false
     }
@@ -30,6 +31,7 @@ Rules:
    - Extract title from story heading
    - Extract description from story body
    - Extract acceptance criteria as an array of strings
+   - If the story has a "Depends On:" line (e.g., "**Depends On:** US-001, US-002"), extract the dependency IDs into a "dependsOn" array. Omit the field entirely if there are no dependencies.
    - Assign priority based on order (first story = 1, second = 2, etc.)
    - Set "passes" to false for all stories (progress tracking happens later)
 4. Do NOT include "inProgress" field for new stories
