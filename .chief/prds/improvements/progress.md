@@ -148,3 +148,19 @@
   - The `CompletedStoryRecord` has two places for criteria results: top-level `CriteriaResults` (current/final) and `Attempts[i].CriteriaResults` (failed attempts) — TUI code must check both
   - When verifying "already implemented" stories, still look for edge cases the original implementation missed (like the attempt fallback)
 ---
+
+## 2026-03-03 - US-009
+- Updated documentation for all new features: story dependencies, knowledge base, 3-phase workflow, smart retry, details panel scrolling
+- **docs/concepts/prd-format.md**: Added `dependsOn` to UserStory table, updated Story Selection Logic with dependency resolution and exhausted-story filtering, added knowledge.json to file structure, updated "Order Stories by Dependency" best practice to use `dependsOn`
+- **docs/reference/prd-schema.md**: Added `dependsOn` to UserStory TypeScript interface, added field details section, updated full example with dependency
+- **docs/concepts/ralph-loop.md**: Updated Read State table with knowledge.json, updated Select Next Story with dependency/exhaustion filtering, replaced Build Prompt section with 3-phase workflow (Analyze → Implement → Verify) with ASCII flowchart, added Cross-Iteration Learning and Smart Retry sections
+- **docs/concepts/chief-directory.md**: Added knowledge.json to directory structure, file explanations, prd.json key fields table, sharing section, and multi-PRD example
+- **docs/concepts/knowledge-base.md** (new): Full knowledge base documentation covering schema, how the agent uses it (read/write/failure), smart retry, pattern accumulation, relationship to progress.md, and TUI integration
+- **docs/.vitepress/config.ts**: Added Knowledge Base sidebar entry under Concepts
+- Files changed: `docs/concepts/prd-format.md`, `docs/reference/prd-schema.md`, `docs/concepts/ralph-loop.md`, `docs/concepts/chief-directory.md`, `docs/concepts/knowledge-base.md`, `docs/.vitepress/config.ts`
+- **Learnings for future iterations:**
+  - VitePress docs dependencies aren't installed in the worktree — `npx vitepress build` fails. Go typecheck is the relevant quality check for config.ts changes (it compiles via embed)
+  - The docs working directory was `docs/` not the project root — git commands must use absolute paths or `cd` first
+  - The prd.json `inProgress` flag is set by Chief before the agent runs — the agent should clear it when setting `passes: true`
+  - All doc pages have `## What's Next` sections that should cross-link to new pages
+---

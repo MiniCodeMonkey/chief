@@ -136,7 +136,7 @@
         "Typecheck passes (for any config.ts changes if sidebar entries are added)"
       ],
       "priority": 9,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-010",
