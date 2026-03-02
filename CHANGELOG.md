@@ -2,6 +2,23 @@
 
 All notable changes to Chief are documented in this file.
 
+## [0.7.0] - 2026-03-03
+
+### Features
+- Story dependency declaration and resolution via `dependsOn` field in PRD stories
+- Structured knowledge base (`knowledge.json`) for reliable cross-iteration learning
+- Pre-implementation analysis phase in agent workflow (Analyze → Implement → Verify)
+- Individual acceptance criteria verification with per-criterion pass/fail reporting
+- Smart retry with failure analysis — agent learns from failed attempts, skips after 3 failures
+- Display story dependencies and blocked status in TUI dashboard
+- Display per-criterion verification results (✓/✗) in TUI details panel
+- Details panel scrolling with `J/K` keys and `Home/End` for jump navigation
+- Scroll position indicator for overflowing details panel content
+- Documentation for all new features (knowledge base, dependencies, 3-phase workflow, smart retry)
+
+### Bug Fixes
+- Fix details panel content overflow where long content pushed the view out of bounds
+
 ## [0.6.1] - 2026-02-24
 
 ### Bug Fixes
@@ -127,6 +144,9 @@ Initial release.
 - CLI commands: `chief new`, `chief edit`, `chief status`, `chief list`
 - Homebrew formula and install script
 
+[0.7.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/MiniCodeMonkey/chief/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/MiniCodeMonkey/chief/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/MiniCodeMonkey/chief/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/MiniCodeMonkey/chief/compare/v0.5.0...v0.5.1
