@@ -137,3 +137,14 @@
   - The stories list loop uses value copies (`story := a.prd.UserStories[i]`), so methods expecting `*UserStory` need `&story`
   - `GetStatusIcon` was not modified — a new `storyStatusIcon` method was added to `App` to keep the existing API stable while adding blocked awareness
 ---
+
+## 2026-03-03 - US-008
+- Enhanced per-criterion verification results display in TUI details panel
+- Most functionality was already implemented in US-004 (criteria icons, evidence display) and US-005 (attempt count)
+- Key enhancement: criteria results now fall back to the latest `Attempt`'s `CriteriaResults` when the top-level `CriteriaResults` is empty — this ensures failed-attempt stories show their actual pass/fail status instead of all gray dots
+- Files changed: `internal/tui/dashboard.go`
+- **Learnings for future iterations:**
+  - Stories may overlap in implementation — US-008's criteria were largely satisfied by US-004 and US-005's TUI work
+  - The `CompletedStoryRecord` has two places for criteria results: top-level `CriteriaResults` (current/final) and `Attempts[i].CriteriaResults` (failed attempts) — TUI code must check both
+  - When verifying "already implemented" stories, still look for edge cases the original implementation missed (like the attempt fallback)
+---
