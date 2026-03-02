@@ -365,6 +365,56 @@ func (a *App) renderActivityLine() string {
 	return activityStyle.Render(activity)
 }
 
+// isStoryBlocked returns true if a story has unsatisfied dependencies.
+func (a *App) isStoryBlocked(story *prd.UserStory) bool {
+	if len(story.DependsOn) == 0 {
+		return false
+	}
+	passed := make(map[string]bool, len(a.prd.UserStories))
+	for _, s := range a.prd.UserStories {
+		if s.Passes {
+			passed[s.ID] = true
+		}
+	}
+	for _, dep := range story.DependsOn {
+		if !passed[dep] {
+			return true
+		}
+	}
+	return false
+}
+
+// unblockedDeps returns the IDs of dependencies that have not yet passed.
+func (a *App) unblockedDeps(story *prd.UserStory) []string {
+	passed := make(map[string]bool, len(a.prd.UserStories))
+	for _, s := range a.prd.UserStories {
+		if s.Passes {
+			passed[s.ID] = true
+		}
+	}
+	var blocking []string
+	for _, dep := range story.DependsOn {
+		if !passed[dep] {
+			blocking = append(blocking, dep)
+		}
+	}
+	return blocking
+}
+
+// storyStatusIcon returns the icon for a story, including blocked status.
+func (a *App) storyStatusIcon(story *prd.UserStory) string {
+	if story.Passes {
+		return statusPassedStyle.Render(IconPassed)
+	}
+	if story.InProgress {
+		return statusInProgressStyle.Render(IconInProgress)
+	}
+	if a.isStoryBlocked(story) {
+		return statusBlockedStyle.Render(IconBlocked)
+	}
+	return statusPendingStyle.Render(IconPending)
+}
+
 // renderStoriesPanel renders the stories list panel.
 func (a *App) renderStoriesPanel(width, height int) string {
 	var content strings.Builder
@@ -406,11 +456,22 @@ func (a *App) renderStoriesPanel(width, height int) string {
 	visibleCount := 0
 	for i := a.storiesScrollOffset; i < endIdx; i++ {
 		story := a.prd.UserStories[i]
-		icon := GetStatusIcon(story.Passes, story.InProgress)
+		icon := a.storyStatusIcon(&story)
+
+		// For blocked stories, show "Blocked by: ..." instead of the title
+		blocked := !story.Passes && !story.InProgress && a.isStoryBlocked(&story)
+		var suffix string
+		if blocked {
+			blockedDeps := a.unblockedDeps(&story)
+			suffix = "Blocked by: " + strings.Join(blockedDeps, ", ")
+		}
 
 		// Truncate title to fit
 		maxTitleLen := width - 12 // Account for icon, ID, and spacing
 		displayTitle := story.Title
+		if blocked && suffix != "" {
+			displayTitle = suffix
+		}
 		if len(displayTitle) > maxTitleLen && maxTitleLen > 3 {
 			displayTitle = displayTitle[:maxTitleLen-3] + "..."
 		}
@@ -467,7 +528,7 @@ func (a *App) renderDetailsPanelContent(width int) string {
 	content.WriteString("\n\n")
 
 	// Status and Priority with proper styling
-	statusIcon := GetStatusIcon(story.Passes, story.InProgress)
+	statusIcon := a.storyStatusIcon(story)
 	var statusText string
 	var statusStyle lipgloss.Style
 	if story.Passes {
@@ -476,6 +537,9 @@ func (a *App) renderDetailsPanelContent(width int) string {
 	} else if story.InProgress {
 		statusText = "In Progress"
 		statusStyle = statusInProgressStyle
+	} else if a.isStoryBlocked(story) {
+		statusText = "Blocked"
+		statusStyle = statusBlockedStyle
 	} else {
 		statusText = "Pending"
 		statusStyle = statusPendingStyle
@@ -494,6 +558,38 @@ func (a *App) renderDetailsPanelContent(width int) string {
 	content.WriteString(fmt.Sprintf("%s %s  │  Priority: %d%s\n", statusIcon, statusStyle.Render(statusText), story.Priority, attemptInfo))
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-4)))
 	content.WriteString("\n\n")
+
+	// Dependencies (only show if the story has dependencies)
+	if len(story.DependsOn) > 0 {
+		content.WriteString(labelStyle.Render("Dependencies"))
+		content.WriteString("\n")
+
+		// Build a lookup for story status by ID
+		storyStatus := make(map[string]*prd.UserStory, len(a.prd.UserStories))
+		for i := range a.prd.UserStories {
+			storyStatus[a.prd.UserStories[i].ID] = &a.prd.UserStories[i]
+		}
+
+		for _, depID := range story.DependsOn {
+			var depIcon, depLabel string
+			if dep, ok := storyStatus[depID]; ok {
+				depIcon = GetStatusIcon(dep.Passes, dep.InProgress)
+				if dep.Passes {
+					depLabel = statusPassedStyle.Render("passed")
+				} else if dep.InProgress {
+					depLabel = statusInProgressStyle.Render("in-progress")
+				} else {
+					depLabel = statusPendingStyle.Render("pending")
+				}
+				content.WriteString(fmt.Sprintf("  %s %s — %s\n", depIcon, depID, depLabel))
+			} else {
+				// Unknown dependency ID
+				unknownIcon := lipgloss.NewStyle().Foreground(MutedColor).Render("?")
+				content.WriteString(fmt.Sprintf("  %s %s — unknown\n", unknownIcon, depID))
+			}
+		}
+		content.WriteString("\n")
+	}
 
 	// Description
 	content.WriteString(labelStyle.Render("Description"))

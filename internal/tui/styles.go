@@ -102,6 +102,7 @@ var (
 	statusInProgressStyle = lipgloss.NewStyle().Foreground(PrimaryColor)
 	statusPendingStyle    = lipgloss.NewStyle().Foreground(MutedColor)
 	statusFailedStyle     = lipgloss.NewStyle().Foreground(ErrorColor)
+	statusBlockedStyle    = lipgloss.NewStyle().Foreground(WarningColor)
 	statusPausedStyle     = lipgloss.NewStyle().Foreground(WarningColor)
 
 	// State badge styles (with bold for headers)
@@ -204,6 +205,7 @@ const (
 	IconPending    = "○"
 	IconFailed     = "✗"
 	IconPaused     = "◐"
+	IconBlocked    = "⊘"
 )
 
 // Backward compatibility aliases
