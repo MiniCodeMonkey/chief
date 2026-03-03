@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-func TestAddChiefToGitignore(t *testing.T) {
+func TestAddMellizaToGitignore(t *testing.T) {
 	t.Run("creates new gitignore", func(t *testing.T) {
 		dir := t.TempDir()
 		gitignorePath := filepath.Join(dir, ".gitignore")
 
-		err := AddChiefToGitignore(dir)
+		err := AddMellizaToGitignore(dir)
 		if err != nil {
-			t.Fatalf("AddChiefToGitignore() error = %v", err)
+			t.Fatalf("AddMellizaToGitignore() error = %v", err)
 		}
 
 		content, err := os.ReadFile(gitignorePath)
@@ -21,8 +21,8 @@ func TestAddChiefToGitignore(t *testing.T) {
 			t.Fatalf("failed to read .gitignore: %v", err)
 		}
 
-		if string(content) != ".chief/\n" {
-			t.Errorf("got %q, want %q", string(content), ".chief/\n")
+		if string(content) != ".melliza/\n" {
+			t.Errorf("got %q, want %q", string(content), ".melliza/\n")
 		}
 	})
 
@@ -35,9 +35,9 @@ func TestAddChiefToGitignore(t *testing.T) {
 			t.Fatalf("failed to create .gitignore: %v", err)
 		}
 
-		err := AddChiefToGitignore(dir)
+		err := AddMellizaToGitignore(dir)
 		if err != nil {
-			t.Fatalf("AddChiefToGitignore() error = %v", err)
+			t.Fatalf("AddMellizaToGitignore() error = %v", err)
 		}
 
 		content, err := os.ReadFile(gitignorePath)
@@ -45,7 +45,7 @@ func TestAddChiefToGitignore(t *testing.T) {
 			t.Fatalf("failed to read .gitignore: %v", err)
 		}
 
-		expected := "node_modules/\n.chief/\n"
+		expected := "node_modules/\n.melliza/\n"
 		if string(content) != expected {
 			t.Errorf("got %q, want %q", string(content), expected)
 		}
@@ -60,9 +60,9 @@ func TestAddChiefToGitignore(t *testing.T) {
 			t.Fatalf("failed to create .gitignore: %v", err)
 		}
 
-		err := AddChiefToGitignore(dir)
+		err := AddMellizaToGitignore(dir)
 		if err != nil {
-			t.Fatalf("AddChiefToGitignore() error = %v", err)
+			t.Fatalf("AddMellizaToGitignore() error = %v", err)
 		}
 
 		content, err := os.ReadFile(gitignorePath)
@@ -70,7 +70,7 @@ func TestAddChiefToGitignore(t *testing.T) {
 			t.Fatalf("failed to read .gitignore: %v", err)
 		}
 
-		expected := "node_modules/\n.chief/\n"
+		expected := "node_modules/\n.melliza/\n"
 		if string(content) != expected {
 			t.Errorf("got %q, want %q", string(content), expected)
 		}
@@ -80,15 +80,15 @@ func TestAddChiefToGitignore(t *testing.T) {
 		dir := t.TempDir()
 		gitignorePath := filepath.Join(dir, ".gitignore")
 
-		// Create existing .gitignore with .chief already present
-		original := "node_modules/\n.chief/\n"
+		// Create existing .gitignore with .melliza already present
+		original := "node_modules/\n.melliza/\n"
 		if err := os.WriteFile(gitignorePath, []byte(original), 0644); err != nil {
 			t.Fatalf("failed to create .gitignore: %v", err)
 		}
 
-		err := AddChiefToGitignore(dir)
+		err := AddMellizaToGitignore(dir)
 		if err != nil {
-			t.Fatalf("AddChiefToGitignore() error = %v", err)
+			t.Fatalf("AddMellizaToGitignore() error = %v", err)
 		}
 
 		content, err := os.ReadFile(gitignorePath)
@@ -102,19 +102,19 @@ func TestAddChiefToGitignore(t *testing.T) {
 		}
 	})
 
-	t.Run("skips if .chief without slash present", func(t *testing.T) {
+	t.Run("skips if .melliza without slash present", func(t *testing.T) {
 		dir := t.TempDir()
 		gitignorePath := filepath.Join(dir, ".gitignore")
 
-		// Create existing .gitignore with .chief (no slash)
-		original := "node_modules/\n.chief\n"
+		// Create existing .gitignore with .melliza (no slash)
+		original := "node_modules/\n.melliza\n"
 		if err := os.WriteFile(gitignorePath, []byte(original), 0644); err != nil {
 			t.Fatalf("failed to create .gitignore: %v", err)
 		}
 
-		err := AddChiefToGitignore(dir)
+		err := AddMellizaToGitignore(dir)
 		if err != nil {
-			t.Fatalf("AddChiefToGitignore() error = %v", err)
+			t.Fatalf("AddMellizaToGitignore() error = %v", err)
 		}
 
 		content, err := os.ReadFile(gitignorePath)
@@ -138,7 +138,7 @@ func TestIsProtectedBranch(t *testing.T) {
 		{"master", true},
 		{"develop", false},
 		{"feature/foo", false},
-		{"chief/my-prd", false},
+		{"melliza/my-prd", false},
 	}
 
 	for _, tt := range tests {

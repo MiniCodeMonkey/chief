@@ -1,50 +1,50 @@
 ---
-description: Troubleshoot common Chief issues including Claude not found, permission errors, worktree problems, and loop failures.
+description: Troubleshoot common Melliza issues including Gemini not found, permission errors, worktree problems, and loop failures.
 ---
 
 # Common Issues
 
 Solutions to frequently encountered problems.
 
-## Claude Not Found
+## Gemini Not Found
 
-**Symptom:** Error message about Claude Code CLI not being installed.
+**Symptom:** Error message about Gemini CLI not being installed.
 
 ```
-Error: Claude Code CLI not found. Please install it first.
+Error: Gemini CLI not found. Please install it first.
 ```
 
-**Cause:** Claude Code isn't installed or isn't in your PATH.
+**Cause:** Gemini CLI isn't installed or isn't in your PATH.
 
 **Solution:**
 
-Install Claude Code following the [official instructions](https://docs.anthropic.com/en/docs/claude-code/getting-started), then verify:
+Install Gemini CLI following the [official instructions](https://docs.anthropic.com/en/docs/gemini-code/getting-started), then verify:
 
 ```bash
-claude --version
+gemini --version
 ```
 
 ## Permission Denied
 
-**Symptom:** Claude keeps asking for permission, disrupting autonomous flow.
+**Symptom:** Gemini keeps asking for permission, disrupting autonomous flow.
 
-**Cause:** Claude Code requires explicit permission for file writes and command execution.
+**Cause:** Gemini CLI requires explicit permission for file writes and command execution.
 
 **Solution:**
 
-Chief automatically runs Claude with permission prompts disabled for autonomous operation. If you're still seeing permission issues, ensure you're running Chief (not Claude directly) and that your Claude Code installation is up to date.
+Melliza automatically runs Gemini with permission prompts disabled for autonomous operation. If you're still seeing permission issues, ensure you're running Melliza (not Gemini directly) and that your Gemini CLI installation is up to date.
 
 ## PRD Not Updating
 
-**Symptom:** Stories stay incomplete even though Claude seems to finish.
+**Symptom:** Stories stay incomplete even though Gemini seems to finish.
 
-**Cause:** Claude didn't output the completion signal, or file watching failed.
+**Cause:** Gemini didn't output the completion signal, or file watching failed.
 
 **Solution:**
 
-1. Check `claude.log` for errors:
+1. Check `gemini.log` for errors:
    ```bash
-   tail -100 .chief/prds/your-prd/claude.log
+   tail -100 .melliza/prds/your-prd/gemini.log
    ```
 
 2. Manually mark story complete if appropriate:
@@ -56,71 +56,71 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
    }
    ```
 
-3. Restart Chief to pick up where it left off
+3. Restart Melliza to pick up where it left off
 
 ## Loop Not Progressing
 
-**Symptom:** Chief runs but doesn't make progress on stories.
+**Symptom:** Melliza runs but doesn't make progress on stories.
 
-**Cause:** Various—Claude may be stuck, context too large, or PRD unclear.
+**Cause:** Various—Gemini may be stuck, context too large, or PRD unclear.
 
 **Solution:**
 
-1. Check `claude.log` for what Claude is doing:
+1. Check `gemini.log` for what Gemini is doing:
    ```bash
-   tail -f .chief/prds/your-prd/claude.log
+   tail -f .melliza/prds/your-prd/gemini.log
    ```
 
 2. Simplify the current story's acceptance criteria
 
 3. Add context to `prd.md` about the codebase
 
-4. Try restarting Chief:
+4. Try restarting Melliza:
    ```bash
    # Press 'x' to stop (or Ctrl+C to quit)
-   chief  # Launch TUI
+   melliza  # Launch TUI
    # Press 's' to start the loop
    ```
 
 ## Max Iterations Reached
 
-**Symptom:** Chief stops with "max iterations reached" message.
+**Symptom:** Melliza stops with "max iterations reached" message.
 
-**Cause:** Claude hasn't completed after the iteration limit.
+**Cause:** Gemini hasn't completed after the iteration limit.
 
 **Solution:**
 
 1. Increase the limit:
    ```bash
-   chief --max-iterations 200
+   melliza --max-iterations 200
    ```
 
 2. Or investigate why it's taking so many iterations:
    - Story too complex? Split it
-   - Stuck in a loop? Check `claude.log`
+   - Stuck in a loop? Check `gemini.log`
    - Unclear acceptance criteria? Clarify them
 
 ## "No PRD Found"
 
 **Symptom:** Error about no PRD being found.
 
-**Cause:** Missing `.chief/prds/` directory or invalid PRD structure.
+**Cause:** Missing `.melliza/prds/` directory or invalid PRD structure.
 
 **Solution:**
 
 1. Create a PRD:
    ```bash
-   chief new
+   melliza new
    ```
 
 2. Or specify the PRD explicitly:
    ```bash
-   chief my-feature
+   melliza my-feature
    ```
 
 3. Verify structure:
    ```
-   .chief/
+   .melliza/
    └── prds/
        └── my-feature/
            ├── prd.md
@@ -137,7 +137,7 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
 
 1. Validate your JSON:
    ```bash
-   cat .chief/prds/your-prd/prd.json | jq .
+   cat .melliza/prds/your-prd/prd.json | jq .
    ```
 
 2. Common issues:
@@ -153,21 +153,21 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
 
 **Solution:**
 
-1. Chief automatically handles common cases (reuses valid worktrees, cleans stale ones). If it still fails:
+1. Melliza automatically handles common cases (reuses valid worktrees, cleans stale ones). If it still fails:
 
 2. Manually clean up:
    ```bash
    # Remove the worktree
-   git worktree remove .chief/worktrees/<prd-name> --force
+   git worktree remove .melliza/worktrees/<prd-name> --force
 
    # Delete the branch if needed
-   git branch -D chief/<prd-name>
+   git branch -D melliza/<prd-name>
 
    # Prune git's worktree tracking
    git worktree prune
    ```
 
-3. Restart Chief and try again
+3. Restart Melliza and try again
 
 ## PR Creation Failures
 
@@ -191,7 +191,7 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
 
 4. You can also create the PR manually:
    ```bash
-   git push -u origin chief/<prd-name>
+   git push -u origin melliza/<prd-name>
    gh pr create --title "feat: <prd-name>" --body "..."
    ```
 
@@ -201,7 +201,7 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
 
 **Symptom:** The picker shows entries marked `[orphaned]` or `[orphaned worktree]`.
 
-**Cause:** A previous Chief session crashed or was terminated without cleaning up its worktree.
+**Cause:** A previous Melliza session crashed or was terminated without cleaning up its worktree.
 
 **Solution:**
 
@@ -209,7 +209,7 @@ Chief automatically runs Claude with permission prompts disabled for autonomous 
 2. Select the orphaned entry in the picker and press `c` to clean it up
 3. Choose "Remove worktree + delete branch" or "Remove worktree only" as appropriate
 
-Chief automatically prunes git's internal worktree tracking on startup, but does not auto-delete worktree directories to avoid data loss.
+Melliza automatically prunes git's internal worktree tracking on startup, but does not auto-delete worktree directories to avoid data loss.
 
 ## Merge Conflicts
 
@@ -219,11 +219,11 @@ Chief automatically prunes git's internal worktree tracking on startup, but does
 
 **Solution:**
 
-1. Chief shows the list of conflicting files in the merge result dialog
+1. Melliza shows the list of conflicting files in the merge result dialog
 2. Resolve conflicts manually in a terminal:
    ```bash
    cd /path/to/project
-   git merge chief/<prd-name>
+   git merge melliza/<prd-name>
    # Resolve conflicts in the listed files
    git add .
    git commit
@@ -235,8 +235,8 @@ Chief automatically prunes git's internal worktree tracking on startup, but does
 If none of these solutions help:
 
 1. Check the [FAQ](/troubleshooting/faq)
-2. Search [GitHub Issues](https://github.com/minicodemonkey/chief/issues)
+2. Search [GitHub Issues](https://github.com/lvcoi/melliza/issues)
 3. Open a new issue with:
-   - Chief version (`chief --version`)
+   - Melliza version (`melliza --version`)
    - Your `prd.json` (sanitized)
-   - Relevant `claude.log` excerpts
+   - Relevant `gemini.log` excerpts

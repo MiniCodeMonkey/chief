@@ -49,8 +49,8 @@ func TestGetPrompt(t *testing.T) {
 	}
 
 	// Verify the prompt contains key instructions
-	if !strings.Contains(prompt, "chief-complete") {
-		t.Error("Expected prompt to contain chief-complete instruction")
+	if !strings.Contains(prompt, "melliza-complete") {
+		t.Error("Expected prompt to contain melliza-complete instruction")
 	}
 
 	if !strings.Contains(prompt, "ralph-status") {
@@ -65,7 +65,7 @@ func TestGetPrompt(t *testing.T) {
 func TestGetPrompt_NoFileReadInstruction(t *testing.T) {
 	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
 
-	// The prompt should NOT instruct Claude to read the PRD file
+	// The prompt should NOT instruct Gemini to read the PRD file
 	if strings.Contains(prompt, "Read the PRD") {
 		t.Error("Expected prompt to NOT contain 'Read the PRD' file-read instruction")
 	}
@@ -77,19 +77,19 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 	}
 }
 
-func TestGetPrompt_ChiefExclusion(t *testing.T) {
+func TestGetPrompt_MellizaExclusion(t *testing.T) {
 	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
 
-	// The prompt must instruct Claude to never stage or commit .chief/ files
-	if !strings.Contains(prompt, ".chief/") {
-		t.Error("Expected prompt to contain .chief/ exclusion instruction")
+	// The prompt must instruct Gemini to never stage or commit .melliza/ files
+	if !strings.Contains(prompt, ".melliza/") {
+		t.Error("Expected prompt to contain .melliza/ exclusion instruction")
 	}
 	if !strings.Contains(prompt, "NEVER stage or commit") {
-		t.Error("Expected prompt to explicitly say NEVER stage or commit .chief/ files")
+		t.Error("Expected prompt to explicitly say NEVER stage or commit .melliza/ files")
 	}
 	// The commit step should not say "commit ALL changes" anymore
 	if strings.Contains(prompt, "commit ALL changes") {
-		t.Error("Expected prompt to NOT say 'commit ALL changes' — it should exclude .chief/ files")
+		t.Error("Expected prompt to NOT say 'commit ALL changes' — it should exclude .melliza/ files")
 	}
 }
 
@@ -136,9 +136,9 @@ func TestGetConvertPrompt(t *testing.T) {
 		t.Error("Expected prompt to specify passes: false default")
 	}
 
-	// Verify prompt instructs Claude to read the file
+	// Verify prompt instructs Gemini to read the file
 	if !strings.Contains(prompt, "Read the PRD file") {
-		t.Error("Expected prompt to instruct Claude to read the PRD file")
+		t.Error("Expected prompt to instruct Gemini to read the PRD file")
 	}
 }
 
@@ -158,7 +158,7 @@ func TestGetConvertPrompt_CustomPrefix(t *testing.T) {
 }
 
 func TestGetInitPrompt(t *testing.T) {
-	prdDir := "/path/to/.chief/prds/main"
+	prdDir := "/path/to/.melliza/prds/main"
 
 	// Test with no context
 	prompt := GetInitPrompt(prdDir, "")

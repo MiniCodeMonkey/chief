@@ -1,14 +1,14 @@
 ---
-description: Chief configuration reference. Project config file, CLI flags, Settings TUI, and first-time setup flow.
+description: Melliza configuration reference. Project config file, CLI flags, Settings TUI, and first-time setup flow.
 ---
 
 # Configuration
 
-Chief uses a project-level configuration file at `.chief/config.yaml` for persistent settings, plus CLI flags for per-run options.
+Melliza uses a project-level configuration file at `.melliza/config.yaml` for persistent settings, plus CLI flags for per-run options.
 
-## Config File (`.chief/config.yaml`)
+## Config File (`.melliza/config.yaml`)
 
-Chief stores project-level settings in `.chief/config.yaml`. This file is created automatically during first-time setup or when you change settings via the Settings TUI.
+Melliza stores project-level settings in `.melliza/config.yaml`. This file is created automatically during first-time setup or when you change settings via the Settings TUI.
 
 ### Format
 
@@ -59,58 +59,57 @@ Settings are organized by section:
 - **Worktree** — Setup command (string, editable inline)
 - **On Complete** — Push to remote (toggle), Create pull request (toggle)
 
-Changes are saved immediately to `.chief/config.yaml` on every edit.
+Changes are saved immediately to `.melliza/config.yaml` on every edit.
 
-When toggling "Create pull request" to Yes, Chief validates that the `gh` CLI is installed and authenticated. If validation fails, the toggle reverts and an error message is shown with installation instructions.
+When toggling "Create pull request" to Yes, Melliza validates that the `gh` CLI is installed and authenticated. If validation fails, the toggle reverts and an error message is shown with installation instructions.
 
 Navigate with `j`/`k` or arrow keys. Press `Enter` to toggle booleans or edit strings. Press `Esc` to close.
 
 ## First-Time Setup
 
-When you launch Chief for the first time in a project, you'll be prompted to configure:
+When you launch Melliza for the first time in a project, you'll be prompted to configure:
 
 1. **Post-completion settings** — Whether to automatically push branches and create PRs when a PRD completes
 2. **Worktree setup command** — A shell command to run in new worktrees (e.g., installing dependencies)
 
 For the setup command, you can:
-- **Let Claude figure it out** (Recommended) — Claude analyzes your project and suggests appropriate setup commands
+- **Let Gemini figure it out** (Recommended) — Gemini analyzes your project and suggests appropriate setup commands
 - **Enter manually** — Type a custom command
 - **Skip** — Leave it empty
 
-These settings are saved to `.chief/config.yaml` and can be changed at any time via the Settings TUI (`,`).
+These settings are saved to `.melliza/config.yaml` and can be changed at any time via the Settings TUI (`,`).
 
 ## CLI Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--max-iterations <n>`, `-n` | Loop iteration limit | Dynamic |
-| `--no-retry` | Disable auto-retry on Claude crashes | `false` |
-| `--verbose` | Show raw Claude output in log | `false` |
+| `--no-retry` | Disable auto-retry on Gemini crashes | `false` |
+| `--verbose` | Show raw Gemini output in log | `false` |
 | `--merge` | Auto-merge progress on conversion conflicts | `false` |
 | `--force` | Auto-overwrite on conversion conflicts | `false` |
 
-When `--max-iterations` is not specified, Chief calculates a dynamic limit based on the number of remaining stories plus a buffer. You can also adjust the limit at runtime with `+`/`-` in the TUI.
+When `--max-iterations` is not specified, Melliza calculates a dynamic limit based on the number of remaining stories plus a buffer. You can also adjust the limit at runtime with `+`/`-` in the TUI.
 
-## Claude Code Configuration
+## Gemini CLI Configuration
 
-Chief invokes Claude Code under the hood. Claude Code has its own configuration:
+Melliza invokes Gemini CLI under the hood. Gemini CLI requires an API key for authentication:
 
 ```bash
-# Authentication
-claude login
-
-# Model selection (if you have access)
-claude config set model claude-3-opus-20240229
+# Set your API key
+export GEMINI_API_KEY="your-api-key-here"
 ```
 
-See [Claude Code documentation](https://github.com/anthropics/claude-code) for details.
+You can also specify a specific model using the `--model` flag in your environment or via configuration.
+
+See [Gemini CLI documentation](https://github.com/google/gemini-cli) for details.
 
 ## Permission Handling
 
-By default, Claude Code asks for permission before executing bash commands, writing files, and making network requests. Chief automatically disables these prompts when invoking Claude to enable autonomous operation.
+By default, Gemini CLI asks for permission before executing bash commands, writing files, and making network requests. Melliza automatically disables these prompts when invoking Gemini to enable autonomous operation.
 
 ::: warning
-Chief runs Claude with full permissions to modify your codebase. Only run Chief on PRDs you trust.
+Melliza runs Gemini with full permissions to modify your codebase. Only run Melliza on PRDs you trust.
 
-For additional isolation, consider using [Claude Code's sandbox mode](https://docs.anthropic.com/en/docs/claude-code/sandboxing) or running Chief in a Docker container.
+For additional isolation, consider using [Gemini CLI's sandbox mode](https://docs.anthropic.com/en/docs/gemini-code/sandboxing) or running Melliza in a Docker container.
 :::

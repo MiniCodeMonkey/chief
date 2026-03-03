@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
 const (
@@ -118,7 +118,7 @@ func (a *App) getWorktreeInfo() (branch, dir string) {
 	branch = instance.Branch
 	if instance.WorktreeDir != "" {
 		// Convert absolute worktree path to relative for display
-		dir = fmt.Sprintf(".chief/worktrees/%s/", a.prdName)
+		dir = fmt.Sprintf(".melliza/worktrees/%s/", a.prdName)
 	} else {
 		dir = "./ (current directory)"
 	}
@@ -157,7 +157,7 @@ func (a *App) renderWorktreeInfoLine() string {
 // renderHeader renders the header with branding, state, iteration, and elapsed time.
 func (a *App) renderHeader() string {
 	// Branding
-	brand := headerStyle.Render("chief")
+	brand := headerStyle.Render("melliza")
 
 	// State indicator - use the centralized style system
 	stateStyle := GetStateStyle(a.state)
@@ -208,7 +208,7 @@ func (a *App) renderTabBar() string {
 // renderNarrowHeader renders a condensed header for narrow terminals.
 func (a *App) renderNarrowHeader() string {
 	// Branding
-	brand := headerStyle.Render("chief")
+	brand := headerStyle.Render("melliza")
 
 	// State indicator - use the centralized style system
 	stateStyle := GetStateStyle(a.state)
@@ -552,7 +552,7 @@ func (a *App) renderErrorPanel(width, height int) string {
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-4)))
 	content.WriteString("\n\n")
 	hintStyle := lipgloss.NewStyle().Foreground(WarningColor)
-	content.WriteString(hintStyle.Render("💡 Tip: Check claude.log in the PRD directory for full error details."))
+	content.WriteString(hintStyle.Render("💡 Tip: Check gemini.log in the PRD directory for full error details."))
 	content.WriteString("\n\n")
 
 	// Retry instructions
@@ -590,10 +590,10 @@ func (a *App) renderEmptyPRDPanel(width, height int) string {
 	content.WriteString("\n")
 	content.WriteString("• Press ")
 	content.WriteString(ShortcutKeyStyle.Render("e"))
-	content.WriteString(" to edit this PRD with Claude\n")
+	content.WriteString(" to edit this PRD with Gemini\n")
 	content.WriteString("• Press ")
 	content.WriteString(ShortcutKeyStyle.Render("n"))
-	content.WriteString(" to create a new PRD with Claude\n")
+	content.WriteString(" to create a new PRD with Gemini\n")
 	content.WriteString("\n")
 
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-4)))
@@ -793,7 +793,7 @@ func (a *App) renderDiffView() string {
 // renderDiffHeader renders the header for the diff view.
 func (a *App) renderDiffHeader() string {
 	// Branding
-	brand := headerStyle.Render("chief")
+	brand := headerStyle.Render("melliza")
 
 	// View indicator - show story ID if viewing a story-specific diff
 	viewLabel := "[Diff View]"
@@ -848,7 +848,7 @@ func (a *App) renderDiffHeader() string {
 
 // renderNarrowDiffHeader renders a condensed header for the diff view in narrow mode.
 func (a *App) renderNarrowDiffHeader() string {
-	brand := headerStyle.Render("chief")
+	brand := headerStyle.Render("melliza")
 
 	viewLabel := "[Diff]"
 	if a.diffViewer.storyID != "" {
@@ -909,7 +909,7 @@ func (a *App) renderLogView() string {
 // renderLogHeader renders the header for the log view.
 func (a *App) renderLogHeader() string {
 	// Branding
-	brand := headerStyle.Render("chief")
+	brand := headerStyle.Render("melliza")
 
 	// View indicator
 	viewIndicator := lipgloss.NewStyle().
@@ -949,7 +949,7 @@ func (a *App) renderLogHeader() string {
 // renderNarrowLogHeader renders a condensed header for the log view in narrow mode.
 func (a *App) renderNarrowLogHeader() string {
 	// Branding
-	brand := headerStyle.Render("chief")
+	brand := headerStyle.Render("melliza")
 
 	// Condensed view indicator
 	viewIndicator := lipgloss.NewStyle().

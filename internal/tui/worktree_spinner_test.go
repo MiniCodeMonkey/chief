@@ -7,13 +7,13 @@ import (
 
 func TestWorktreeSpinnerConfigure(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "")
 
 	if s.prdName != "auth" {
 		t.Errorf("expected prdName 'auth', got %q", s.prdName)
 	}
-	if s.branchName != "chief/auth" {
-		t.Errorf("expected branchName 'chief/auth', got %q", s.branchName)
+	if s.branchName != "melliza/auth" {
+		t.Errorf("expected branchName 'melliza/auth', got %q", s.branchName)
 	}
 	if s.defaultBranch != "main" {
 		t.Errorf("expected defaultBranch 'main', got %q", s.defaultBranch)
@@ -30,7 +30,7 @@ func TestWorktreeSpinnerConfigure(t *testing.T) {
 
 func TestWorktreeSpinnerConfigureWithSetup(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "npm install")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "npm install")
 
 	// With setup command, should have 3 steps
 	if len(s.steps) != 3 {
@@ -43,7 +43,7 @@ func TestWorktreeSpinnerConfigureWithSetup(t *testing.T) {
 
 func TestWorktreeSpinnerAdvanceStep(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "npm install")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "npm install")
 
 	// Initially at step 0
 	if s.GetCurrentStep() != SpinnerStepCreateBranch {
@@ -80,7 +80,7 @@ func TestWorktreeSpinnerAdvanceStep(t *testing.T) {
 
 func TestWorktreeSpinnerAdvanceStepSkipsSetup(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "")
 
 	// Advance past branch
 	s.AdvanceStep()
@@ -94,7 +94,7 @@ func TestWorktreeSpinnerAdvanceStepSkipsSetup(t *testing.T) {
 
 func TestWorktreeSpinnerSetError(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "")
 
 	s.SetError("branch already exists")
 
@@ -111,7 +111,7 @@ func TestWorktreeSpinnerSetError(t *testing.T) {
 
 func TestWorktreeSpinnerCancel(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "")
 
 	if s.IsCancelled() {
 		t.Error("should not be cancelled initially")
@@ -125,7 +125,7 @@ func TestWorktreeSpinnerCancel(t *testing.T) {
 
 func TestWorktreeSpinnerTick(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "")
 
 	if s.spinnerFrame != 0 {
 		t.Errorf("expected initial frame 0, got %d", s.spinnerFrame)
@@ -139,7 +139,7 @@ func TestWorktreeSpinnerTick(t *testing.T) {
 
 func TestWorktreeSpinnerRender(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "npm install")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "npm install")
 	s.SetSize(80, 24)
 
 	rendered := s.Render()
@@ -150,12 +150,12 @@ func TestWorktreeSpinnerRender(t *testing.T) {
 	}
 
 	// Should contain branch name
-	if !strings.Contains(rendered, "chief/auth") {
+	if !strings.Contains(rendered, "melliza/auth") {
 		t.Error("rendered output should contain branch name")
 	}
 
 	// Should contain worktree path
-	if !strings.Contains(rendered, ".chief/worktrees/auth/") {
+	if !strings.Contains(rendered, ".melliza/worktrees/auth/") {
 		t.Error("rendered output should contain worktree path")
 	}
 
@@ -172,7 +172,7 @@ func TestWorktreeSpinnerRender(t *testing.T) {
 
 func TestWorktreeSpinnerRenderComplete(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "")
 	s.SetSize(80, 24)
 
 	// Complete all steps
@@ -194,7 +194,7 @@ func TestWorktreeSpinnerRenderComplete(t *testing.T) {
 
 func TestWorktreeSpinnerRenderError(t *testing.T) {
 	s := NewWorktreeSpinner()
-	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "")
+	s.Configure("auth", "melliza/auth", "main", ".melliza/worktrees/auth/", "")
 	s.SetSize(80, 24)
 
 	s.SetError("branch already exists")

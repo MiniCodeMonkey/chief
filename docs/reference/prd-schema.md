@@ -1,5 +1,5 @@
 ---
-description: Complete prd.json schema reference for Chief. TypeScript interfaces, field types, and validation rules for PRD files.
+description: Complete prd.json schema reference for Melliza. TypeScript interfaces, field types, and validation rules for PRD files.
 ---
 
 # PRD Schema Reference
@@ -96,7 +96,7 @@ Full description of the story. User story format recommended but not required.
 
 ### acceptanceCriteria
 
-Array of strings, each describing a requirement. Claude uses these to know when the story is complete.
+Array of strings, each describing a requirement. Gemini uses these to know when the story is complete.
 
 **Guidelines:**
 - Specific and testable
@@ -105,29 +105,29 @@ Array of strings, each describing a requirement. Claude uses these to know when 
 
 ### priority
 
-Lower numbers = higher priority. Chief always picks the incomplete story with the lowest priority number first.
+Lower numbers = higher priority. Melliza always picks the incomplete story with the lowest priority number first.
 
 **Range:** Positive integers, typically 1-100
 
 ### passes
 
-Boolean indicating if the story is complete. Chief updates this automatically.
+Boolean indicating if the story is complete. Melliza updates this automatically.
 
 **Default:** `false`
 
 ### inProgress
 
-Boolean indicating if Claude is currently working on this story.
+Boolean indicating if Gemini is currently working on this story.
 
 **Default:** `false`
 
 ## Validation
 
-Chief validates `prd.json` on startup:
+Melliza validates `prd.json` on startup:
 
 - All required fields must be present
 - `userStories` must be non-empty
 - Each story must have unique `id`
 - `priority` must be a positive number
 
-Invalid PRDs cause Chief to exit with an error message.
+Invalid PRDs cause Melliza to exit with an error message.

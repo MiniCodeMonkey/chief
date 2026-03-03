@@ -5,19 +5,19 @@ import path from 'node:path'
 
 export default defineConfig({
   base: '/',
-  title: 'Chief',
-  description: 'Autonomous PRD Agent — Write a PRD, run Chief, watch your code get built.',
+  title: 'Melliza',
+  description: 'Autonomous PRD Agent — Write a PRD, run Melliza, watch your code get built.',
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],
     ['meta', { property: 'og:type', content: 'website' }],
-    ['meta', { property: 'og:site_name', content: 'Chief' }],
-    ['meta', { property: 'og:title', content: 'Chief — Autonomous PRD Agent' }],
-    ['meta', { property: 'og:description', content: 'Write a PRD, run Chief, watch your code get built. An autonomous agent that transforms product requirements into working code.' }],
-    ['meta', { property: 'og:image', content: 'https://chiefloop.com/images/og-default.png' }],
+    ['meta', { property: 'og:site_name', content: 'Melliza' }],
+    ['meta', { property: 'og:title', content: 'Melliza — Autonomous PRD Agent' }],
+    ['meta', { property: 'og:description', content: 'Write a PRD, run Melliza, watch your code get built. An autonomous agent that transforms product requirements into working code.' }],
+    ['meta', { property: 'og:image', content: 'https://melliza.dev/images/og-default.png' }],
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
-    ['meta', { name: 'twitter:title', content: 'Chief — Autonomous PRD Agent' }],
-    ['meta', { name: 'twitter:description', content: 'Write a PRD, run Chief, watch your code get built. An autonomous agent that transforms product requirements into working code.' }],
-    ['meta', { name: 'twitter:image', content: 'https://chiefloop.com/images/og-default.png' }],
+    ['meta', { name: 'twitter:title', content: 'Melliza — Autonomous PRD Agent' }],
+    ['meta', { name: 'twitter:description', content: 'Write a PRD, run Melliza, watch your code get built. An autonomous agent that transforms product requirements into working code.' }],
+    ['meta', { name: 'twitter:image', content: 'https://melliza.dev/images/og-default.png' }],
   ],
 
   // Force dark mode only
@@ -47,16 +47,16 @@ export default defineConfig({
   },
 
   themeConfig: {
-    siteTitle: 'Chief',
+    siteTitle: 'Melliza',
 
     nav: [
       { text: 'Home', link: '/' },
       { text: 'Docs', link: '/guide/quick-start' },
-      { text: 'GitHub', link: 'https://github.com/minicodemonkey/chief' }
+      { text: 'GitHub', link: 'https://github.com/lvcoi/melliza' }
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/minicodemonkey/chief' }
+      { icon: 'github', link: 'https://github.com/lvcoi/melliza' }
     ],
 
     search: {
@@ -74,10 +74,10 @@ export default defineConfig({
       {
         text: 'Concepts',
         items: [
-          { text: 'How Chief Works', link: '/concepts/how-it-works' },
+          { text: 'How Melliza Works', link: '/concepts/how-it-works' },
           { text: 'The Ralph Loop', link: '/concepts/ralph-loop' },
           { text: 'PRD Format', link: '/concepts/prd-format' },
-          { text: 'The .chief Directory', link: '/concepts/chief-directory' }
+          { text: 'The .melliza Directory', link: '/concepts/melliza-directory' }
         ]
       },
       {

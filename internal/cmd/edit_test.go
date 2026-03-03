@@ -19,11 +19,11 @@ func TestRunEditRequiresPRDExists(t *testing.T) {
 		t.Error("Expected error for non-existent PRD")
 	}
 
-	// Error message should suggest using chief new
+	// Error message should suggest using melliza new
 	if err != nil {
 		errStr := err.Error()
-		if !contains(errStr, "chief new") {
-			t.Errorf("Error should suggest chief new, got: %s", errStr)
+		if !contains(errStr, "melliza new") {
+			t.Errorf("Error should suggest melliza new, got: %s", errStr)
 		}
 	}
 }
@@ -46,7 +46,7 @@ func TestRunEditDefaultsToMain(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create main prd.md
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", "main")
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", "main")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
@@ -61,13 +61,13 @@ func TestRunEditDefaultsToMain(t *testing.T) {
 		BaseDir: tmpDir,
 	}
 
-	// We can't fully test RunEdit without Claude, but we can verify
+	// We can't fully test RunEdit without Gemini, but we can verify
 	// the name defaulting logic by checking if it would find the file
 	if opts.Name == "" {
 		opts.Name = "main"
 	}
 
-	prdPath := filepath.Join(tmpDir, ".chief", "prds", opts.Name, "prd.md")
+	prdPath := filepath.Join(tmpDir, ".melliza", "prds", opts.Name, "prd.md")
 	if _, err := os.Stat(prdPath); os.IsNotExist(err) {
 		t.Error("Expected default name 'main' to resolve to existing prd.md")
 	}

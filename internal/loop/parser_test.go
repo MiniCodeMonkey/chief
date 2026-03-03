@@ -97,11 +97,11 @@ func TestParseLineAssistantText(t *testing.T) {
 	}
 }
 
-func TestParseLineChiefComplete(t *testing.T) {
+func TestParseLineMellizaComplete(t *testing.T) {
 	tests := []string{
-		`{"type":"assistant","message":{"content":[{"type":"text","text":"All stories complete! <chief-complete/>"}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"text","text":"<chief-complete/>"}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"text","text":"Done\n<chief-complete/>\nGoodbye"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"All stories complete! <melliza-complete/>"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"<melliza-complete/>"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Done\n<melliza-complete/>\nGoodbye"}]}}`,
 	}
 
 	for _, line := range tests {
@@ -195,8 +195,8 @@ func TestParseLineEmptyContent(t *testing.T) {
 }
 
 func TestParseLineRealWorldSystemInit(t *testing.T) {
-	// Real example from Claude output
-	line := `{"type":"system","subtype":"init","cwd":"/Users/codemonkey/projects/chief","session_id":"7cdf33f6-72ec-4c0e-94fb-e2b637e109da","tools":["Task","Bash","Read"],"model":"claude-opus-4-5-20251101","permissionMode":"default"}`
+	// Real example from Gemini output
+	line := `{"type":"system","subtype":"init","cwd":"/Users/codemonkey/projects/melliza","session_id":"7cdf33f6-72ec-4c0e-94fb-e2b637e109da","tools":["Task","Bash","Read"],"model":"gemini-opus-4-5-20251101","permissionMode":"default"}`
 
 	event := ParseLine(line)
 	if event == nil {
@@ -208,8 +208,8 @@ func TestParseLineRealWorldSystemInit(t *testing.T) {
 }
 
 func TestParseLineRealWorldToolUse(t *testing.T) {
-	// Real example from Claude output
-	line := `{"type":"assistant","message":{"model":"claude-opus-4-5-20251101","id":"msg_01XPBzHqPaCuQMUFm77eHe4D","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_01MiR5Ps9inHigemS2gxEz5R","name":"Read","input":{"file_path":"/Users/codemonkey/projects/chief/go.mod"}}]}}`
+	// Real example from Gemini output
+	line := `{"type":"assistant","message":{"model":"gemini-opus-4-5-20251101","id":"msg_01XPBzHqPaCuQMUFm77eHe4D","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_01MiR5Ps9inHigemS2gxEz5R","name":"Read","input":{"file_path":"/Users/codemonkey/projects/melliza/go.mod"}}]}}`
 
 	event := ParseLine(line)
 	if event == nil {

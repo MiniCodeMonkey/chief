@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/minicodemonkey/chief/internal/loop"
+	"github.com/lvcoi/melliza/internal/loop"
 )
 
 func TestRenderEntryWithBranchAndWorktree(t *testing.T) {
@@ -20,8 +20,8 @@ func TestRenderEntryWithBranchAndWorktree(t *testing.T) {
 				Completed:   8,
 				Total:       8,
 				LoopState:   loop.LoopStateComplete,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 	}
@@ -31,11 +31,11 @@ func TestRenderEntryWithBranchAndWorktree(t *testing.T) {
 		t.Fatal("expected non-empty render result")
 	}
 	// Should contain branch name
-	if !containsText(result, "chief/auth") {
-		t.Errorf("expected branch 'chief/auth' in output, got: %s", result)
+	if !containsText(result, "melliza/auth") {
+		t.Errorf("expected branch 'melliza/auth' in output, got: %s", result)
 	}
 	// Should contain worktree path
-	if !containsText(result, ".chief/worktrees/auth/") {
+	if !containsText(result, ".melliza/worktrees/auth/") {
 		t.Errorf("expected worktree path in output, got: %s", result)
 	}
 }
@@ -61,7 +61,7 @@ func TestRenderEntryNoBranch(t *testing.T) {
 		t.Fatal("expected non-empty render result")
 	}
 	// Should NOT contain branch brackets
-	if containsText(result, "chief/") {
+	if containsText(result, "melliza/") {
 		t.Errorf("expected no branch in output when branch is empty, got: %s", result)
 	}
 }
@@ -83,8 +83,8 @@ func TestRenderEntryNoBranchOmitsCurrentDirectoryLabel(t *testing.T) {
 				Completed:   8,
 				Total:       8,
 				LoopState:   loop.LoopStateComplete,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 	}
@@ -106,8 +106,8 @@ func TestRenderEntryNarrowTerminalOmitsBranchPath(t *testing.T) {
 				Completed:   8,
 				Total:       8,
 				LoopState:   loop.LoopStateComplete,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 	}
@@ -118,7 +118,7 @@ func TestRenderEntryNarrowTerminalOmitsBranchPath(t *testing.T) {
 		t.Fatal("expected non-empty render result even at narrow width")
 	}
 	// At 35 chars wide, remaining space (35-32=3) is too small for branch info
-	if containsText(result, "chief/auth") {
+	if containsText(result, "melliza/auth") {
 		t.Errorf("expected branch to be omitted at narrow width, got: %s", result)
 	}
 }
@@ -126,8 +126,8 @@ func TestRenderEntryNarrowTerminalOmitsBranchPath(t *testing.T) {
 func TestFormatBranchPathFull(t *testing.T) {
 	p := &PRDPicker{}
 
-	result := p.formatBranchPath("chief/auth", ".chief/worktrees/auth/", 50)
-	expected := "  chief/auth  .chief/worktrees/auth/"
+	result := p.formatBranchPath("melliza/auth", ".melliza/worktrees/auth/", 50)
+	expected := "  melliza/auth  .melliza/worktrees/auth/"
 	if result != expected {
 		t.Errorf("expected %q, got %q", expected, result)
 	}
@@ -136,9 +136,9 @@ func TestFormatBranchPathFull(t *testing.T) {
 func TestFormatBranchPathTruncatesPath(t *testing.T) {
 	p := &PRDPicker{}
 
-	result := p.formatBranchPath("chief/auth", ".chief/worktrees/auth/", 30)
+	result := p.formatBranchPath("melliza/auth", ".melliza/worktrees/auth/", 30)
 	// Should contain branch but path should be truncated with …
-	if !containsSubstring(result, "chief/auth") {
+	if !containsSubstring(result, "melliza/auth") {
 		t.Errorf("expected branch in truncated output, got: %s", result)
 	}
 	runeCount := utf8.RuneCountInString(result)
@@ -151,7 +151,7 @@ func TestFormatBranchPathTruncatesBranch(t *testing.T) {
 	p := &PRDPicker{}
 
 	// Very small width — only room for branch (truncated)
-	result := p.formatBranchPath("chief/very-long-branch-name", ".chief/worktrees/auth/", 15)
+	result := p.formatBranchPath("melliza/very-long-branch-name", ".melliza/worktrees/auth/", 15)
 	runeCount := utf8.RuneCountInString(result)
 	if runeCount > 15 {
 		t.Errorf("expected result to fit within 15 display chars, got %d: %s", runeCount, result)
@@ -161,10 +161,10 @@ func TestFormatBranchPathTruncatesBranch(t *testing.T) {
 func TestWorktreeDisplayPathWithWorktree(t *testing.T) {
 	p := &PRDPicker{basePath: "/project"}
 
-	entry := PRDEntry{WorktreeDir: "/project/.chief/worktrees/auth"}
+	entry := PRDEntry{WorktreeDir: "/project/.melliza/worktrees/auth"}
 	result := p.worktreeDisplayPath(entry)
-	if result != ".chief/worktrees/auth/" {
-		t.Errorf("expected '.chief/worktrees/auth/', got %q", result)
+	if result != ".melliza/worktrees/auth/" {
+		t.Errorf("expected '.melliza/worktrees/auth/', got %q", result)
 	}
 }
 
@@ -185,8 +185,8 @@ func TestRenderEntryWithLoadError(t *testing.T) {
 			{
 				Name:        "broken",
 				LoadError:   fmt.Errorf("parse error"),
-				Branch:      "chief/broken",
-				WorktreeDir: "/project/.chief/worktrees/broken",
+				Branch:      "melliza/broken",
+				WorktreeDir: "/project/.melliza/worktrees/broken",
 			},
 		},
 	}
@@ -207,7 +207,7 @@ func TestCanMergeCompletedWithBranch(t *testing.T) {
 				Completed: 8,
 				Total:     8,
 				LoopState: loop.LoopStateComplete,
-				Branch:    "chief/auth",
+				Branch:    "melliza/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -245,7 +245,7 @@ func TestCanMergeRunningPRD(t *testing.T) {
 				Completed: 3,
 				Total:     8,
 				LoopState: loop.LoopStateRunning,
-				Branch:    "chief/auth",
+				Branch:    "melliza/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -265,7 +265,7 @@ func TestCanMergeAllPassedButNotCompleteState(t *testing.T) {
 				Completed: 5,
 				Total:     5,
 				LoopState: loop.LoopStateReady,
-				Branch:    "chief/auth",
+				Branch:    "melliza/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -281,12 +281,12 @@ func TestMergeResultSuccessRendering(t *testing.T) {
 		width:    80,
 		height:   24,
 		entries: []PRDEntry{
-			{Name: "auth", Branch: "chief/auth"},
+			{Name: "auth", Branch: "melliza/auth"},
 		},
 		mergeResult: &MergeResult{
 			Success: true,
-			Message: "Merged chief/auth into main",
-			Branch:  "chief/auth",
+			Message: "Merged melliza/auth into main",
+			Branch:  "melliza/auth",
 		},
 	}
 
@@ -294,7 +294,7 @@ func TestMergeResultSuccessRendering(t *testing.T) {
 	if !containsText(result, "Merge Successful") {
 		t.Errorf("expected 'Merge Successful' in success render, got: %s", stripAnsi(result))
 	}
-	if !containsText(result, "Merged chief/auth into main") {
+	if !containsText(result, "Merged melliza/auth into main") {
 		t.Errorf("expected merge message in output, got: %s", stripAnsi(result))
 	}
 	if !containsText(result, "Press any key to continue") {
@@ -308,13 +308,13 @@ func TestMergeResultConflictRendering(t *testing.T) {
 		width:    80,
 		height:   24,
 		entries: []PRDEntry{
-			{Name: "auth", Branch: "chief/auth"},
+			{Name: "auth", Branch: "melliza/auth"},
 		},
 		mergeResult: &MergeResult{
 			Success:   false,
-			Message:   "Failed to merge chief/auth into current branch",
+			Message:   "Failed to merge melliza/auth into current branch",
 			Conflicts: []string{"src/auth.go", "src/handler.go"},
-			Branch:    "chief/auth",
+			Branch:    "melliza/auth",
 		},
 	}
 
@@ -328,7 +328,7 @@ func TestMergeResultConflictRendering(t *testing.T) {
 	if !containsText(result, "src/handler.go") {
 		t.Errorf("expected conflicting file in output, got: %s", stripAnsi(result))
 	}
-	if !containsText(result, "git merge chief/auth") {
+	if !containsText(result, "git merge melliza/auth") {
 		t.Errorf("expected manual merge instruction in output, got: %s", stripAnsi(result))
 	}
 }
@@ -339,7 +339,7 @@ func TestMergeResultClearsOnDismiss(t *testing.T) {
 		mergeResult: &MergeResult{
 			Success: true,
 			Message: "Merged",
-			Branch:  "chief/auth",
+			Branch:  "melliza/auth",
 		},
 	}
 
@@ -363,7 +363,7 @@ func TestFooterShowsMergeHintForCompletedPRD(t *testing.T) {
 				Completed: 8,
 				Total:     8,
 				LoopState: loop.LoopStateComplete,
-				Branch:    "chief/auth",
+				Branch:    "melliza/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -385,7 +385,7 @@ func TestFooterHidesMergeHintForRunningPRD(t *testing.T) {
 				Total:     8,
 				LoopState: loop.LoopStateRunning,
 				Iteration: 2,
-				Branch:    "chief/auth",
+				Branch:    "melliza/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -408,8 +408,8 @@ func TestCanCleanNonRunningWithWorktree(t *testing.T) {
 				Completed:   8,
 				Total:       8,
 				LoopState:   loop.LoopStateComplete,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -428,8 +428,8 @@ func TestCanCleanDisabledForRunningPRD(t *testing.T) {
 				Completed:   3,
 				Total:       8,
 				LoopState:   loop.LoopStateRunning,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -448,7 +448,7 @@ func TestCanCleanDisabledWithoutWorktree(t *testing.T) {
 				Completed: 8,
 				Total:     8,
 				LoopState: loop.LoopStateComplete,
-				Branch:    "chief/auth",
+				Branch:    "melliza/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -467,8 +467,8 @@ func TestCanCleanStoppedPRD(t *testing.T) {
 				Completed:   3,
 				Total:       8,
 				LoopState:   loop.LoopStateStopped,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -487,8 +487,8 @@ func TestCleanConfirmationDialog(t *testing.T) {
 				Completed:   8,
 				Total:       8,
 				LoopState:   loop.LoopStateComplete,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -505,8 +505,8 @@ func TestCleanConfirmationDialog(t *testing.T) {
 	if cc.EntryName != "auth" {
 		t.Errorf("expected EntryName 'auth', got %q", cc.EntryName)
 	}
-	if cc.Branch != "chief/auth" {
-		t.Errorf("expected Branch 'chief/auth', got %q", cc.Branch)
+	if cc.Branch != "melliza/auth" {
+		t.Errorf("expected Branch 'melliza/auth', got %q", cc.Branch)
 	}
 	if cc.SelectedIdx != 0 {
 		t.Errorf("expected SelectedIdx 0, got %d", cc.SelectedIdx)
@@ -524,8 +524,8 @@ func TestCleanConfirmationNavigation(t *testing.T) {
 		entries: []PRDEntry{
 			{
 				Name:        "auth",
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -563,8 +563,8 @@ func TestCleanConfirmationCancel(t *testing.T) {
 		entries: []PRDEntry{
 			{
 				Name:        "auth",
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -593,8 +593,8 @@ func TestCleanConfirmationRendering(t *testing.T) {
 				Completed:   8,
 				Total:       8,
 				LoopState:   loop.LoopStateComplete,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -610,8 +610,8 @@ func TestCleanConfirmationRendering(t *testing.T) {
 	if !containsText(result, "auth") {
 		t.Errorf("expected PRD name 'auth' in render, got: %s", stripped)
 	}
-	if !containsText(result, "chief/auth") {
-		t.Errorf("expected branch 'chief/auth' in render, got: %s", stripped)
+	if !containsText(result, "melliza/auth") {
+		t.Errorf("expected branch 'melliza/auth' in render, got: %s", stripped)
 	}
 	if !containsText(result, "Remove worktree + delete branch") {
 		t.Errorf("expected option text in render, got: %s", stripped)
@@ -634,7 +634,7 @@ func TestCleanResultSuccessRendering(t *testing.T) {
 		},
 		cleanResult: &CleanResult{
 			Success: true,
-			Message: "Removed worktree and deleted branch chief/auth",
+			Message: "Removed worktree and deleted branch melliza/auth",
 		},
 	}
 
@@ -642,7 +642,7 @@ func TestCleanResultSuccessRendering(t *testing.T) {
 	if !containsText(result, "Clean Successful") {
 		t.Errorf("expected 'Clean Successful' in success render, got: %s", stripAnsi(result))
 	}
-	if !containsText(result, "Removed worktree and deleted branch chief/auth") {
+	if !containsText(result, "Removed worktree and deleted branch melliza/auth") {
 		t.Errorf("expected clean message in output, got: %s", stripAnsi(result))
 	}
 	if !containsText(result, "Press any key to continue") {
@@ -702,8 +702,8 @@ func TestFooterShowsCleanHintForNonRunningPRDWithWorktree(t *testing.T) {
 				Completed:   8,
 				Total:       8,
 				LoopState:   loop.LoopStateComplete,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -725,8 +725,8 @@ func TestFooterHidesCleanHintForRunningPRD(t *testing.T) {
 				Total:       8,
 				LoopState:   loop.LoopStateRunning,
 				Iteration:   2,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -747,7 +747,7 @@ func TestFooterHidesCleanHintForPRDWithoutWorktree(t *testing.T) {
 				Completed: 8,
 				Total:     8,
 				LoopState: loop.LoopStateComplete,
-				Branch:    "chief/auth",
+				Branch:    "melliza/auth",
 			},
 		},
 		selectedIndex: 0,
@@ -771,8 +771,8 @@ func TestRenderEntryOrphanedWithPRD(t *testing.T) {
 				Completed:   8,
 				Total:       8,
 				LoopState:   loop.LoopStateComplete,
-				Branch:      "chief/auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				Branch:      "melliza/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 				Orphaned:    true,
 			},
 		},
@@ -795,7 +795,7 @@ func TestRenderEntryOrphanedWithoutPRD(t *testing.T) {
 		entries: []PRDEntry{
 			{
 				Name:        "stale-project",
-				WorktreeDir: "/project/.chief/worktrees/stale-project",
+				WorktreeDir: "/project/.melliza/worktrees/stale-project",
 				Orphaned:    true,
 				LoadError:   fmt.Errorf("orphaned worktree (no prd.json)"),
 			},
@@ -814,7 +814,7 @@ func TestCanCleanOrphanedWorktree(t *testing.T) {
 		entries: []PRDEntry{
 			{
 				Name:        "auth",
-				WorktreeDir: "/project/.chief/worktrees/auth",
+				WorktreeDir: "/project/.melliza/worktrees/auth",
 				Orphaned:    true,
 				LoopState:   loop.LoopStateReady,
 			},
@@ -833,7 +833,7 @@ func TestOrphanedWorktreeNotTracked(t *testing.T) {
 		entries: []PRDEntry{
 			{
 				Name:        "stale",
-				WorktreeDir: "/project/.chief/worktrees/stale",
+				WorktreeDir: "/project/.melliza/worktrees/stale",
 				Orphaned:    true,
 				LoopState:   loop.LoopStateReady,
 				LoadError:   fmt.Errorf("orphaned worktree (no prd.json)"),
@@ -850,9 +850,9 @@ func TestOrphanedWorktreeNotTracked(t *testing.T) {
 
 func TestRefreshIgnoresEmptyDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
+	prdsDir := filepath.Join(tmpDir, ".melliza", "prds")
 
-	// Create an empty directory (simulates cancelled chief new)
+	// Create an empty directory (simulates cancelled melliza new)
 	emptyDir := filepath.Join(prdsDir, "cancelled")
 	if err := os.MkdirAll(emptyDir, 0755); err != nil {
 		t.Fatalf("Failed to create empty dir: %v", err)
@@ -871,7 +871,7 @@ func TestRefreshIgnoresEmptyDirectories(t *testing.T) {
 
 func TestRefreshShowsDirectoryWithPrdMdOnly(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
+	prdsDir := filepath.Join(tmpDir, ".melliza", "prds")
 
 	// Create directory with only prd.md (no json yet)
 	prdDir := filepath.Join(prdsDir, "in-progress")
@@ -898,7 +898,7 @@ func TestRefreshShowsDirectoryWithPrdMdOnly(t *testing.T) {
 
 func TestRefreshShowsDirectoryWithPrdJsonOnly(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
+	prdsDir := filepath.Join(tmpDir, ".melliza", "prds")
 
 	// Create directory with only prd.json
 	prdDir := filepath.Join(prdsDir, "converted")
@@ -926,7 +926,7 @@ func TestRefreshShowsDirectoryWithPrdJsonOnly(t *testing.T) {
 
 func TestRefreshMixedDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
+	prdsDir := filepath.Join(tmpDir, ".melliza", "prds")
 
 	// Empty directory (should be filtered)
 	if err := os.MkdirAll(filepath.Join(prdsDir, "empty"), 0755); err != nil {

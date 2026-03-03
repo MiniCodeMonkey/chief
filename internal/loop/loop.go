@@ -1,7 +1,7 @@
-// Package loop provides the core agent loop that orchestrates Claude Code
+// Package loop provides the core agent loop that orchestrates Gemini Code
 // to implement user stories. It includes the main Loop struct for single
 // PRD execution, Manager for parallel PRD execution, and Parser for
-// processing Claude's stream-json output.
+// processing Gemini's stream-json output.
 package loop
 
 import (
@@ -16,11 +16,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/minicodemonkey/chief/embed"
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/embed"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
-// RetryConfig configures automatic retry behavior on Claude crashes.
+// RetryConfig configures automatic retry behavior on Gemini crashes.
 type RetryConfig struct {
 	MaxRetries  int           // Maximum number of retry attempts (default: 3)
 	RetryDelays []time.Duration // Delays between retries (default: 0s, 5s, 15s)
@@ -39,7 +39,7 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
-// Loop manages the core agent loop that invokes Claude repeatedly until all stories are complete.
+// Loop manages the core agent loop that invokes Gemini repeatedly until all stories are complete.
 type Loop struct {
 	prdPath      string
 	workDir      string
@@ -48,7 +48,7 @@ type Loop struct {
 	maxIter      int
 	iteration    int
 	events       chan Event
-	claudeCmd    *exec.Cmd
+	geminiCmd    *exec.Cmd
 	logFile      *os.File
 	mu               sync.Mutex
 	stopped          bool
@@ -129,7 +129,7 @@ func (l *Loop) Iteration() int {
 func (l *Loop) Run(ctx context.Context) error {
 	// Open log file in PRD directory
 	prdDir := filepath.Dir(l.prdPath)
-	logPath := filepath.Join(prdDir, "claude.log")
+	logPath := filepath.Join(prdDir, "gemini.log")
 	var err error
 	l.logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
@@ -256,7 +256,7 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 				Iteration:  iter,
 				RetryCount: attempt,
 				RetryMax:   config.MaxRetries,
-				Text:       fmt.Sprintf("Claude crashed, retrying (%d/%d)...", attempt, config.MaxRetries),
+				Text:       fmt.Sprintf("Gemini crashed, retrying (%d/%d)...", attempt, config.MaxRetries),
 			}
 
 			// Wait before retry
@@ -302,37 +302,36 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 	return fmt.Errorf("max retries (%d) exceeded: %w", config.MaxRetries, lastErr)
 }
 
-// runIteration spawns Claude and processes its output.
+// runIteration spawns Gemini and processes its output.
 func (l *Loop) runIteration(ctx context.Context) error {
-	// Build Claude command with required flags
+	// Build Gemini command with required flags
 	l.mu.Lock()
-	l.claudeCmd = exec.CommandContext(ctx, "claude",
-		"--dangerously-skip-permissions",
+	l.geminiCmd = exec.CommandContext(ctx, "gemini",
+		"-y",
 		"-p", l.prompt,
 		"--output-format", "stream-json",
-		"--verbose",
 	)
 	// Set working directory: use workDir if configured, otherwise default to PRD directory
-	l.claudeCmd.Dir = l.effectiveWorkDir()
+	l.geminiCmd.Dir = l.effectiveWorkDir()
 	// Initialize watchdog state
 	l.lastOutputTime = time.Now()
 	watchdogTimeout := l.watchdogTimeout
 	l.mu.Unlock()
 
 	// Create pipes for stdout and stderr
-	stdout, err := l.claudeCmd.StdoutPipe()
+	stdout, err := l.geminiCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
-	stderr, err := l.claudeCmd.StderrPipe()
+	stderr, err := l.geminiCmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	// Start the command
-	if err := l.claudeCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start Claude: %w", err)
+	if err := l.geminiCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start Gemini: %w", err)
 	}
 
 	// Start watchdog goroutine to detect hung processes
@@ -364,7 +363,7 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	close(watchdogDone)
 
 	// Wait for the command to finish
-	if err := l.claudeCmd.Wait(); err != nil {
+	if err := l.geminiCmd.Wait(); err != nil {
 		// If the context was cancelled, don't treat it as an error
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -380,11 +379,11 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		if watchdogFired.Load() {
 			return fmt.Errorf("watchdog timeout: no output for %s", watchdogTimeout)
 		}
-		return fmt.Errorf("Claude exited with error: %w", err)
+		return fmt.Errorf("Gemini exited with error: %w", err)
 	}
 
 	l.mu.Lock()
-	l.claudeCmd = nil
+	l.geminiCmd = nil
 	l.mu.Unlock()
 
 	return nil
@@ -431,8 +430,8 @@ func (l *Loop) runWatchdog(timeout time.Duration, done <-chan struct{}, fired *a
 
 				// Kill the process
 				l.mu.Lock()
-				if l.claudeCmd != nil && l.claudeCmd.Process != nil {
-					l.claudeCmd.Process.Kill()
+				if l.geminiCmd != nil && l.geminiCmd.Process != nil {
+					l.geminiCmd.Process.Kill()
 				}
 				l.mu.Unlock()
 				return
@@ -446,7 +445,7 @@ func (l *Loop) runWatchdog(timeout time.Duration, done <-chan struct{}, fired *a
 // processOutput reads stdout line by line, logs it, and parses events.
 func (l *Loop) processOutput(r io.Reader) {
 	scanner := bufio.NewScanner(r)
-	// Increase buffer size for long lines (Claude can output large JSON)
+	// Increase buffer size for long lines (Gemini can output large JSON)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
@@ -486,16 +485,16 @@ func (l *Loop) logLine(line string) {
 	}
 }
 
-// Stop terminates the current Claude process and stops the loop.
+// Stop terminates the current Gemini process and stops the loop.
 func (l *Loop) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	l.stopped = true
 
-	if l.claudeCmd != nil && l.claudeCmd.Process != nil {
+	if l.geminiCmd != nil && l.geminiCmd.Process != nil {
 		// Kill the process
-		l.claudeCmd.Process.Kill()
+		l.geminiCmd.Process.Kill()
 	}
 }
 
@@ -527,7 +526,7 @@ func (l *Loop) IsStopped() bool {
 	return l.stopped
 }
 
-// effectiveWorkDir returns the working directory to use for Claude.
+// effectiveWorkDir returns the working directory to use for Gemini.
 // If workDir is set, it is used directly. Otherwise, defaults to the PRD directory.
 func (l *Loop) effectiveWorkDir() string {
 	if l.workDir != "" {
@@ -536,11 +535,11 @@ func (l *Loop) effectiveWorkDir() string {
 	return filepath.Dir(l.prdPath)
 }
 
-// IsRunning returns whether a Claude process is currently running.
+// IsRunning returns whether a Gemini process is currently running.
 func (l *Loop) IsRunning() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.claudeCmd != nil && l.claudeCmd.Process != nil
+	return l.geminiCmd != nil && l.geminiCmd.Process != nil
 }
 
 // SetMaxIterations updates the maximum iterations limit.

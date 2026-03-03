@@ -1,4 +1,4 @@
-// Package tui provides the terminal user interface for Chief.
+// Package tui provides the terminal user interface for Melliza.
 // It includes the main Bubble Tea application, dashboard views,
 // log viewer, PRD picker, help overlay, and consistent styling.
 package tui

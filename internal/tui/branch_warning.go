@@ -32,7 +32,7 @@ const (
 // dialogOption represents a single option in the dialog.
 type dialogOption struct {
 	label       string              // Display label
-	hint        string              // Path hint (e.g., ".chief/worktrees/auth/")
+	hint        string              // Path hint (e.g., ".melliza/worktrees/auth/")
 	recommended bool                // Whether this is the recommended option
 	option      BranchWarningOption // The option value this maps to
 }
@@ -43,7 +43,7 @@ type BranchWarning struct {
 	height        int
 	currentBranch string
 	prdName       string
-	worktreePath  string // Relative worktree path (e.g., ".chief/worktrees/auth/")
+	worktreePath  string // Relative worktree path (e.g., ".melliza/worktrees/auth/")
 	selectedIndex int
 	editMode      bool   // Whether we're editing the branch name
 	branchName    string // The current branch name (editable)
@@ -68,7 +68,7 @@ func (b *BranchWarning) SetSize(width, height int) {
 func (b *BranchWarning) SetContext(currentBranch, prdName, worktreePath string) {
 	b.currentBranch = currentBranch
 	b.prdName = prdName
-	b.branchName = fmt.Sprintf("chief/%s", prdName)
+	b.branchName = fmt.Sprintf("melliza/%s", prdName)
 	b.worktreePath = worktreePath
 }
 
@@ -179,7 +179,7 @@ func (b *BranchWarning) GetDialogContext() DialogContext {
 func (b *BranchWarning) Reset() {
 	b.selectedIndex = 0
 	b.editMode = false
-	b.branchName = fmt.Sprintf("chief/%s", b.prdName)
+	b.branchName = fmt.Sprintf("melliza/%s", b.prdName)
 }
 
 // IsEditMode returns true if the branch name is being edited.
@@ -311,7 +311,7 @@ func (b *BranchWarning) renderHeader(content *strings.Builder, modalWidth int) {
 		content.WriteString("\n\n")
 
 		messageStyle := lipgloss.NewStyle().Foreground(TextColor)
-		content.WriteString(messageStyle.Render("Choose where Claude should work:"))
+		content.WriteString(messageStyle.Render("Choose where Gemini should work:"))
 		content.WriteString("\n\n")
 	}
 }

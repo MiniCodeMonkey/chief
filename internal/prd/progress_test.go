@@ -257,8 +257,8 @@ func TestParseProgress_PreservesRawMarkdown(t *testing.T) {
 }
 
 func TestProgressPath(t *testing.T) {
-	got := ProgressPath("/foo/bar/.chief/prds/my-prd/prd.json")
-	want := "/foo/bar/.chief/prds/my-prd/progress.md"
+	got := ProgressPath("/foo/bar/.melliza/prds/my-prd/prd.json")
+	want := "/foo/bar/.melliza/prds/my-prd/progress.md"
 	if got != want {
 		t.Errorf("ProgressPath() = %q, want %q", got, want)
 	}

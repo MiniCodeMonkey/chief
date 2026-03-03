@@ -5,13 +5,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
 // StatusOptions contains configuration for the status command.
 type StatusOptions struct {
 	Name    string // PRD name (default: "main")
-	BaseDir string // Base directory for .chief/prds/ (default: current directory)
+	BaseDir string // Base directory for .melliza/prds/ (default: current directory)
 }
 
 // RunStatus prints progress for a PRD.
@@ -30,7 +30,7 @@ func RunStatus(opts StatusOptions) error {
 	}
 
 	// Build PRD path
-	prdPath := filepath.Join(opts.BaseDir, ".chief", "prds", opts.Name, "prd.json")
+	prdPath := filepath.Join(opts.BaseDir, ".melliza", "prds", opts.Name, "prd.json")
 
 	// Load PRD
 	p, err := prd.LoadPRD(prdPath)
@@ -80,7 +80,7 @@ func RunStatus(opts StatusOptions) error {
 
 // ListOptions contains configuration for the list command.
 type ListOptions struct {
-	BaseDir string // Base directory for .chief/prds/ (default: current directory)
+	BaseDir string // Base directory for .melliza/prds/ (default: current directory)
 }
 
 // PRDInfo holds summary info about a PRD for the list command.
@@ -104,12 +104,12 @@ func RunList(opts ListOptions) error {
 		opts.BaseDir = cwd
 	}
 
-	// Find all PRDs in .chief/prds/
-	prdsDir := filepath.Join(opts.BaseDir, ".chief", "prds")
+	// Find all PRDs in .melliza/prds/
+	prdsDir := filepath.Join(opts.BaseDir, ".melliza", "prds")
 	entries, err := os.ReadDir(prdsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Println("No PRDs found. Run 'chief new' to create one.")
+			fmt.Println("No PRDs found. Run 'melliza new' to create one.")
 			return nil
 		}
 		return fmt.Errorf("failed to read PRDs directory: %w", err)
@@ -156,7 +156,7 @@ func RunList(opts ListOptions) error {
 	}
 
 	if len(prds) == 0 {
-		fmt.Println("No PRDs found. Run 'chief new' to create one.")
+		fmt.Println("No PRDs found. Run 'melliza new' to create one.")
 		return nil
 	}
 

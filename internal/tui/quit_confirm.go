@@ -72,7 +72,7 @@ func (q *QuitConfirmation) Render() string {
 
 	// Title
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(WarningColor)
-	content.WriteString(titleStyle.Render("Quit Chief?"))
+	content.WriteString(titleStyle.Render("Quit Melliza?"))
 	content.WriteString("\n")
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", modalWidth-4)))
 	content.WriteString("\n\n")

@@ -1,19 +1,19 @@
 ---
 layout: home
-description: Build big projects with Claude. Chief breaks your work into tasks and runs Claude in a loop until they're done.
+description: Build big projects with Gemini. Melliza breaks your work into tasks and runs Gemini in a loop until they're done.
 
 hero:
-  name: Chief
-  text: Build Big Projects with Claude
-  tagline: Chief breaks your work into tasks. Claude builds them one by one.
+  name: Melliza
+  text: Build Big Projects with Gemini
+  tagline: Melliza breaks your work into tasks. Gemini builds them one by one.
   image:
     src: /images/tui-screenshot.png
-    alt: Chief TUI
+    alt: Melliza TUI
   actions:
     - theme: brand
       text: Get Started
       link: /guide/
     - theme: alt
       text: View on GitHub
-      link: https://github.com/minicodemonkey/chief
+      link: https://github.com/lvcoi/melliza
 ---

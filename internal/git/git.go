@@ -1,4 +1,4 @@
-// Package git provides Git utility functions for Chief.
+// Package git provides Git utility functions for Melliza.
 package git
 
 import (
@@ -148,7 +148,7 @@ func GetDiffStatsForCommit(dir, commitHash string) (string, error) {
 }
 
 // FindCommitForStory searches the git log for a commit whose subject line
-// matches the chief commit format "feat: <storyID> - <title>".
+// matches the melliza commit format "feat: <storyID> - <title>".
 // Both the story ID and title are required to avoid false positives from
 // previous PRD runs that may reuse the same story IDs.
 // Returns the commit hash if found, empty string otherwise.

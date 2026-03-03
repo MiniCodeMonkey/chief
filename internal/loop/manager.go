@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/minicodemonkey/chief/internal/config"
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/config"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
 // LoopState represents the state of a loop instance.
@@ -70,7 +70,7 @@ type Manager struct {
 	events      chan ManagerEvent
 	maxIter     int
 	retryConfig RetryConfig
-	baseDir        string                               // Project root directory (for CLAUDE.md etc.)
+	baseDir        string                               // Project root directory (for GEMINI.md etc.)
 	config         *config.Config                       // Project config for post-completion actions
 	mu             sync.RWMutex
 	wg             sync.WaitGroup
@@ -117,7 +117,7 @@ func (m *Manager) SetPostCompleteCallback(fn func(prdName, branch, workDir strin
 	m.onPostComplete = fn
 }
 
-// SetBaseDir sets the project root directory so Claude runs from there and picks up CLAUDE.md.
+// SetBaseDir sets the project root directory so Gemini runs from there and picks up GEMINI.md.
 func (m *Manager) SetBaseDir(baseDir string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -223,7 +223,7 @@ func (m *Manager) Start(name string) error {
 
 	// Create a new loop instance, using worktree-aware constructor if WorktreeDir is set.
 	// When no worktree is configured, run from the project root (baseDir) so that
-	// CLAUDE.md and other project-level files are visible to Claude.
+	// GEMINI.md and other project-level files are visible to Gemini.
 	workDir := instance.WorktreeDir
 	if workDir == "" {
 		m.mu.RLock()

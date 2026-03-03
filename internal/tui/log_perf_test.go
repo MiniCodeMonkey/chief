@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/minicodemonkey/chief/internal/loop"
+	"github.com/lvcoi/melliza/internal/loop"
 )
 
 // --- Helpers ---

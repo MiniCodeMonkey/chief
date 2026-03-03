@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/minicodemonkey/chief/internal/git"
+	"github.com/lvcoi/melliza/internal/git"
 )
 
 // ghCheckResultMsg is sent when the gh CLI check completes.
@@ -148,10 +148,10 @@ func (f FirstTimeSetup) handleGitignoreKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 
 func (f FirstTimeSetup) confirmGitignore() (tea.Model, tea.Cmd) {
 	if f.gitignoreSelected == 0 {
-		// User wants to add .chief to gitignore
-		if err := git.AddChiefToGitignore(f.baseDir); err != nil {
+		// User wants to add .melliza to gitignore
+		if err := git.AddMellizaToGitignore(f.baseDir); err != nil {
 			// Show error but continue
-			f.prdNameError = "Warning: failed to add .chief to .gitignore"
+			f.prdNameError = "Warning: failed to add .melliza to .gitignore"
 		} else {
 			f.result.AddedGitignore = true
 		}
@@ -398,14 +398,14 @@ func (f FirstTimeSetup) renderGitignoreStep() string {
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(PrimaryColor)
-	content.WriteString(titleStyle.Render("Welcome to Chief!"))
+	content.WriteString(titleStyle.Render("Welcome to Melliza!"))
 	content.WriteString("\n")
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", modalWidth-4)))
 	content.WriteString("\n\n")
 
 	// Message
 	messageStyle := lipgloss.NewStyle().Foreground(TextColor)
-	content.WriteString(messageStyle.Render("Would you like to add .chief to .gitignore?"))
+	content.WriteString(messageStyle.Render("Would you like to add .melliza to .gitignore?"))
 	content.WriteString("\n\n")
 
 	descStyle := lipgloss.NewStyle().Foreground(MutedColor)
@@ -424,8 +424,8 @@ func (f FirstTimeSetup) renderGitignoreStep() string {
 		label string
 		desc  string
 	}{
-		{"Yes, add .chief to .gitignore", "(Recommended)"},
-		{"No, keep .chief in version control", ""},
+		{"Yes, add .melliza to .gitignore", "(Recommended)"},
+		{"No, keep .melliza in version control", ""},
 	}
 
 	for i, opt := range options {
@@ -479,7 +479,7 @@ func (f FirstTimeSetup) renderPRDNameStep() string {
 		Foreground(PrimaryColor)
 
 	if f.showGitignore && f.result.AddedGitignore {
-		content.WriteString(lipgloss.NewStyle().Foreground(SuccessColor).Render("✓ Added .chief to .gitignore"))
+		content.WriteString(lipgloss.NewStyle().Foreground(SuccessColor).Render("✓ Added .melliza to .gitignore"))
 		content.WriteString("\n\n")
 	}
 
@@ -517,7 +517,7 @@ func (f FirstTimeSetup) renderPRDNameStep() string {
 	// Hint
 	content.WriteString("\n")
 	hintStyle := lipgloss.NewStyle().Foreground(MutedColor)
-	content.WriteString(hintStyle.Render("PRD will be created at: .chief/prds/" + f.prdName + "/"))
+	content.WriteString(hintStyle.Render("PRD will be created at: .melliza/prds/" + f.prdName + "/"))
 
 	// Footer
 	content.WriteString("\n\n")
@@ -554,7 +554,7 @@ func (f FirstTimeSetup) renderPostCompletionStep() string {
 	// Success indicators for previous steps
 	successStyle := lipgloss.NewStyle().Foreground(SuccessColor)
 	if f.result.AddedGitignore {
-		content.WriteString(successStyle.Render("✓ Added .chief to .gitignore"))
+		content.WriteString(successStyle.Render("✓ Added .melliza to .gitignore"))
 		content.WriteString("\n")
 	}
 	content.WriteString(successStyle.Render(fmt.Sprintf("✓ PRD: %s", f.result.PRDName)))
@@ -571,7 +571,7 @@ func (f FirstTimeSetup) renderPostCompletionStep() string {
 
 	// Description
 	descStyle := lipgloss.NewStyle().Foreground(MutedColor)
-	content.WriteString(descStyle.Render("When a PRD completes, Chief can automatically push"))
+	content.WriteString(descStyle.Render("When a PRD completes, Melliza can automatically push"))
 	content.WriteString("\n")
 	content.WriteString(descStyle.Render("the branch and create a pull request for you."))
 	content.WriteString("\n\n")

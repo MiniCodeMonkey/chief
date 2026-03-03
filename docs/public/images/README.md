@@ -1,24 +1,24 @@
 # Screenshots Needed
 
-This directory is for screenshots and visual assets for the Chief documentation site.
+This directory is for screenshots and visual assets for the Melliza documentation site.
 
 ## Required Screenshots
 
 ### TUI Dashboard
 - **File**: `tui-dashboard.png`
-- **Description**: The main Chief TUI showing the dashboard view with current story, progress bar, and live output
+- **Description**: The main Melliza TUI showing the dashboard view with current story, progress bar, and live output
 - **Dimensions**: ~1200x700px recommended
-- **Used in**: Quick Start guide, How Chief Works
+- **Used in**: Quick Start guide, How Melliza Works
 
 ### TUI Log View
 - **File**: `tui-log-view.png`
-- **Description**: The Chief TUI log view showing Claude's streaming output (accessible via Tab key)
+- **Description**: The Melliza TUI log view showing Gemini's streaming output (accessible via Tab key)
 - **Dimensions**: ~1200x700px recommended
 - **Used in**: Quick Start guide, CLI Reference
 
-### Chief Init Flow
-- **File**: `chief-init.png`
-- **Description**: Terminal output of running `chief new` showing the interactive prompts and directory creation
+### Melliza Init Flow
+- **File**: `melliza-init.png`
+- **Description**: Terminal output of running `melliza new` showing the interactive prompts and directory creation
 - **Dimensions**: ~800x400px recommended
 - **Used in**: Quick Start guide, CLI Reference
 
@@ -26,7 +26,7 @@ This directory is for screenshots and visual assets for the Chief documentation 
 
 ### Full Workflow Recording
 - **Format**: asciinema recording (`.cast` file hosted on asciinema.org)
-- **Description**: Full workflow showing `chief new` → editing PRD → running `chief` → watching completion
+- **Description**: Full workflow showing `melliza new` → editing PRD → running `melliza` → watching completion
 - **Used in**: Quick Start guide
 
 ## Guidelines

@@ -1,4 +1,4 @@
-// Package embed provides embedded prompt templates used by Chief.
+// Package embed provides embedded prompt templates used by Melliza.
 // All prompts are embedded at compile time using Go's embed directive.
 package embed
 
@@ -49,7 +49,7 @@ func GetEditPrompt(prdDir string) string {
 }
 
 // GetConvertPrompt returns the PRD converter prompt with the file path and ID prefix substituted.
-// Claude reads the file itself using file-reading tools instead of receiving inlined content.
+// Gemini reads the file itself using file-reading tools instead of receiving inlined content.
 // The idPrefix determines the story ID convention (e.g., "US" → US-001, "MFR" → MFR-001).
 func GetConvertPrompt(prdFilePath, idPrefix string) string {
 	result := strings.ReplaceAll(convertPromptTemplate, "{{PRD_FILE_PATH}}", prdFilePath)

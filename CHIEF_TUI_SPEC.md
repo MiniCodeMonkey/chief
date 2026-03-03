@@ -1,10 +1,10 @@
-# Chief TUI - Feature Specification
+# Melliza TUI - Feature Specification
 
 ## Overview
 
-Chief is an autonomous agent loop that orchestrates Claude Code to work through PRD user stories. This spec describes a TUI application that wraps the agent loop with monitoring, controls, and a delightful developer experience.
+Melliza is an autonomous agent loop that orchestrates Gemini Code to work through PRD user stories. This spec describes a TUI application that wraps the agent loop with monitoring, controls, and a delightful developer experience.
 
-*Named after Chief Wiggum, Ralph Wiggum's dad from The Simpsons. Inspired by [snarktank/ralph](https://github.com/snarktank/ralph).*
+*Named after Melliza Wiggum, Ralph Wiggum's dad from The Simpsons. Inspired by [snarktank/ralph](https://github.com/snarktank/ralph).*
 
 ## Goals
 
@@ -44,8 +44,8 @@ Chief is an autonomous agent loop that orchestrates Claude Code to work through 
 ## Architecture
 
 ```
-chief/
-├── cmd/chief/
+melliza/
+├── cmd/melliza/
 │   └── main.go                  # CLI entry, flag parsing
 ├── internal/
 │   ├── loop/
@@ -53,8 +53,8 @@ chief/
 │   │   └── parser.go            # Parse stream-json → events
 │   ├── prd/
 │   │   ├── types.go             # PRD structs
-│   │   ├── loader.go            # Load, watch, list PRDs from .chief/prds/
-│   │   └── generator.go         # `chief new` (launches Claude)
+│   │   ├── loader.go            # Load, watch, list PRDs from .melliza/prds/
+│   │   └── generator.go         # `melliza new` (launches Gemini)
 │   ├── progress/
 │   │   └── progress.go          # Append to progress.md
 │   ├── tui/
@@ -81,7 +81,7 @@ The loop must be **dead simple** - anyone reading the code should immediately un
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           CHIEF LOOP MECHANICS                              │
+│                           MELLIZA LOOP MECHANICS                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  1. READ STATE                                                              │
@@ -90,23 +90,23 @@ The loop must be **dead simple** - anyone reading the code should immediately un
 │  2. BUILD PROMPT                                                            │
 │     └── Combine: embedded agent prompt + PRD path + current story context   │
 │                                                                             │
-│  3. INVOKE CLAUDE                                                           │
-│     └── claude --dangerously-skip-permissions -p <prompt> \                 │
+│  3. INVOKE GEMINI                                                           │
+│     └── gemini -y -p <prompt> \                 │
 │               --output-format stream-json --verbose                         │
 │                                                                             │
 │  4. STREAM OUTPUT                                                           │
 │     ├── Parse each JSON line from stdout                                    │
 │     ├── Extract: assistant text, tool calls, tool results                   │
 │     ├── Send events to TUI for display                                      │
-│     └── Append raw output to claude.log                                     │
+│     └── Append raw output to gemini.log                                     │
 │                                                                             │
 │  5. WAIT FOR EXIT                                                           │
-│     ├── Claude exits when it completes a story (or errors)                  │
+│     ├── Gemini exits when it completes a story (or errors)                  │
 │     └── Check exit code: 0 = success, non-zero = error                      │
 │                                                                             │
 │  6. CHECK COMPLETION                                                        │
-│     ├── Re-read prd.json (Claude updated it)                                │
-│     ├── If all stories pass: emit <chief-complete/>, play sound, stop       │
+│     ├── Re-read prd.json (Gemini updated it)                                │
+│     ├── If all stories pass: emit <melliza-complete/>, play sound, stop       │
 │     ├── If iteration < max: goto step 1                                     │
 │     └── If iteration >= max: stop, notify user                              │
 │                                                                             │
@@ -124,7 +124,7 @@ type Loop struct {
     maxIter    int
     iteration  int
     events     chan Event  // Send to TUI
-    claudeCmd  *exec.Cmd
+    geminiCmd  *exec.Cmd
 }
 
 // Run executes the full loop until complete or max iterations
@@ -152,17 +152,17 @@ func (l *Loop) Run(ctx context.Context) error {
     return nil
 }
 
-// runIteration executes a single Claude invocation
+// runIteration executes a single Gemini invocation
 func (l *Loop) runIteration(ctx context.Context) error {
-    l.claudeCmd = exec.CommandContext(ctx, "claude",
-        "--dangerously-skip-permissions",
+    l.geminiCmd = exec.CommandContext(ctx, "gemini",
+        "-y",
         "-p", l.prompt,
         "--output-format", "stream-json",
         "--verbose",
     )
 
-    stdout, _ := l.claudeCmd.StdoutPipe()
-    l.claudeCmd.Start()
+    stdout, _ := l.geminiCmd.StdoutPipe()
+    l.geminiCmd.Start()
 
     // Stream and parse output
     scanner := bufio.NewScanner(stdout)
@@ -174,24 +174,24 @@ func (l *Loop) runIteration(ctx context.Context) error {
         }
     }
 
-    return l.claudeCmd.Wait()
+    return l.geminiCmd.Wait()
 }
 
-// Stop kills the Claude process (for 'x' key)
+// Stop kills the Gemini process (for 'x' key)
 func (l *Loop) Stop() {
-    if l.claudeCmd != nil && l.claudeCmd.Process != nil {
-        l.claudeCmd.Process.Kill()
+    if l.geminiCmd != nil && l.geminiCmd.Process != nil {
+        l.geminiCmd.Process.Kill()
     }
 }
 ```
 
 ### Stream-JSON Format
 
-Claude's `--output-format stream-json` emits one JSON object per line:
+Gemini's `--output-format stream-json` emits one JSON object per line:
 
 ```jsonl
 {"type":"assistant","message":{"content":[{"type":"text","text":"Let me read the PRD..."}]}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":".chief/prds/main/prd.json"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":".melliza/prds/main/prd.json"}}]}}
 {"type":"tool_result","content":"{\n  \"project\": \"..."}
 {"type":"assistant","message":{"content":[{"type":"text","text":"I'll work on US-001..."}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/app.ts"}}]}}
@@ -208,12 +208,12 @@ type EventType int
 
 const (
     IterationStart EventType = iota
-    AssistantText           // Claude is "thinking" - show in log
+    AssistantText           // Gemini is "thinking" - show in log
     ToolStart               // Tool invocation started
     ToolResult              // Tool completed
-    StoryStarted            // Claude set inProgress: true
-    StoryCompleted          // Claude set passes: true
-    Complete                // All stories done (<chief-complete/>)
+    StoryStarted            // Gemini set inProgress: true
+    StoryCompleted          // Gemini set passes: true
+    Complete                // All stories done (<melliza-complete/>)
     MaxIterationsReached
     Error
 )
@@ -237,8 +237,8 @@ func (l *Loop) parseLine(line string) *Event {
         // Check content blocks for text vs tool_use
         for _, block := range msg.Message.Content {
             if block.Type == "text" {
-                // Check for <chief-complete/>
-                if strings.Contains(block.Text, "<chief-complete/>") {
+                // Check for <melliza-complete/>
+                if strings.Contains(block.Text, "<melliza-complete/>") {
                     return &Event{Type: Complete}
                 }
                 return &Event{Type: AssistantText, Text: block.Text}
@@ -254,46 +254,46 @@ func (l *Loop) parseLine(line string) *Event {
 }
 ```
 
-### How Claude Knows What To Do
+### How Gemini Knows What To Do
 
-The prompt (embedded in Chief) tells Claude:
+The prompt (embedded in Melliza) tells Gemini:
 
-1. **Where to find the PRD**: `.chief/prds/<name>/prd.json`
+1. **Where to find the PRD**: `.melliza/prds/<name>/prd.json`
 2. **How to pick the next story**: First `inProgress: true`, then lowest priority with `passes: false`
 3. **How to mark progress**: Update `inProgress` and `passes` fields in prd.json
-4. **How to signal completion**: Output `<chief-complete/>` when all stories pass
+4. **How to signal completion**: Output `<melliza-complete/>` when all stories pass
 5. **What to log**: Append to progress.md after each story
 
-Claude is autonomous within an iteration — Chief just watches and displays.
+Gemini is autonomous within an iteration — Melliza just watches and displays.
 
 ### Key Principle
 
-**No magic. Just `claude` with flags.**
+**No magic. Just `gemini` with flags.**
 
 The entire system is:
-1. A prompt that tells Claude how to work through stories
+1. A prompt that tells Gemini how to work through stories
 2. A JSON file that tracks state
 3. A TUI that displays progress
-4. A loop that keeps invoking Claude until done
+4. A loop that keeps invoking Gemini until done
 
 ## File Structure
 
-When Chief runs in a project:
+When Melliza runs in a project:
 
 ```
 your-project/
-├── .chief/
+├── .melliza/
 │   └── prds/
 │       ├── main/                 # Default PRD
-│       │   ├── prd.md            # Human-readable PRD (from `chief new`)
+│       │   ├── prd.md            # Human-readable PRD (from `melliza new`)
 │       │   ├── prd.json          # Machine-readable PRD (auto-generated from prd.md)
 │       │   ├── progress.md       # Human-readable progress log
-│       │   └── claude.log        # Raw Claude output
+│       │   └── gemini.log        # Raw Gemini output
 │       ├── auth/                 # Additional PRD
 │       │   ├── prd.md
 │       │   ├── prd.json
 │       │   ├── progress.md
-│       │   └── claude.log
+│       │   └── gemini.log
 │       └── api/                  # Another PRD
 │           └── ...
 ├── src/
@@ -327,57 +327,57 @@ Each PRD lives in its own directory with all related files. The directory name i
 
 **Priority ordering:** Lower number = higher priority = do first. Stories should be ordered by dependency (schema → backend → frontend → polish).
 
-**Status tracking via PRD (set by Claude at runtime):**
-- `inProgress: true` - Claude sets this when starting a story
-- `passes: true` - Claude sets this when story is complete
-- `inProgress: false` - Claude sets this when story is complete (along with passes)
+**Status tracking via PRD (set by Gemini at runtime):**
+- `inProgress: true` - Gemini sets this when starting a story
+- `passes: true` - Gemini sets this when story is complete
+- `inProgress: false` - Gemini sets this when story is complete (along with passes)
 - The TUI watches prd.json for changes to update the display
 
-**Note:** `inProgress` is not in the initial prd.json — Claude adds it at runtime.
+**Note:** `inProgress` is not in the initial prd.json — Gemini adds it at runtime.
 
 ## CLI Interface
 
 ```bash
 # Main usage
-chief                      # Run default PRD (.chief/prds/main/), start TUI
-chief auth                 # Run specific PRD by name (.chief/prds/auth/)
-chief ./path/to/prd.json   # Run PRD from explicit path
+melliza                      # Run default PRD (.melliza/prds/main/), start TUI
+melliza auth                 # Run specific PRD by name (.melliza/prds/auth/)
+melliza ./path/to/prd.json   # Run PRD from explicit path
 
 # PRD generation
-chief new                 # Create new PRD in .chief/prds/main/
-chief new auth            # Create new PRD in .chief/prds/auth/
-chief new auth "login"    # Create with initial context for "login"
-chief edit                 # Edit existing PRD (default: main)
-chief edit auth            # Edit specific PRD
+melliza new                 # Create new PRD in .melliza/prds/main/
+melliza new auth            # Create new PRD in .melliza/prds/auth/
+melliza new auth "login"    # Create with initial context for "login"
+melliza edit                 # Edit existing PRD (default: main)
+melliza edit auth            # Edit specific PRD
 
 # Options
-chief --max-iterations 40  # Iteration limit (default: 10)
-chief --no-sound           # Disable completion sound
-chief --verbose            # Show raw Claude output in log
+melliza --max-iterations 40  # Iteration limit (default: 10)
+melliza --no-sound           # Disable completion sound
+melliza --verbose            # Show raw Gemini output in log
 
-# Note: One iteration = one Claude invocation = typically one story.
+# Note: One iteration = one Gemini invocation = typically one story.
 # If you have 15 stories, set --max-iterations to at least 15.
 # The limit prevents runaway loops and excessive API usage.
 
 # Quick commands (no TUI)
-chief status               # Print current progress for default PRD
-chief status auth          # Print progress for specific PRD
-chief list                 # List all PRDs in .chief/prds/
+melliza status               # Print current progress for default PRD
+melliza status auth          # Print progress for specific PRD
+melliza list                 # List all PRDs in .melliza/prds/
 ```
 
 ## Auto-Conversion
 
-**prd.md is the source of truth.** Users only edit prd.md — Chief handles conversion automatically.
+**prd.md is the source of truth.** Users only edit prd.md — Melliza handles conversion automatically.
 
 ### When Conversion Happens
 
-1. **After `chief new`** — Automatically converts prd.md → prd.json
-2. **After `chief edit`** — Automatically converts prd.md → prd.json
-3. **Before `chief run`** — If prd.md is newer than prd.json, converts first
+1. **After `melliza new`** — Automatically converts prd.md → prd.json
+2. **After `melliza edit`** — Automatically converts prd.md → prd.json
+3. **Before `melliza run`** — If prd.md is newer than prd.json, converts first
 
 ### Progress Protection
 
-If prd.json has existing progress (any story with `passes: true` or `inProgress: true`), Chief warns before overwriting:
+If prd.json has existing progress (any story with `passes: true` or `inProgress: true`), Melliza warns before overwriting:
 
 ```
 ╭─ Warning ──────────────────────────────────────────────────────────────────────╮
@@ -405,8 +405,8 @@ If prd.json has existing progress (any story with `passes: true` or `inProgress:
 
 **CLI flags for non-interactive use:**
 ```bash
-chief --merge              # Auto-merge without prompting
-chief --force              # Auto-overwrite without prompting
+melliza --merge              # Auto-merge without prompting
+melliza --force              # Auto-overwrite without prompting
 ```
 
 ## TUI Design
@@ -451,7 +451,7 @@ The primary view showing task list and details side-by-side.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                          ● RUNNING  Iteration 3/40  00:12:34    │
+│  melliza                                                          ● RUNNING  Iteration 3/40  00:12:34    │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ Stories ─────────────────────────────────────╮ ╭─ Details ─────────────────────────────────────────────╮
@@ -491,7 +491,7 @@ The primary view showing task list and details side-by-side.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                                ○ READY  main  12 stories    │
+│  melliza                                                                ○ READY  main  12 stories    │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ Stories ─────────────────────────────────────╮ ╭─ Details ─────────────────────────────────────────────╮
@@ -528,7 +528,7 @@ The primary view showing task list and details side-by-side.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                         ⏸ PAUSED  Iteration 3/40  00:12:34      │
+│  melliza                                                         ⏸ PAUSED  Iteration 3/40  00:12:34      │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ Stories ─────────────────────────────────────╮ ╭─ Details ─────────────────────────────────────────────╮
@@ -549,7 +549,7 @@ The primary view showing task list and details side-by-side.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                       ✓ COMPLETE  12 iterations  00:47:23       │
+│  melliza                                                       ✓ COMPLETE  12 iterations  00:47:23       │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ Stories ─────────────────────────────────────╮ ╭─ Summary ─────────────────────────────────────────────╮
@@ -579,11 +579,11 @@ The primary view showing task list and details side-by-side.
 
 ## Log Viewer
 
-Full-screen view showing Claude's streaming output. Toggle with `t` key.
+Full-screen view showing Gemini's streaming output. Toggle with `t` key.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                             ● RUNNING  US-102  Iteration 3/40  00:12:34         │
+│  melliza                                             ● RUNNING  US-102  Iteration 3/40  00:12:34         │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ Log ───────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -596,7 +596,7 @@ Full-screen view showing Claude's streaming output. Toggle with `t` key.
 │  First, let me update prd.json to mark this story as in progress.                                       │
 │                                                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐    │
-│  │  ✏️  Edit  .chief/prds/main/prd.json                                                              │    │
+│  │  ✏️  Edit  .melliza/prds/main/prd.json                                                              │    │
 │  └─────────────────────────────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                                         │
 │  Now let me examine the current Tailwind configuration to understand what's already set up.             │
@@ -646,7 +646,7 @@ Modal overlay for switching between PRDs. Toggle with `l` key.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                                  ○ READY  main  12 stories      │
+│  melliza                                                                  ○ READY  main  12 stories      │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
         ╭─ Select PRD ────────────────────────────────────────────────────────────────────────╮
@@ -680,7 +680,7 @@ Modal showing all keyboard shortcuts. Toggle with `?` key.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                          ● RUNNING  Iteration 3/40  00:12:34    │
+│  melliza                                                          ● RUNNING  Iteration 3/40  00:12:34    │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
                 ╭─ Keyboard Shortcuts ────────────────────────────────────────────────╮
@@ -712,11 +712,11 @@ Modal showing all keyboard shortcuts. Toggle with `?` key.
 
 ## Empty State
 
-Shown when no PRDs exist in the .chief/prds/ directory.
+Shown when no PRDs exist in the .melliza/prds/ directory.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                                                   No PRD loaded  │
+│  melliza                                                                                   No PRD loaded  │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -726,14 +726,14 @@ Shown when no PRDs exist in the .chief/prds/ directory.
                               │                                              │
                               │                  ◇                           │
                               │                                              │
-                              │         No PRDs found in .chief/prds/        │
+                              │         No PRDs found in .melliza/prds/        │
                               │                                              │
                               │    Get started by creating a new PRD:        │
                               │                                              │
-                              │    $ chief new                              │
+                              │    $ melliza new                              │
                               │      Create a PRD interactively              │
                               │                                              │
-                              │    $ chief new "user authentication"        │
+                              │    $ melliza new "user authentication"        │
                               │      Generate PRD for a specific feature     │
                               │                                              │
                               ╰──────────────────────────────────────────────╯
@@ -748,16 +748,16 @@ Shown when no PRDs exist in the .chief/prds/ directory.
 
 ## Error State
 
-Shown when an error occurs (e.g., Claude crashes, file not found).
+Shown when an error occurs (e.g., Gemini crashes, file not found).
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                            ✗ ERROR  Iteration 3/40  00:12:34    │
+│  melliza                                                            ✗ ERROR  Iteration 3/40  00:12:34    │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ Stories ─────────────────────────────────────╮ ╭─ Error ───────────────────────────────────────────────╮
 │                                               │ │                                                       │
-│  ✓  US-101  Set up Tailwind CSS with base     │ │  ✗ Claude process exited unexpectedly                 │
+│  ✓  US-101  Set up Tailwind CSS with base     │ │  ✗ Gemini process exited unexpectedly                 │
 │  ▶  US-102  Configure design tokens           │ │                                                       │
 │  ○  US-103  Create color theme system         │ │  ─────────────────────────────────────────────────    │
 │  ○  US-104  Build Typography component        │ │                                                       │
@@ -767,7 +767,7 @@ Shown when an error occurs (e.g., Claude crashes, file not found).
 │  ○  US-108  Create navigation header          │ │                                                       │
 │  ○  US-109  Implement dark mode toggle        │ │  ─────────────────────────────────────────────────    │
 │  ○  US-110  Add page transition animations    │ │                                                       │
-│  ○  US-111  Create loading skeleton states    │ │  Check claude.log for full error details.             │
+│  ○  US-111  Create loading skeleton states    │ │  Check gemini.log for full error details.             │
 │  ○  US-112  Build toast notification system   │ │                                                       │
 │                                               │ │                                                       │
 │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │ │                                                       │
@@ -782,11 +782,11 @@ Shown when an error occurs (e.g., Claude crashes, file not found).
 
 ## Interrupted Story Warning
 
-Shown when Chief starts and detects an `inProgress: true` story from a previous session.
+Shown when Melliza starts and detects an `inProgress: true` story from a previous session.
 
 ```
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  chief                                                                 ⚠ INTERRUPTED  main             │
+│  melliza                                                                 ⚠ INTERRUPTED  main             │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ Stories ─────────────────────────────────────╮ ╭─ Notice ──────────────────────────────────────────────╮
@@ -814,7 +814,7 @@ Graceful degradation for narrower terminals — single column layout.
 
 ```
 ╭──────────────────────────────────────────────────────────────────────────────╮
-│  chief                               ● RUNNING  Iteration 3/40  00:12:34    │
+│  melliza                               ● RUNNING  Iteration 3/40  00:12:34    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ Stories ────────────────────────────────────────────────────────────────────╮
@@ -847,7 +847,7 @@ Graceful degradation for narrower terminals — single column layout.
 
 ---
 
-**Multiple loops:** Users can run multiple Chief instances on different PRDs in the same project. Each instance is independent. Trust the user to avoid file conflicts between PRDs.
+**Multiple loops:** Users can run multiple Melliza instances on different PRDs in the same project. Each instance is independent. Trust the user to avoid file conflicts between PRDs.
 
 ## Keyboard Shortcuts
 
@@ -865,7 +865,7 @@ Graceful degradation for narrower terminals — single column layout.
 |-----|--------|
 | `s` | Start/resume agent loop |
 | `p` | Pause (after current iteration completes) |
-| `x` | Stop immediately (kill Claude process) |
+| `x` | Stop immediately (kill Gemini process) |
 | `r` | Refresh (reload PRD file) |
 | `l` | Open loop/PRD picker |
 | `t` | Toggle log view |
@@ -889,7 +889,7 @@ Graceful degradation for narrower terminals — single column layout.
 ## Notifications
 
 **Completion sound:** A small (~30KB) pleasant chime embedded in the binary, played when user attention is needed:
-- All stories complete successfully (`<chief-complete/>` received)
+- All stories complete successfully (`<melliza-complete/>` received)
 - Max iterations reached (loop stops, user needs to decide next steps)
 
 **Cross-platform playback:**
@@ -911,14 +911,14 @@ Sound can be disabled with `--no-sound` flag.
 ### Agent Prompt (embed/prompt.txt)
 
 ```markdown
-# Chief Agent
+# Melliza Agent
 
 You are an autonomous agent working through a product requirements document.
 
 ## Files
 
-- `.chief/prds/<name>/prd.json` — The PRD with user stories
-- `.chief/prds/<name>/progress.md` — Progress log (read Codebase Patterns section first)
+- `.melliza/prds/<name>/prd.json` — The PRD with user stories
+- `.melliza/prds/<name>/progress.md` — Progress log (read Codebase Patterns section first)
 
 ## Task
 
@@ -950,7 +950,7 @@ Examples:
 Rules:
 - Only commit files you modified during this iteration
 - Split into multiple commits if logically appropriate
-- Never mention Claude or AI in commit messages
+- Never mention Gemini or AI in commit messages
 
 ## Progress Format
 
@@ -968,7 +968,7 @@ Add reusable patterns to `## Codebase Patterns` at the top of progress.md.
 ## Completion
 
 After each story, check if ALL stories have `passes: true`.
-If complete, output: <chief-complete/>
+If complete, output: <melliza-complete/>
 
 ## Rules
 
@@ -980,9 +980,9 @@ If complete, output: <chief-complete/>
 
 ### PRD Generator Prompt (embed/prd_skill.txt)
 
-Used by `chief new` and `chief edit` - launches an **interactive Claude Code session** with this prompt. The user takes over and collaborates with Claude to build the PRD. Chief just bootstraps the session and exits.
+Used by `melliza new` and `melliza edit` - launches an **interactive Gemini Code session** with this prompt. The user takes over and collaborates with Gemini to build the PRD. Melliza just bootstraps the session and exits.
 
-For `chief edit`, the existing `.chief/prd.md` is included as context so Claude can modify it:
+For `melliza edit`, the existing `.melliza/prd.md` is included as context so Gemini can modify it:
 
 ```markdown
 # PRD Generator
@@ -1008,12 +1008,12 @@ You are helping create a Product Requirements Document.
    - Success metrics
    - Open questions
 
-3. Save to `.chief/prds/<name>/prd.md`
+3. Save to `.melliza/prds/<name>/prd.md`
 
 ## User Story Format
 
 Each story should be:
-- Small enough to complete in ONE Claude context window (one iteration)
+- Small enough to complete in ONE Gemini context window (one iteration)
 - Have specific, verifiable acceptance criteria (not vague)
 - Include "Typecheck passes" as criterion
 - For UI changes, include "Verify in browser using Playwright"
@@ -1023,24 +1023,24 @@ Each story should be:
 
 ## Output
 
-Save the PRD as markdown to `.chief/prds/<name>/prd.md`, then inform the user:
-"PRD saved to .chief/prds/<name>/prd.md"
+Save the PRD as markdown to `.melliza/prds/<name>/prd.md`, then inform the user:
+"PRD saved to .melliza/prds/<name>/prd.md"
 
-(Chief automatically converts to prd.json after this session ends)
+(Melliza automatically converts to prd.json after this session ends)
 ```
 
 ### PRD Converter Prompt (embed/convert_skill.txt)
 
-Used internally by Chief for auto-conversion. Runs **one-shot** (non-interactive):
+Used internally by Melliza for auto-conversion. Runs **one-shot** (non-interactive):
 
 ```markdown
 # PRD Converter
 
-Convert the PRD markdown file to Chief's prd.json format.
+Convert the PRD markdown file to Melliza's prd.json format.
 
 ## Input
 
-Read the PRD from `.chief/prds/<name>/prd.md`.
+Read the PRD from `.melliza/prds/<name>/prd.md`.
 
 ## Output Format
 
@@ -1061,7 +1061,7 @@ Read the PRD from `.chief/prds/<name>/prd.md`.
 }
 ```
 
-**Note:** `inProgress` is NOT set here — Claude adds it at runtime.
+**Note:** `inProgress` is NOT set here — Gemini adds it at runtime.
 
 ## Rules
 
@@ -1072,7 +1072,7 @@ Read the PRD from `.chief/prds/<name>/prd.md`.
 
 ## Save
 
-Save to `.chief/prds/<name>/prd.json` and confirm to user.
+Save to `.melliza/prds/<name>/prd.json` and confirm to user.
 ```
 
 ## Data Flow
@@ -1080,7 +1080,7 @@ Save to `.chief/prds/<name>/prd.json` and confirm to user.
 ```
 ┌──────────────┐     ┌───────────────┐     ┌─────────────┐
 │   PRD File   │────▶│  Agent Loop   │────▶│  Progress   │
-│  (prd.json)  │◀────│   (Claude)    │     │ (progress.md)
+│  (prd.json)  │◀────│   (Gemini)    │     │ (progress.md)
 └──────────────┘     └───────────────┘     └─────────────┘
        │                    │
        │  watches for       │  streams
@@ -1106,9 +1106,9 @@ type LoopState int
 
 const (
     StateReady LoopState = iota    // Waiting to start
-    StateRunning                    // Claude is executing
+    StateRunning                    // Gemini is executing
     StatePaused                     // Will stop after current iteration
-    StateStopping                   // Stop requested, waiting for Claude
+    StateStopping                   // Stop requested, waiting for Gemini
     StateComplete                   // All tasks done
     StateError                      // Something went wrong
 )
@@ -1126,7 +1126,7 @@ type Model struct {
     // Loop
     iteration    int
     maxIter      int
-    claudeCmd    *exec.Cmd
+    geminiCmd    *exec.Cmd
 
     // Views
     activeView   View  // Dashboard, Log, Picker
@@ -1139,20 +1139,20 @@ type Model struct {
 }
 ```
 
-**Note:** All persistent state lives in `prd.json`. The TUI model is ephemeral — if Chief restarts, it re-reads prd.json to determine current status (any story with `inProgress: true` was interrupted).
+**Note:** All persistent state lives in `prd.json`. The TUI model is ephemeral — if Melliza restarts, it re-reads prd.json to determine current status (any story with `inProgress: true` was interrupted).
 
 ## Error Handling
 
-### Claude Process Errors
+### Gemini Process Errors
 
 - Detect non-zero exit codes
 - Parse error messages from stream-json
 - Display in TUI with option to retry or skip
-- Log full error context to `claude.log`
+- Log full error context to `gemini.log`
 
 ### Recovery
 
-- If Claude crashes mid-story, `inProgress` stays true in prd.json
+- If Gemini crashes mid-story, `inProgress` stays true in prd.json
 - Next iteration automatically resumes the interrupted story (prompt prioritizes `inProgress: true`)
 - Failed iterations still count toward max-iterations limit
 - TUI shows warning: "Story US-XXX was interrupted — resuming"
@@ -1183,13 +1183,13 @@ Targets:
 
 ```bash
 # Homebrew (macOS/Linux)
-brew install chief
+brew install melliza
 
 # Go install
-go install github.com/minicodemonkey/chief@latest
+go install github.com/lvcoi/melliza@latest
 
 # Download binary
-curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/refs/heads/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/melliza/refs/heads/main/install.sh | sh
 ```
 
 ## Implementation Phases
@@ -1214,8 +1214,8 @@ curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/refs/heads/mai
 
 ### Phase 3: PRD Generation
 
-- [ ] `chief new` command (launches interactive Claude session with embedded prompt)
-- [ ] `chief edit` command (launches interactive session with existing PRD as context)
+- [ ] `melliza new` command (launches interactive Gemini session with embedded prompt)
+- [ ] `melliza edit` command (launches interactive session with existing PRD as context)
 - [ ] Auto-conversion logic (prd.md → prd.json with progress protection)
 - [ ] Merge behavior for preserving story status
 - [ ] Embedded skill prompts
@@ -1224,8 +1224,8 @@ curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/refs/heads/mai
 
 - [ ] Completion sound (embedded WAV)
 - [ ] Error recovery UX
-- [ ] `chief status` quick command
-- [ ] `chief list` quick command
+- [ ] `melliza status` quick command
+- [ ] `melliza list` quick command
 
 ### Phase 5: Distribution
 
@@ -1254,8 +1254,8 @@ func TestParseLine_ToolUse(t *testing.T) {
     assert.Equal(t, "Read", event.Tool)
 }
 
-func TestParseLine_ChiefComplete(t *testing.T) {
-    line := `{"type":"assistant","message":{"content":[{"type":"text","text":"All done! <chief-complete/>"}]}}`
+func TestParseLine_MellizaComplete(t *testing.T) {
+    line := `{"type":"assistant","message":{"content":[{"type":"text","text":"All done! <melliza-complete/>"}]}}`
     event := parseLine(line)
     assert.Equal(t, Complete, event.Type)
 }
@@ -1299,15 +1299,15 @@ func TestLogView_Scrolling(t *testing.T) { ... }
 
 **Loop integration** (`internal/loop/loop_test.go`):
 ```go
-func TestLoop_MockClaude(t *testing.T) {
-    // Create a mock "claude" script that outputs predefined stream-json
-    mockClaude := createMockClaude(t, []string{
+func TestLoop_MockGemini(t *testing.T) {
+    // Create a mock "gemini" script that outputs predefined stream-json
+    mockGemini := createMockGemini(t, []string{
         `{"type":"assistant","message":{"content":[{"type":"text","text":"Working..."}]}}`,
         `{"type":"result","result":"Done"}`,
     })
-    defer mockClaude.Cleanup()
+    defer mockGemini.Cleanup()
 
-    loop := NewLoop(testPRDPath, WithClaudePath(mockClaude.Path))
+    loop := NewLoop(testPRDPath, WithGeminiPath(mockGemini.Path))
     events := collectEvents(loop.Run(context.Background()))
 
     assert.Contains(t, events, Event{Type: AssistantText, Text: "Working..."})
@@ -1323,7 +1323,7 @@ func TestWatcher_DetectsChanges(t *testing.T) {
 
 ### End-to-End Tests
 
-**E2E with real Claude** (`e2e/e2e_test.go`):
+**E2E with real Gemini** (`e2e/e2e_test.go`):
 ```go
 // +build e2e
 
@@ -1347,10 +1347,10 @@ testdata/
 │   ├── in_progress.json        # PRD with interrupted story
 │   └── invalid.json            # Malformed JSON
 ├── stream/
-│   ├── simple_story.jsonl      # Mock Claude output for one story
+│   ├── simple_story.jsonl      # Mock Gemini output for one story
 │   ├── tool_calls.jsonl        # Output with various tool uses
 │   ├── error_exit.jsonl        # Output ending in error
-│   └── complete.jsonl          # Output with <chief-complete/>
+│   └── complete.jsonl          # Output with <melliza-complete/>
 └── markdown/
     ├── simple.md               # Simple PRD markdown
     └── complex.md              # PRD with many stories
@@ -1372,7 +1372,7 @@ jobs:
         with:
           go-version: '1.22'
       - run: go test -race -coverprofile=coverage.out ./...
-      - run: go build ./cmd/chief
+      - run: go build ./cmd/melliza
 
   e2e:
     runs-on: ubuntu-latest
@@ -1387,8 +1387,8 @@ jobs:
 
 ### What We Don't Test
 
-- Claude's behavior (that's Anthropic's job)
-- Actual file edits made by Claude (too flaky, too slow)
+- Gemini's behavior (that's Anthropic's job)
+- Actual file edits made by Gemini (too flaky, too slow)
 - Sound playback (manual verification)
 - Complex TUI interactions (manual verification, use teatest for basics)
 
@@ -1397,35 +1397,35 @@ jobs:
 ### README.md Structure
 
 ```markdown
-# Chief 👮
+# Melliza 👮
 
-Autonomous agent loop for working through PRDs with Claude Code.
+Autonomous agent loop for working through PRDs with Gemini Code.
 
-*Named after Chief Wiggum, Ralph Wiggum's dad from The Simpsons.*
+*Named after Melliza Wiggum, Ralph Wiggum's dad from The Simpsons.*
 
 ## Quick Start
 
 \`\`\`bash
 # Install
-brew install chief
+brew install melliza
 
 # Create a PRD interactively
-chief new
+melliza new
 
 # Run the agent loop
-chief
+melliza
 \`\`\`
 
 ## How It Works
 
-Chief orchestrates Claude Code to work through user stories autonomously:
+Melliza orchestrates Gemini Code to work through user stories autonomously:
 
 1. You write a PRD describing what you want built
-2. Chief converts it to machine-readable format
-3. Claude works through each story, one at a time
+2. Melliza converts it to machine-readable format
+3. Gemini works through each story, one at a time
 4. You watch progress in a beautiful TUI
 
-[Diagram: PRD → Chief Loop → Claude → Code Changes → Repeat]
+[Diagram: PRD → Melliza Loop → Gemini → Code Changes → Repeat]
 
 ## Installation
 
@@ -1436,18 +1436,18 @@ Chief orchestrates Claude Code to work through user stories autonomously:
 ### Creating a PRD
 
 \`\`\`bash
-chief new                    # Interactive PRD creation
-chief new auth               # Create PRD named "auth"
-chief new auth "OAuth login" # With initial context
-chief edit                    # Edit existing PRD
+melliza new                    # Interactive PRD creation
+melliza new auth               # Create PRD named "auth"
+melliza new auth "OAuth login" # With initial context
+melliza edit                    # Edit existing PRD
 \`\`\`
 
 ### Running the Loop
 
 \`\`\`bash
-chief                         # Run default PRD
-chief auth                    # Run specific PRD
-chief --max-iterations 20     # Limit iterations
+melliza                         # Run default PRD
+melliza auth                    # Run specific PRD
+melliza --max-iterations 20     # Limit iterations
 \`\`\`
 
 ### Keyboard Controls
@@ -1483,7 +1483,7 @@ MIT
 **Every public function gets a doc comment:**
 ```go
 // Run executes the agent loop until all stories are complete or max iterations
-// is reached. It spawns Claude as a subprocess and streams output to the TUI
+// is reached. It spawns Gemini as a subprocess and streams output to the TUI
 // via the events channel. The loop can be paused with Pause() or stopped
 // immediately with Stop().
 //
@@ -1494,9 +1494,9 @@ func (l *Loop) Run(ctx context.Context) error {
 
 **Complex logic gets inline comments:**
 ```go
-// parseLine extracts events from Claude's stream-json output.
+// parseLine extracts events from Gemini's stream-json output.
 // The format is one JSON object per line with these types:
-//   - "assistant": Claude's response (text or tool_use)
+//   - "assistant": Gemini's response (text or tool_use)
 //   - "tool_result": Result of a tool call
 //   - "result": Final result of the conversation
 func (l *Loop) parseLine(line string) *Event {
@@ -1527,28 +1527,28 @@ Use Go with the Bubble Tea framework...
 Key ADRs to write:
 - ADR-001: Go + Bubble Tea for TUI
 - ADR-002: prd.md as source of truth (auto-conversion)
-- ADR-003: Stream-json for Claude output parsing
-- ADR-004: Single iteration = single Claude invocation
+- ADR-003: Stream-json for Gemini output parsing
+- ADR-004: Single iteration = single Gemini invocation
 - ADR-005: No branch management (keep it simple)
 
 ### Man Page
 
 Generate from README using `ronn` or similar:
 ```bash
-chief(1)                    Chief Manual                    chief(1)
+melliza(1)                    Melliza Manual                    melliza(1)
 
 NAME
-       chief - autonomous agent loop for PRDs
+       melliza - autonomous agent loop for PRDs
 
 SYNOPSIS
-       chief [options] [prd-name]
-       chief new [name] [context]
-       chief edit [name]
-       chief status [name]
-       chief list
+       melliza [options] [prd-name]
+       melliza new [name] [context]
+       melliza edit [name]
+       melliza status [name]
+       melliza list
 
 DESCRIPTION
-       Chief orchestrates Claude Code to work through product
+       Melliza orchestrates Gemini Code to work through product
        requirements documents autonomously...
 ```
 

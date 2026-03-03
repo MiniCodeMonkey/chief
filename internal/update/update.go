@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultReleasesURL = "https://api.github.com/repos/MiniCodeMonkey/chief/releases/latest"
+	defaultReleasesURL = "https://api.github.com/repos/MiniCodeMonkey/melliza/releases/latest"
 	downloadTimeout    = 5 * time.Minute
 	checkTimeout       = 10 * time.Second
 )
@@ -142,7 +142,7 @@ func PerformUpdate(currentVersion string, opts Options) (*CheckResult, error) {
 	// Check write permissions
 	dir := filepath.Dir(binaryPath)
 	if err := checkWritePermission(dir); err != nil {
-		return nil, fmt.Errorf("Permission denied. Run 'sudo chief update' to upgrade.")
+		return nil, fmt.Errorf("Permission denied. Run 'sudo melliza update' to upgrade.")
 	}
 
 	// Download binary to temp file
@@ -211,7 +211,7 @@ func CompareVersions(current, latest string) bool {
 
 // findAssets locates the binary and checksum assets for the given OS/arch.
 func findAssets(assets []Asset, goos, goarch string) (*Asset, *Asset) {
-	binaryName := fmt.Sprintf("chief-%s-%s", goos, goarch)
+	binaryName := fmt.Sprintf("melliza-%s-%s", goos, goarch)
 	checksumName := binaryName + ".sha256"
 
 	var binary, checksum *Asset
@@ -228,7 +228,7 @@ func findAssets(assets []Asset, goos, goarch string) (*Asset, *Asset) {
 
 // checkWritePermission checks if we can write to the directory.
 func checkWritePermission(dir string) error {
-	tmp, err := os.CreateTemp(dir, ".chief-update-check-*")
+	tmp, err := os.CreateTemp(dir, ".melliza-update-check-*")
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func downloadToTemp(url, dir string) (string, error) {
 		return "", fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp(dir, ".chief-update-*")
+	tmp, err := os.CreateTemp(dir, ".melliza-update-*")
 	if err != nil {
 		return "", fmt.Errorf("creating temp file: %w", err)
 	}

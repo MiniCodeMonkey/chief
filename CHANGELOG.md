@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Chief are documented in this file.
+All notable changes to Melliza are documented in this file.
 
 ## [0.6.1] - 2026-02-24
 
@@ -18,7 +18,7 @@ All notable changes to Chief are documented in this file.
 ### Bug Fixes
 - Match story commits by ID + title to prevent false positives
 - Show uncommitted WIP changes when story has no commit yet
-- Load claude.md on each iteration instead of only at startup
+- Load gemini.md on each iteration instead of only at startup
 - Update elapsed time display every second while running
 - Dynamically recalculate max iterations when switching PRDs
 
@@ -57,7 +57,7 @@ All notable changes to Chief are documented in this file.
 ## [0.5.0] - 2026-02-19
 
 ### Features
-- Add version check and self-update command (`chief update`)
+- Add version check and self-update command (`melliza update`)
 - Add diff view for viewing task changes
 - Add `e` keybinding to edit current PRD directly
 - Add live progress display during PRD-to-JSON conversion
@@ -82,8 +82,8 @@ All notable changes to Chief are documented in this file.
 - Add `l` keybinding to open PRD picker in selection mode
 
 ### Bug Fixes
-- Prevent Claude from implementing PRD after creation
-- Let Claude write prd.json directly with better error handling
+- Prevent Gemini from implementing PRD after creation
+- Let Gemini write prd.json directly with better error handling
 
 ## [0.3.1] - 2026-02-04
 
@@ -98,7 +98,7 @@ All notable changes to Chief are documented in this file.
 - Add first-time setup flow with gitignore prompt
 
 ### Bug Fixes
-- Launch Claude from project root for full codebase context
+- Launch Gemini from project root for full codebase context
 
 ## [0.2.0] - 2026-01-29
 
@@ -116,7 +116,7 @@ All notable changes to Chief are documented in this file.
 Initial release.
 
 ### Features
-- Core agent loop with Claude Code integration
+- Core agent loop with Gemini Code integration
 - TUI dashboard with Bubble Tea
 - PRD file watching and auto-conversion
 - Parallel PRD execution
@@ -124,15 +124,15 @@ Initial release.
 - PRD picker with tab bar
 - Help overlay
 - Narrow terminal support
-- CLI commands: `chief new`, `chief edit`, `chief status`, `chief list`
+- CLI commands: `melliza new`, `melliza edit`, `melliza status`, `melliza list`
 - Homebrew formula and install script
 
-[0.5.3]: https://github.com/MiniCodeMonkey/chief/compare/v0.5.2...v0.5.3
-[0.5.2]: https://github.com/MiniCodeMonkey/chief/compare/v0.5.1...v0.5.2
-[0.5.1]: https://github.com/MiniCodeMonkey/chief/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.3.1...v0.4.0
-[0.3.1]: https://github.com/MiniCodeMonkey/chief/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/MiniCodeMonkey/chief/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/MiniCodeMonkey/chief/releases/tag/v0.1.0
+[0.5.3]: https://github.com/MiniCodeMonkey/melliza/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/MiniCodeMonkey/melliza/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/MiniCodeMonkey/melliza/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/MiniCodeMonkey/melliza/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/MiniCodeMonkey/melliza/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/MiniCodeMonkey/melliza/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/MiniCodeMonkey/melliza/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/MiniCodeMonkey/melliza/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/MiniCodeMonkey/melliza/releases/tag/v0.1.0

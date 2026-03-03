@@ -9,10 +9,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/minicodemonkey/chief/internal/config"
-	"github.com/minicodemonkey/chief/internal/git"
-	"github.com/minicodemonkey/chief/internal/loop"
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/config"
+	"github.com/lvcoi/melliza/internal/git"
+	"github.com/lvcoi/melliza/internal/loop"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
 // PRDUpdateMsg is sent when the PRD file changes.
@@ -149,7 +149,7 @@ const (
 	ViewQuitConfirm
 )
 
-// App is the main Bubble Tea model for the Chief TUI.
+// App is the main Bubble Tea model for the Melliza TUI.
 type App struct {
 	prd           *prd.PRD
 	prdPath       string
@@ -184,7 +184,7 @@ type App struct {
 
 	// PRD picker (for creating new PRDs)
 	picker  *PRDPicker
-	baseDir string // Base directory for .chief/prds/
+	baseDir string // Base directory for .melliza/prds/
 
 	// Project config
 	config *config.Config
@@ -221,7 +221,7 @@ type App struct {
 	// Completion notification callback
 	onCompletion func(prdName string)
 
-	// Verbose mode - show raw Claude output
+	// Verbose mode - show raw Gemini output
 	verbose bool
 
 	// Post-exit action - what to do after TUI exits
@@ -278,10 +278,10 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 	}
 
 	// Determine base directory for PRD picker
-	// If path contains .chief/prds/, go up to the project root (4 levels up from prd.json)
-	// .chief/prds/<name>/prd.json -> .chief/prds/<name> -> .chief/prds -> .chief -> project root
+	// If path contains .melliza/prds/, go up to the project root (4 levels up from prd.json)
+	// .melliza/prds/<name>/prd.json -> .melliza/prds/<name> -> .melliza/prds -> .melliza -> project root
 	baseDir := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(prdPath))))
-	if !strings.Contains(prdPath, ".chief/prds/") {
+	if !strings.Contains(prdPath, ".melliza/prds/") {
 		// Fallback to current working directory
 		baseDir, _ = os.Getwd()
 	}
@@ -351,12 +351,12 @@ func (a *App) SetCompletionCallback(fn func(prdName string)) {
 	}
 }
 
-// SetVerbose enables or disables verbose mode (raw Claude output in log).
+// SetVerbose enables or disables verbose mode (raw Gemini output in log).
 func (a *App) SetVerbose(v bool) {
 	a.verbose = v
 }
 
-// DisableRetry disables automatic retry on Claude crashes.
+// DisableRetry disables automatic retry on Gemini crashes.
 func (a *App) DisableRetry() {
 	if a.manager != nil {
 		a.manager.DisableRetry()
@@ -723,7 +723,7 @@ func (a App) startLoop() (tea.Model, tea.Cmd) {
 // startLoopForPRD starts the agent loop for a specific PRD.
 func (a App) startLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
 	// Get the PRD directory
-	prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
+	prdDir := filepath.Join(a.baseDir, ".melliza", "prds", prdName)
 
 	if !git.IsGitRepo(a.baseDir) {
 		return a.doStartLoop(prdName, prdDir)
@@ -735,7 +735,7 @@ func (a App) startLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
 	}
 
 	worktreePath := git.WorktreePathForPRD(a.baseDir, prdName)
-	relWorktreePath := fmt.Sprintf(".chief/worktrees/%s/", prdName)
+	relWorktreePath := fmt.Sprintf(".melliza/worktrees/%s/", prdName)
 
 	// Determine dialog context
 	isProtected := git.IsProtectedBranch(branch)
@@ -1140,7 +1140,7 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		prdName := a.pendingStartPRD
-		prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
+		prdDir := filepath.Join(a.baseDir, ".melliza", "prds", prdName)
 		a.pendingStartPRD = ""
 		a.pendingWorktreePath = ""
 		a.viewMode = ViewDashboard
@@ -1149,7 +1149,7 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case BranchOptionCreateWorktree:
 			branchName := a.branchWarning.GetSuggestedBranch()
 			worktreePath := git.WorktreePathForPRD(a.baseDir, prdName)
-			relWorktreePath := fmt.Sprintf(".chief/worktrees/%s/", prdName)
+			relWorktreePath := fmt.Sprintf(".melliza/worktrees/%s/", prdName)
 
 			// Detect default branch for display
 			defaultBranch := "main"
@@ -1377,7 +1377,7 @@ func (a App) handleBackgroundAutoAction(msg backgroundAutoActionResultMsg) (tea.
 			prdName := msg.prdName
 			branch := instance.Branch
 			dir := a.baseDir
-			prdPath := filepath.Join(a.baseDir, ".chief", "prds", prdName, "prd.json")
+			prdPath := filepath.Join(a.baseDir, ".melliza", "prds", prdName, "prd.json")
 			return a, func() tea.Msg {
 				p, err := prd.LoadPRD(prdPath)
 				if err != nil {
@@ -1415,7 +1415,7 @@ func (a *App) runAutoCreatePR() tea.Cmd {
 	dir := a.baseDir
 
 	// Load the PRD to generate PR content
-	prdPath := filepath.Join(a.baseDir, ".chief", "prds", prdName, "prd.json")
+	prdPath := filepath.Join(a.baseDir, ".melliza", "prds", prdName, "prd.json")
 	return func() tea.Msg {
 		p, err := prd.LoadPRD(prdPath)
 		if err != nil {
@@ -1693,7 +1693,7 @@ func (a App) finishWorktreeSetup() (tea.Model, tea.Cmd) {
 	prdName := a.pendingStartPRD
 	worktreePath := a.pendingWorktreePath
 	branchName := a.worktreeSpinner.branchName
-	prdDir := filepath.Join(a.baseDir, ".chief", "prds", prdName)
+	prdDir := filepath.Join(a.baseDir, ".melliza", "prds", prdName)
 
 	// Register or update with worktree info
 	prdPath := filepath.Join(prdDir, "prd.json")
@@ -1842,7 +1842,7 @@ func (a App) handlePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			name := a.picker.GetInputValue()
 			if name != "" {
-				// Launch interactive Claude session to create the PRD
+				// Launch interactive Gemini session to create the PRD
 				a.picker.CancelInputMode()
 				a.stopAllLoops()
 				a.stopWatcher()
@@ -1908,7 +1908,7 @@ func (a App) handlePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.picker.StartInputMode()
 		return a, nil
 	case "e":
-		// Edit the selected PRD - launch interactive Claude session
+		// Edit the selected PRD - launch interactive Gemini session
 		entry := a.picker.GetSelectedEntry()
 		if entry != nil && entry.LoadError == nil {
 			a.stopAllLoops()

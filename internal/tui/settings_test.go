@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/minicodemonkey/chief/internal/config"
+	"github.com/lvcoi/melliza/internal/config"
 )
 
 func TestSettingsOverlay_LoadFromConfig(t *testing.T) {
@@ -259,7 +259,7 @@ func TestSettingsOverlay_Render(t *testing.T) {
 	if !strings.Contains(rendered, "Settings") {
 		t.Error("expected 'Settings' in header")
 	}
-	if !strings.Contains(rendered, ".chief/config.yaml") {
+	if !strings.Contains(rendered, ".melliza/config.yaml") {
 		t.Error("expected config path in header")
 	}
 

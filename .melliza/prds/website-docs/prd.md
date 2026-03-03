@@ -1,29 +1,29 @@
-# Chief Documentation Website
+# Melliza Documentation Website
 
 ## Overview
 
-A VitePress documentation site for Chief, hosted on GitHub Pages at `minicodemonkey.github.io/chief`. The site includes a stunning landing page and comprehensive documentation explaining how Chief works, with a Tokyo Night-inspired dark theme and Tailwind CSS styling.
+A VitePress documentation site for Melliza, hosted on GitHub Pages at `minicodemonkey.github.io/melliza`. The site includes a stunning landing page and comprehensive documentation explaining how Melliza works, with a Tokyo Night-inspired dark theme and Tailwind CSS styling.
 
 ## Goals
 
-- Provide a beautiful, modern landing page that explains what Chief is and why developers need it
+- Provide a beautiful, modern landing page that explains what Melliza is and why developers need it
 - Document the complete PRD → Ralph loop workflow with clear diagrams
 - Offer a full CLI reference generated from the codebase
-- Enable easy sharing of docs with LLMs (copy as markdown, open in Claude/ChatGPT)
+- Enable easy sharing of docs with LLMs (copy as markdown, open in Gemini/ChatGPT)
 - Deploy automatically via GitHub Actions
 
 ## Key Messages
 
-The documentation should emphasize Chief's core philosophy:
+The documentation should emphasize Melliza's core philosophy:
 
 1. **Single binary, zero dependencies** - Drop it on any machine and it works
-2. **All state in `.chief/`** - Portable, self-contained, nothing global
+2. **All state in `.melliza/`** - Portable, self-contained, nothing global
 3. **Works anywhere** - Local dev machine or remote server, same experience
 4. **Simple core** - The loop is ~80 lines, easy to understand and debug
 
 ## External Resources
 
-- **Blog Post:** [Ship Features in Your Sleep with Ralph Loops](https://www.geocod.io/code-and-coordinates/2026-01-27-ralph-loops/) - Background on the motivation and concepts behind Ralph loops. Should be linked prominently in the "How Chief Works" and "Ralph Loop" documentation pages.
+- **Blog Post:** [Ship Features in Your Sleep with Ralph Loops](https://www.geocod.io/code-and-coordinates/2026-01-27-ralph-loops/) - Background on the motivation and concepts behind Ralph loops. Should be linked prominently in the "How Melliza Works" and "Ralph Loop" documentation pages.
 
 ## User Stories
 
@@ -35,8 +35,8 @@ The documentation should emphasize Chief's core philosophy:
 - [ ] VitePress installed and configured in `/docs` directory
 - [ ] `package.json` with dev/build/preview scripts
 - [ ] Basic `.vitepress/config.ts` with site metadata
-- [ ] Site title: "Chief" with tagline "Autonomous PRD Agent"
-- [ ] Base URL configured for `/chief/` (GitHub Pages project site)
+- [ ] Site title: "Melliza" with tagline "Autonomous PRD Agent"
+- [ ] Base URL configured for `/melliza/` (GitHub Pages project site)
 - [ ] `npm run docs:dev` starts the dev server successfully
 
 ### US-002: Tailwind CSS v4 Integration
@@ -64,34 +64,34 @@ The documentation should emphasize Chief's core philosophy:
 
 ### US-004: Landing Page Hero Section
 **Priority:** 4
-**Description:** As a visitor, I want an impactful hero section so that I immediately understand what Chief does.
+**Description:** As a visitor, I want an impactful hero section so that I immediately understand what Melliza does.
 
 **Acceptance Criteria:**
 - [ ] Large headline: "Autonomous PRD Agent"
 - [ ] Subheadline explaining the value proposition in one sentence
-- [ ] Animated terminal showing `chief new` → `chief` workflow (CSS animation, not real recording)
-- [ ] Install command with copy button: `brew install minicodemonkey/chief/chief`
+- [ ] Animated terminal showing `melliza new` → `melliza` workflow (CSS animation, not real recording)
+- [ ] Install command with copy button: `brew install minicodemonkey/melliza/melliza`
 - [ ] "Get Started" button linking to quick start docs
 - [ ] "View on GitHub" secondary button
 - [ ] Responsive design (looks good on mobile)
 
 ### US-005: Landing Page "How It Works" Section
 **Priority:** 5
-**Description:** As a visitor, I want a visual explanation of Chief's workflow so that I understand the concept before diving into docs.
+**Description:** As a visitor, I want a visual explanation of Melliza's workflow so that I understand the concept before diving into docs.
 
 **Acceptance Criteria:**
-- [ ] Three-step visual flow: Write PRD → Chief Runs Loop → Code Gets Built
+- [ ] Three-step visual flow: Write PRD → Melliza Runs Loop → Code Gets Built
 - [ ] Simple icons or illustrations for each step
 - [ ] Brief description under each step (1-2 sentences)
-- [ ] Emphasize autonomous nature - "you watch, Claude works"
+- [ ] Emphasize autonomous nature - "you watch, Gemini works"
 
 ### US-006: Landing Page Key Features Section
 **Priority:** 6
-**Description:** As a visitor, I want to see Chief's key features highlighted so that I understand why it's valuable.
+**Description:** As a visitor, I want to see Melliza's key features highlighted so that I understand why it's valuable.
 
 **Acceptance Criteria:**
 - [ ] Feature: "Single Binary" - No runtime dependencies, download and run
-- [ ] Feature: "Self-Contained State" - Everything in `.chief/`, fully portable
+- [ ] Feature: "Self-Contained State" - Everything in `.melliza/`, fully portable
 - [ ] Feature: "Works Anywhere" - Local machine or remote server, SSH in and run
 - [ ] Feature: "Beautiful TUI" - Real-time progress, keyboard controls
 - [ ] Each feature has icon, title, and 1-2 sentence description
@@ -115,43 +115,43 @@ The documentation should emphasize Chief's core philosophy:
 - [ ] Top nav: Home, Docs, GitHub link
 - [ ] Sidebar sections: Getting Started, Concepts, Reference, Troubleshooting
 - [ ] Getting Started: Quick Start, Installation
-- [ ] Concepts: How Chief Works, The Ralph Loop, PRD Format, The .chief Directory
+- [ ] Concepts: How Melliza Works, The Ralph Loop, PRD Format, The .melliza Directory
 - [ ] Reference: CLI Commands, Configuration, PRD Schema
 - [ ] Troubleshooting: Common Issues, FAQ
 - [ ] Mobile-friendly navigation
 
 ### US-009: Quick Start Guide
 **Priority:** 9
-**Description:** As a new user, I want a quick start guide so that I can get Chief running in under 5 minutes.
+**Description:** As a new user, I want a quick start guide so that I can get Melliza running in under 5 minutes.
 
 **Acceptance Criteria:**
-- [ ] Prerequisites section (Claude Code CLI installed)
+- [ ] Prerequisites section (Gemini Code CLI installed)
 - [ ] Installation options (Homebrew, install script, from source)
-- [ ] Step 1: Install Chief (with copy-able commands)
-- [ ] Step 2: Create your first PRD (`chief new`)
-- [ ] Step 3: Run the loop (`chief`)
+- [ ] Step 1: Install Melliza (with copy-able commands)
+- [ ] Step 2: Create your first PRD (`melliza new`)
+- [ ] Step 3: Run the loop (`melliza`)
 - [ ] Step 4: Watch it work (brief TUI explanation)
 - [ ] "Next steps" linking to deeper docs
 
 ### US-010: Installation Guide
 **Priority:** 10
-**Description:** As a user, I want detailed installation instructions for all platforms so that I can install Chief on my system.
+**Description:** As a user, I want detailed installation instructions for all platforms so that I can install Melliza on my system.
 
 **Acceptance Criteria:**
 - [ ] Homebrew installation (macOS/Linux)
 - [ ] Install script with options (version, custom dir)
 - [ ] Manual binary download with platform matrix
 - [ ] Building from source instructions
-- [ ] Verifying installation (`chief --version`)
+- [ ] Verifying installation (`melliza --version`)
 - [ ] Prerequisites clearly listed
 
-### US-011: How Chief Works Overview
+### US-011: How Melliza Works Overview
 **Priority:** 11
-**Description:** As a user, I want an overview of how Chief works so that I understand the system before using it.
+**Description:** As a user, I want an overview of how Melliza works so that I understand the system before using it.
 
 **Acceptance Criteria:**
 - [ ] High-level explanation of the autonomous agent concept
-- [ ] Diagram showing: User → PRD → Chief → Claude → Code
+- [ ] Diagram showing: User → PRD → Melliza → Gemini → Code
 - [ ] Explanation of "one iteration = one story"
 - [ ] Mention of conventional commits, progress tracking
 - [ ] Link to the blog post for motivation and background
@@ -163,22 +163,22 @@ The documentation should emphasize Chief's core philosophy:
 
 **Acceptance Criteria:**
 - [ ] Link to blog post "Ship Features in Your Sleep with Ralph Loops" at top for additional context
-- [ ] Mermaid flowchart showing the loop: Read State → Build Prompt → Invoke Claude → Stream Output → Check Completion → Repeat
+- [ ] Mermaid flowchart showing the loop: Read State → Build Prompt → Invoke Gemini → Stream Output → Check Completion → Repeat
 - [ ] Explanation of each step with what files are read/written
 - [ ] Diagram showing stream-json output parsing
-- [ ] Explanation of how Claude knows what to do (embedded prompt)
-- [ ] Explanation of `<chief-complete/>` signal
+- [ ] Explanation of how Gemini knows what to do (embedded prompt)
+- [ ] Explanation of `<melliza-complete/>` signal
 - [ ] Iteration limits and why they exist
 - [ ] Simple, straightforward language - no jargon
 
-### US-013: The .chief Directory Guide
+### US-013: The .melliza Directory Guide
 **Priority:** 13
-**Description:** As a user, I want to understand the `.chief/` directory structure so that I know where state is stored.
+**Description:** As a user, I want to understand the `.melliza/` directory structure so that I know where state is stored.
 
 **Acceptance Criteria:**
 - [ ] Directory tree visualization
 - [ ] Explanation of `prds/` subdirectory structure
-- [ ] File explanations: `prd.md`, `prd.json`, `progress.txt`, `claude.log`
+- [ ] File explanations: `prd.md`, `prd.json`, `progress.txt`, `gemini.log`
 - [ ] Emphasis on portability - "move your project, state moves with it"
 - [ ] Emphasis on self-contained nature - no global config, no home directory files
 - [ ] Explanation of multiple PRDs in same project
@@ -206,30 +206,30 @@ The documentation should emphasize Chief's core philosophy:
 - [ ] Usage examples for each command
 - [ ] Keyboard shortcuts reference (TUI controls)
 - [ ] Exit codes documentation
-- [ ] Structure mirrors `chief --help` output
+- [ ] Structure mirrors `melliza --help` output
 
 ### US-016: Troubleshooting Guide
 **Priority:** 16
 **Description:** As a user, I want a troubleshooting guide so that I can solve common problems.
 
 **Acceptance Criteria:**
-- [ ] "Claude not found" - installation verification
+- [ ] "Gemini not found" - installation verification
 - [ ] "Permission denied" - explanation of `--dangerously-skip-permissions`
 - [ ] "No sound on completion" - audio troubleshooting
 - [ ] "PRD not updating" - file watcher issues
-- [ ] "Loop not progressing" - checking claude.log
+- [ ] "Loop not progressing" - checking gemini.log
 - [ ] "Max iterations reached" - increasing limits
 - [ ] Each issue has: symptom, cause, solution
 
 ### US-017: LLM Actions Component
 **Priority:** 17
-**Description:** As a user, I want to copy documentation pages as markdown or open them in Claude/ChatGPT so that I can get AI help with Chief.
+**Description:** As a user, I want to copy documentation pages as markdown or open them in Gemini/ChatGPT so that I can get AI help with Melliza.
 
 **Acceptance Criteria:**
 - [ ] Vue component with dropdown menu
 - [ ] "Copy as Markdown" - copies raw page markdown to clipboard
 - [ ] "Open in ChatGPT" - opens ChatGPT with prompt about the page
-- [ ] "Open in Claude" - opens Claude with prompt about the page
+- [ ] "Open in Gemini" - opens Gemini with prompt about the page
 - [ ] Component appears on every documentation page (not landing page)
 - [ ] Styled to match Tokyo Night theme
 - [ ] Raw markdown available via `__DOC_RAW` window variable (requires VitePress transformer config)
@@ -250,7 +250,7 @@ The documentation should emphasize Chief's core philosophy:
 
 **Acceptance Criteria:**
 - [ ] Placeholder image component with customizable dimensions and label
-- [ ] Placeholders for: TUI dashboard, TUI log view, chief new flow
+- [ ] Placeholders for: TUI dashboard, TUI log view, melliza new flow
 - [ ] Placeholder for asciinema recording embed (with instructions for later)
 - [ ] `/docs/public/images/` directory created
 - [ ] README in images folder explaining what screenshots are needed
@@ -296,7 +296,7 @@ The documentation should emphasize Chief's core philosophy:
 - Internationalization (English only)
 - Comments or feedback system
 - Analytics integration
-- API documentation (Chief has no API)
+- API documentation (Melliza has no API)
 - Video tutorials (text and diagrams only)
 
 ## Technical Considerations
@@ -305,7 +305,7 @@ The documentation should emphasize Chief's core philosophy:
 - Tailwind CSS v4 with `@tailwindcss/vite` plugin
 - Vue 3 components for interactive elements
 - Mermaid for diagrams (built into VitePress)
-- GitHub Pages for hosting (project site at /chief/)
+- GitHub Pages for hosting (project site at /melliza/)
 
 ## Success Metrics
 

@@ -5,18 +5,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/minicodemonkey/chief/embed"
+	"github.com/lvcoi/melliza/embed"
 )
 
 // EditOptions contains configuration for the edit command.
 type EditOptions struct {
 	Name    string // PRD name (default: "main")
-	BaseDir string // Base directory for .chief/prds/ (default: current directory)
+	BaseDir string // Base directory for .melliza/prds/ (default: current directory)
 	Merge   bool   // Auto-merge without prompting on conversion conflicts
 	Force   bool   // Auto-overwrite without prompting on conversion conflicts
 }
 
-// RunEdit edits an existing PRD by launching an interactive Claude session.
+// RunEdit edits an existing PRD by launching an interactive Gemini session.
 func RunEdit(opts EditOptions) error {
 	// Set defaults
 	if opts.Name == "" {
@@ -36,24 +36,24 @@ func RunEdit(opts EditOptions) error {
 	}
 
 	// Build the PRD directory path
-	prdDir := filepath.Join(opts.BaseDir, ".chief", "prds", opts.Name)
+	prdDir := filepath.Join(opts.BaseDir, ".melliza", "prds", opts.Name)
 	prdMdPath := filepath.Join(prdDir, "prd.md")
 
 	// Check if prd.md exists
 	if _, err := os.Stat(prdMdPath); os.IsNotExist(err) {
-		return fmt.Errorf("PRD not found at %s. Use 'chief new %s' to create it first", prdMdPath, opts.Name)
+		return fmt.Errorf("PRD not found at %s. Use 'melliza new %s' to create it first", prdMdPath, opts.Name)
 	}
 
 	// Get the edit prompt with the PRD directory path
 	prompt := embed.GetEditPrompt(prdDir)
 
-	// Launch interactive Claude session
+	// Launch interactive Gemini session
 	fmt.Printf("Editing PRD at %s...\n", prdDir)
-	fmt.Println("Launching Claude to help you edit your PRD...")
+	fmt.Println("Launching Gemini to help you edit your PRD...")
 	fmt.Println()
 
-	if err := runInteractiveClaude(opts.BaseDir, prompt); err != nil {
-		return fmt.Errorf("Claude session failed: %w", err)
+	if err := runInteractiveGemini(opts.BaseDir, prompt); err != nil {
+		return fmt.Errorf("Gemini session failed: %w", err)
 	}
 
 	fmt.Println("\nPRD editing complete!")
@@ -68,6 +68,6 @@ func RunEdit(opts EditOptions) error {
 		return fmt.Errorf("conversion failed: %w", err)
 	}
 
-	fmt.Printf("\nYour PRD is updated! Run 'chief' or 'chief %s' to continue working on it.\n", opts.Name)
+	fmt.Printf("\nYour PRD is updated! Run 'melliza' or 'melliza %s' to continue working on it.\n", opts.Name)
 	return nil
 }

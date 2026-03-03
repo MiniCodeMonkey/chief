@@ -589,8 +589,8 @@ func TestLoadAndValidateConvertedPRD(t *testing.T) {
 	})
 }
 
-// Note: Full integration tests for Convert(), runClaudeConversion(), runClaudeJSONFix(),
-// and waitWithSpinner() require Claude to be available and are not included here.
+// Note: Full integration tests for Convert(), runGeminiConversion(), runGeminiJSONFix(),
+// and waitWithSpinner() require Gemini to be available and are not included here.
 
 func TestSamplePRDMarkdown(t *testing.T) {
 	// Test that a sample prd.md structure is recognized

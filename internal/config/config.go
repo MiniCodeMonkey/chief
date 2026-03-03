@@ -7,9 +7,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const configFile = ".chief/config.yaml"
+const configFile = ".melliza/config.yaml"
 
-// Config holds project-level settings for Chief.
+// Config holds project-level settings for Melliza.
 type Config struct {
 	Worktree   WorktreeConfig   `yaml:"worktree"`
 	OnComplete OnCompleteConfig `yaml:"onComplete"`
@@ -42,7 +42,7 @@ func Exists(baseDir string) bool {
 	return err == nil
 }
 
-// Load reads the config from .chief/config.yaml.
+// Load reads the config from .melliza/config.yaml.
 // Returns Default() when the file doesn't exist (no error).
 func Load(baseDir string) (*Config, error) {
 	path := configPath(baseDir)
@@ -63,7 +63,7 @@ func Load(baseDir string) (*Config, error) {
 	return cfg, nil
 }
 
-// Save writes the config to .chief/config.yaml.
+// Save writes the config to .melliza/config.yaml.
 func Save(baseDir string, cfg *Config) error {
 	path := configPath(baseDir)
 

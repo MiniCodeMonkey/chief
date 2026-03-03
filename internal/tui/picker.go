@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/minicodemonkey/chief/internal/git"
-	"github.com/minicodemonkey/chief/internal/loop"
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/git"
+	"github.com/lvcoi/melliza/internal/loop"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
 // PRDEntry represents a PRD in the picker list.
@@ -65,7 +65,7 @@ type PRDPicker struct {
 	selectedIndex int
 	width         int
 	height        int
-	basePath      string        // Base path where .chief/prds/ is located
+	basePath      string        // Base path where .melliza/prds/ is located
 	currentPRD    string        // Name of the currently active PRD
 	inputMode     bool          // Whether we're in input mode for new PRD name
 	inputValue    string        // The current input value for new PRD name
@@ -95,11 +95,11 @@ func (p *PRDPicker) SetManager(manager *loop.Manager) {
 	p.manager = manager
 }
 
-// Refresh reloads the list of PRDs from the .chief/prds/ directory.
+// Refresh reloads the list of PRDs from the .melliza/prds/ directory.
 func (p *PRDPicker) Refresh() {
 	p.entries = make([]PRDEntry, 0)
 
-	prdsDir := filepath.Join(p.basePath, ".chief", "prds")
+	prdsDir := filepath.Join(p.basePath, ".melliza", "prds")
 
 	// Read the prds directory
 	entries, err := os.ReadDir(prdsDir)
@@ -132,8 +132,8 @@ func (p *PRDPicker) Refresh() {
 		addedNames[name] = true
 	}
 
-	// Also check if there's a "main" PRD directly in .chief/ (legacy location)
-	mainPrdPath := filepath.Join(p.basePath, ".chief", "prd.json")
+	// Also check if there's a "main" PRD directly in .melliza/ (legacy location)
+	mainPrdPath := filepath.Join(p.basePath, ".melliza", "prd.json")
 	if _, err := os.Stat(mainPrdPath); err == nil && !addedNames["main"] {
 		prdEntry := p.loadPRDEntry("main", mainPrdPath)
 		p.entries = append(p.entries, prdEntry)
@@ -175,7 +175,7 @@ func (p *PRDPicker) Refresh() {
 			if !found {
 				p.entries = append(p.entries, PRDEntry{
 					Name:        prdName,
-					Path:        filepath.Join(p.basePath, ".chief", "prds", prdName, "prd.json"),
+					Path:        filepath.Join(p.basePath, ".melliza", "prds", prdName, "prd.json"),
 					LoopState:   loop.LoopStateReady,
 					WorktreeDir: absPath,
 					Orphaned:    true,
@@ -475,7 +475,7 @@ func (p *PRDPicker) Render() string {
 		emptyStyle := lipgloss.NewStyle().
 			Foreground(MutedColor).
 			Padding(1, 2)
-		content.WriteString(emptyStyle.Render("No PRDs found in .chief/prds/"))
+		content.WriteString(emptyStyle.Render("No PRDs found in .melliza/prds/"))
 		content.WriteString("\n")
 		content.WriteString(emptyStyle.Render("Press 'n' to create a new PRD"))
 	} else {

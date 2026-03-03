@@ -1,11 +1,11 @@
-# Chief - Autonomous PRD Agent
-# https://github.com/minicodemonkey/chief
+# Melliza - Autonomous PRD Agent
+# https://github.com/lvcoi/melliza
 
-BINARY_NAME := chief
+BINARY_NAME := melliza
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BIN_DIR := ./bin
 BUILD_DIR := ./build
-MAIN_PKG := ./cmd/chief
+MAIN_PKG := ./cmd/melliza
 
 # Go build flags
 LDFLAGS := -ldflags "-X main.Version=$(VERSION)"

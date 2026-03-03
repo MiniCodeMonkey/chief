@@ -1,5 +1,5 @@
 # Binaries
-/chief
+/melliza
 *.exe
 
 # Log files
@@ -11,3 +11,6 @@ node_modules/
 # VitePress
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+
+.gemini/
+gha-creds-*.json

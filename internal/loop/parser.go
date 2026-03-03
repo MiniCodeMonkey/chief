@@ -5,25 +5,25 @@ import (
 	"strings"
 )
 
-// EventType represents the type of event parsed from Claude's stream-json output.
+// EventType represents the type of event parsed from Gemini's stream-json output.
 type EventType int
 
 const (
 	// EventUnknown represents an unrecognized event type.
 	EventUnknown EventType = iota
-	// EventIterationStart is emitted at the start of a Claude iteration (system init).
+	// EventIterationStart is emitted at the start of a Gemini iteration (system init).
 	EventIterationStart
-	// EventAssistantText is emitted when Claude outputs text.
+	// EventAssistantText is emitted when Gemini outputs text.
 	EventAssistantText
-	// EventToolStart is emitted when Claude invokes a tool.
+	// EventToolStart is emitted when Gemini invokes a tool.
 	EventToolStart
 	// EventToolResult is emitted when a tool returns a result.
 	EventToolResult
-	// EventStoryStarted is emitted when Claude indicates a story is being worked on.
+	// EventStoryStarted is emitted when Gemini indicates a story is being worked on.
 	EventStoryStarted
-	// EventStoryCompleted is emitted when Claude completes a story.
+	// EventStoryCompleted is emitted when Gemini completes a story.
 	EventStoryCompleted
-	// EventComplete is emitted when <chief-complete/> is detected.
+	// EventComplete is emitted when <melliza-complete/> is detected.
 	EventComplete
 	// EventMaxIterationsReached is emitted when max iterations are reached.
 	EventMaxIterationsReached
@@ -65,7 +65,7 @@ func (e EventType) String() string {
 	}
 }
 
-// Event represents a parsed event from Claude's stream-json output.
+// Event represents a parsed event from Gemini's stream-json output.
 type Event struct {
 	Type       EventType
 	Iteration  int
@@ -165,8 +165,8 @@ func parseAssistantMessage(raw json.RawMessage) *Event {
 		switch block.Type {
 		case "text":
 			text := block.Text
-			// Check for <chief-complete/> tag
-			if strings.Contains(text, "<chief-complete/>") {
+			// Check for <melliza-complete/> tag
+			if strings.Contains(text, "<melliza-complete/>") {
 				return &Event{
 					Type: EventComplete,
 					Text: text,

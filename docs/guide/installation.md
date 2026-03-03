@@ -1,39 +1,39 @@
 ---
-description: Install Chief on macOS or Linux via Homebrew, install script, manual download, or from source. Single binary with no runtime dependencies.
+description: Install Melliza on macOS or Linux via Homebrew, install script, manual download, or from source. Single binary with no runtime dependencies.
 ---
 
 # Installation
 
-Chief is distributed as a single binary with no runtime dependencies. Choose your preferred installation method below.
+Melliza is distributed as a single binary with no runtime dependencies. Choose your preferred installation method below.
 
 ## Prerequisites
 
-Before installing Chief, ensure you have **Claude Code CLI** installed and authenticated:
+Before installing Melliza, ensure you have **Gemini CLI** installed and authenticated:
 
 ::: code-group
 
 ```bash [npm (recommended)]
-# Install Claude Code globally
-npm install -g @anthropic-ai/claude-code
+# Install Gemini CLI globally
+npm install -g @google/gemini-cli
 
 # Authenticate (opens browser)
-claude login
+gemini login
 ```
 
 ```bash [npx (no install)]
 # Run directly without installing
-npx @anthropic-ai/claude-code login
+npx @google/gemini-cli login
 ```
 
 :::
 
-::: tip Verify Claude Code Installation
-Run `claude --version` to confirm Claude Code is installed. Chief will not work without it.
+::: tip Verify Gemini CLI Installation
+Run `gemini --version` to confirm Gemini CLI is installed. Melliza will not work without it.
 :::
 
 ### Optional: GitHub CLI (`gh`)
 
-If you want Chief to automatically create pull requests when a PRD completes, install the [GitHub CLI](https://cli.github.com/):
+If you want Melliza to automatically create pull requests when a PRD completes, install the [GitHub CLI](https://cli.github.com/):
 
 ```bash
 # macOS
@@ -50,39 +50,39 @@ The `gh` CLI is only required for automatic PR creation. All other features work
 
 ## Homebrew (Recommended)
 
-The easiest way to install Chief on **macOS** or **Linux**:
+The easiest way to install Melliza on **macOS** or **Linux**:
 
 ```bash
-brew install minicodemonkey/chief/chief
+brew install lvcoi/melliza/melliza
 ```
 
 This method:
 - Automatically handles updates via `brew upgrade`
-- Installs to `/opt/homebrew/bin/chief` (Apple Silicon) or `/usr/local/bin/chief` (Intel/Linux)
+- Installs to `/opt/homebrew/bin/melliza` (Apple Silicon) or `/usr/local/bin/melliza` (Intel/Linux)
 - Works on macOS (Apple Silicon and Intel) and Linux (x64 and ARM64)
 
 ### Updating
 
-The easiest way to update is Chief's built-in update command, which works regardless of how you installed:
+The easiest way to update is Melliza's built-in update command, which works regardless of how you installed:
 
 ```bash
-chief update
+melliza update
 ```
 
 If you installed via Homebrew, you can also use:
 
 ```bash
-brew update && brew upgrade chief
+brew update && brew upgrade melliza
 ```
 
-Chief automatically checks for updates on startup and notifies you when a new version is available.
+Melliza automatically checks for updates on startup and notifies you when a new version is available.
 
 ## Install Script
 
 Download and install with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/minicodemonkey/chief/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/minicodemonkey/melliza/main/install.sh | bash
 ```
 
 The script automatically detects your platform and downloads the appropriate binary.
@@ -92,20 +92,20 @@ The script automatically detects your platform and downloads the appropriate bin
 | Option | Description | Example |
 |--------|-------------|---------|
 | `--version` | Install a specific version | `--version v0.1.0` |
-| `--dir` | Install to a custom directory | `--dir /opt/chief` |
+| `--dir` | Install to a custom directory | `--dir /opt/melliza` |
 | `--help` | Show all available options | `--help` |
 
 **Examples:**
 
 ```bash
 # Install a specific version
-curl -fsSL https://raw.githubusercontent.com/minicodemonkey/chief/main/install.sh | bash -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/minicodemonkey/melliza/main/install.sh | bash -s -- --version v0.1.0
 
 # Install to a custom directory
-curl -fsSL https://raw.githubusercontent.com/minicodemonkey/chief/main/install.sh | bash -s -- --dir ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/minicodemonkey/melliza/main/install.sh | bash -s -- --dir ~/.local/bin
 
 # Both options combined
-curl -fsSL https://raw.githubusercontent.com/minicodemonkey/chief/main/install.sh | bash -s -- --version v0.1.0 --dir /opt/chief
+curl -fsSL https://raw.githubusercontent.com/minicodemonkey/melliza/main/install.sh | bash -s -- --version v0.1.0 --dir /opt/melliza
 ```
 
 ::: info Custom Directory
@@ -118,16 +118,16 @@ Add this to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist it.
 
 ## Manual Binary Download
 
-Download the binary for your platform from the [GitHub Releases page](https://github.com/minicodemonkey/chief/releases).
+Download the binary for your platform from the [GitHub Releases page](https://github.com/lvcoi/melliza/releases).
 
 ### Platform Matrix
 
 | Platform | Architecture | Binary Name | Notes |
 |----------|-------------|-------------|-------|
-| macOS | Apple Silicon (M1/M2/M3) | `chief-darwin-arm64` | Recommended for modern Macs |
-| macOS | Intel (x64) | `chief-darwin-amd64` | For older Intel-based Macs |
-| Linux | x64 (AMD64) | `chief-linux-amd64` | Most common Linux servers |
-| Linux | ARM64 | `chief-linux-arm64` | Raspberry Pi 4, AWS Graviton |
+| macOS | Apple Silicon (M1/M2/M3) | `melliza-darwin-arm64` | Recommended for modern Macs |
+| macOS | Intel (x64) | `melliza-darwin-amd64` | For older Intel-based Macs |
+| Linux | x64 (AMD64) | `melliza-linux-amd64` | Most common Linux servers |
+| Linux | ARM64 | `melliza-linux-arm64` | Raspberry Pi 4, AWS Graviton |
 
 ### Installation Steps
 
@@ -135,46 +135,46 @@ Download the binary for your platform from the [GitHub Releases page](https://gi
 
 ```bash [macOS Apple Silicon]
 # Download the binary
-curl -LO https://github.com/minicodemonkey/chief/releases/latest/download/chief-darwin-arm64
+curl -LO https://github.com/lvcoi/melliza/releases/latest/download/melliza-darwin-arm64
 
 # Make it executable
-chmod +x chief-darwin-arm64
+chmod +x melliza-darwin-arm64
 
 # Move to a directory in your PATH
-sudo mv chief-darwin-arm64 /usr/local/bin/chief
+sudo mv melliza-darwin-arm64 /usr/local/bin/melliza
 ```
 
 ```bash [macOS Intel]
 # Download the binary
-curl -LO https://github.com/minicodemonkey/chief/releases/latest/download/chief-darwin-amd64
+curl -LO https://github.com/lvcoi/melliza/releases/latest/download/melliza-darwin-amd64
 
 # Make it executable
-chmod +x chief-darwin-amd64
+chmod +x melliza-darwin-amd64
 
 # Move to a directory in your PATH
-sudo mv chief-darwin-amd64 /usr/local/bin/chief
+sudo mv melliza-darwin-amd64 /usr/local/bin/melliza
 ```
 
 ```bash [Linux x64]
 # Download the binary
-curl -LO https://github.com/minicodemonkey/chief/releases/latest/download/chief-linux-amd64
+curl -LO https://github.com/lvcoi/melliza/releases/latest/download/melliza-linux-amd64
 
 # Make it executable
-chmod +x chief-linux-amd64
+chmod +x melliza-linux-amd64
 
 # Move to a directory in your PATH
-sudo mv chief-linux-amd64 /usr/local/bin/chief
+sudo mv melliza-linux-amd64 /usr/local/bin/melliza
 ```
 
 ```bash [Linux ARM64]
 # Download the binary
-curl -LO https://github.com/minicodemonkey/chief/releases/latest/download/chief-linux-arm64
+curl -LO https://github.com/lvcoi/melliza/releases/latest/download/melliza-linux-arm64
 
 # Make it executable
-chmod +x chief-linux-arm64
+chmod +x melliza-linux-arm64
 
 # Move to a directory in your PATH
-sudo mv chief-linux-arm64 /usr/local/bin/chief
+sudo mv melliza-linux-arm64 /usr/local/bin/melliza
 ```
 
 :::
@@ -192,7 +192,7 @@ uname -m  # x86_64 = AMD64, aarch64 = ARM64
 
 ## Building from Source
 
-Build Chief from source if you want the latest development version or need to customize the build.
+Build Melliza from source if you want the latest development version or need to customize the build.
 
 ### Prerequisites
 
@@ -203,14 +203,14 @@ Build Chief from source if you want the latest development version or need to cu
 
 ```bash
 # Clone the repository
-git clone https://github.com/minicodemonkey/chief.git
-cd chief
+git clone https://github.com/lvcoi/melliza.git
+cd melliza
 
 # Build the binary
-go build -o chief ./cmd/chief
+go build -o melliza ./cmd/melliza
 
 # Optionally install to your GOPATH/bin
-go install ./cmd/chief
+go install ./cmd/melliza
 ```
 
 ### Build with Version Info
@@ -218,53 +218,53 @@ go install ./cmd/chief
 For a release-quality build with version information embedded:
 
 ```bash
-go build -ldflags "-X main.version=$(git describe --tags --always)" -o chief ./cmd/chief
+go build -ldflags "-X main.version=$(git describe --tags --always)" -o melliza ./cmd/melliza
 ```
 
 ### Verify the Build
 
 ```bash
-./chief --version
+./melliza --version
 ```
 
 ## Verifying Installation
 
-After installing via any method, verify Chief is working correctly:
+After installing via any method, verify Melliza is working correctly:
 
 ```bash
 # Check the version
-chief --version
+melliza --version
 
 # View help
-chief --help
+melliza --help
 
-# Check that Claude Code is accessible
-claude --version
+# Check that Gemini CLI is accessible
+gemini --version
 ```
 
 Expected output:
 
 ```
-$ chief --version
-chief version vX.Y.Z
+$ melliza --version
+melliza version vX.Y.Z
 
-$ claude --version
-Claude Code vX.Y.Z
+$ gemini --version
+Gemini CLI vX.Y.Z
 ```
 
 ::: warning Troubleshooting
-If `chief` is not found after installation:
+If `melliza` is not found after installation:
 1. Check that the installation directory is in your `PATH`
 2. Open a new terminal window/tab to reload your shell
-3. Run `which chief` to see if it's found and where
+3. Run `which melliza` to see if it's found and where
 
 See the [Troubleshooting Guide](/troubleshooting/common-issues) for more help.
 :::
 
 ## Next Steps
 
-Now that Chief is installed:
+Now that Melliza is installed:
 
 1. **[Quick Start Guide](/guide/quick-start)** - Get running with your first PRD
-2. **[How Chief Works](/concepts/how-it-works)** - Understand the autonomous agent concept
+2. **[How Melliza Works](/concepts/how-it-works)** - Understand the autonomous agent concept
 3. **[CLI Reference](/reference/cli)** - Explore all available commands

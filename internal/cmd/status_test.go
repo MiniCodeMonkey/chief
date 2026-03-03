@@ -10,7 +10,7 @@ func TestRunStatusWithValidPRD(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a PRD directory with prd.json
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", "test")
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", "test")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestRunStatusWithDefaultName(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a PRD directory with prd.json using default name "main"
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", "main")
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", "main")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestRunListWithPRDs(t *testing.T) {
 	}
 
 	for _, p := range prds {
-		prdDir := filepath.Join(tmpDir, ".chief", "prds", p.name)
+		prdDir := filepath.Join(tmpDir, ".melliza", "prds", p.name)
 		if err := os.MkdirAll(prdDir, 0755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
@@ -150,7 +150,7 @@ func TestRunListSkipsInvalidPRDs(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a valid PRD
-	validDir := filepath.Join(tmpDir, ".chief", "prds", "valid")
+	validDir := filepath.Join(tmpDir, ".melliza", "prds", "valid")
 	if err := os.MkdirAll(validDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
@@ -160,13 +160,13 @@ func TestRunListSkipsInvalidPRDs(t *testing.T) {
 	}
 
 	// Create an invalid PRD directory (no prd.json)
-	invalidDir := filepath.Join(tmpDir, ".chief", "prds", "invalid")
+	invalidDir := filepath.Join(tmpDir, ".melliza", "prds", "invalid")
 	if err := os.MkdirAll(invalidDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
 
 	// Create another invalid PRD (invalid JSON)
-	badJsonDir := filepath.Join(tmpDir, ".chief", "prds", "badjson")
+	badJsonDir := filepath.Join(tmpDir, ".melliza", "prds", "badjson")
 	if err := os.MkdirAll(badJsonDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestRunListSkipsInvalidPRDs(t *testing.T) {
 func TestRunStatusAllComplete(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", "done")
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", "done")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestRunStatusAllComplete(t *testing.T) {
 func TestRunStatusEmptyPRD(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", "empty")
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", "empty")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}

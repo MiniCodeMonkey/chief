@@ -33,7 +33,7 @@ type WorktreeSpinner struct {
 	prdName       string
 	branchName    string
 	defaultBranch string
-	worktreePath  string // Relative path for display (e.g., ".chief/worktrees/auth/")
+	worktreePath  string // Relative path for display (e.g., ".melliza/worktrees/auth/")
 	setupCommand  string // Empty if no setup command configured
 
 	currentStep  WorktreeSpinnerStep

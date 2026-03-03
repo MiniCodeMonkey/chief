@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
 // CheckGHCLI validates that the GitHub CLI is installed and authenticated.

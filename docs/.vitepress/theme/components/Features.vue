@@ -34,7 +34,7 @@
           </div>
           <h3 class="feature-title">Self-Contained State</h3>
           <p class="feature-description">
-            Everything lives in <code>.chief/</code>. Easy to gitignore on shared projects.
+            Everything lives in <code>.melliza/</code>. Easy to gitignore on shared projects.
           </p>
         </div>
 
@@ -64,7 +64,7 @@
           </div>
           <h3 class="feature-title">Beautiful TUI</h3>
           <p class="feature-description">
-            Real-time progress, live logs, and keyboard controls. Watch Claude work in style.
+            Real-time progress, live logs, and keyboard controls. Watch Gemini work in style.
           </p>
         </div>
       </div>

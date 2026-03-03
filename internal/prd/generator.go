@@ -14,7 +14,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
-	"github.com/minicodemonkey/chief/embed"
+	"github.com/lvcoi/melliza/embed"
 )
 
 // Colors duplicated from tui/styles.go to avoid import cycle (tui → git → prd).
@@ -42,7 +42,7 @@ var waitingJokes = []string{
 	"Debugging is like being the detective in a crime movie where you are also the murderer.",
 	"How many programmers does it take to change a light bulb? None, that's a hardware problem.",
 	"I asked the AI to write a PRD. It wrote a PRD about writing PRDs.",
-	"You're absolutely right. That's a great point. I completely agree. — Claude, before doing what it was already going to do",
+	"You're absolutely right. That's a great point. I completely agree. — Gemini, before doing what it was already going to do",
 	"The AI said it was 95% confident. It was not.",
 	"Prompt engineering: the art of saying 'no really, do what I said' in 47 different ways.",
 	"The LLM hallucinated a library that doesn't exist. Honestly, the API looked pretty good though.",
@@ -69,12 +69,12 @@ const (
 	ChoiceCancel                                  // Cancel conversion
 )
 
-// Convert converts prd.md to prd.json using Claude one-shot mode.
-// Claude receives the PRD content inline and returns JSON on stdout.
+// Convert converts prd.md to prd.json using Gemini one-shot mode.
+// Gemini receives the PRD content inline and returns JSON on stdout.
 // This function is called:
-// - After chief new (new PRD creation)
-// - After chief edit (PRD modification)
-// - Before chief run if prd.md is newer than prd.json
+// - After melliza new (new PRD creation)
+// - After melliza edit (PRD modification)
+// - Before melliza run if prd.md is newer than prd.json
 //
 // Progress protection:
 // - If prd.json has progress (passes: true or inProgress: true) and prd.md changed:
@@ -110,8 +110,8 @@ func Convert(opts ConvertOptions) error {
 		idPrefix = existingPRD.ExtractIDPrefix()
 	}
 
-	// Run Claude to convert prd.md → JSON string
-	rawJSON, err := runClaudeConversion(absPRDDir, idPrefix)
+	// Run Gemini to convert prd.md → JSON string
+	rawJSON, err := runGeminiConversion(absPRDDir, idPrefix)
 	if err != nil {
 		return err
 	}
@@ -122,10 +122,10 @@ func Convert(opts ConvertOptions) error {
 	// Parse and validate
 	newPRD, err := parseAndValidatePRD(cleanedJSON)
 	if err != nil {
-		// Retry once: ask Claude to fix the invalid JSON
+		// Retry once: ask Gemini to fix the invalid JSON
 		fmt.Println("Conversion produced invalid JSON, retrying...")
 		fmt.Printf("Raw output:\n---\n%s\n---\n", cleanedJSON)
-		fixedJSON, retryErr := runClaudeJSONFix(cleanedJSON, err)
+		fixedJSON, retryErr := runGeminiJSONFix(cleanedJSON, err)
 		if retryErr != nil {
 			return fmt.Errorf("conversion retry failed: %w", retryErr)
 		}
@@ -195,14 +195,14 @@ func Convert(opts ConvertOptions) error {
 	return nil
 }
 
-// runClaudeConversion sends the PRD file path to Claude and returns the JSON output.
-// Claude reads prd.md itself using file-reading tools, avoiding token limits for large PRDs.
+// runGeminiConversion sends the PRD file path to Gemini and returns the JSON output.
+// Gemini reads prd.md itself using file-reading tools, avoiding token limits for large PRDs.
 // The idPrefix determines the story ID convention (e.g., "US" → US-001, "MFR" → MFR-001).
-func runClaudeConversion(absPRDDir, idPrefix string) (string, error) {
+func runGeminiConversion(absPRDDir, idPrefix string) (string, error) {
 	prdMdPath := filepath.Join(absPRDDir, "prd.md")
 	prompt := embed.GetConvertPrompt(prdMdPath, idPrefix)
 
-	cmd := exec.Command("claude", "-p")
+	cmd := exec.Command("gemini", "-p", "")
 	cmd.Dir = absPRDDir
 	cmd.Stdin = strings.NewReader(prompt)
 
@@ -211,7 +211,7 @@ func runClaudeConversion(absPRDDir, idPrefix string) (string, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start Claude: %w", err)
+		return "", fmt.Errorf("failed to start Gemini: %w", err)
 	}
 
 	if err := waitWithPanel(cmd, "Converting PRD", "Analyzing PRD...", &stderr); err != nil {
@@ -221,8 +221,8 @@ func runClaudeConversion(absPRDDir, idPrefix string) (string, error) {
 	return stdout.String(), nil
 }
 
-// runClaudeJSONFix asks Claude to fix invalid JSON inline and returns the corrected output.
-func runClaudeJSONFix(badJSON string, validationErr error) (string, error) {
+// runGeminiJSONFix asks Gemini to fix invalid JSON inline and returns the corrected output.
+func runGeminiJSONFix(badJSON string, validationErr error) (string, error) {
 	fixPrompt := fmt.Sprintf(
 		"The following JSON is invalid. The error is: %s\n\n"+
 			"Fix the JSON (pay special attention to escaping double quotes inside string values with backslashes) "+
@@ -230,14 +230,14 @@ func runClaudeJSONFix(badJSON string, validationErr error) (string, error) {
 		validationErr.Error(), badJSON,
 	)
 
-	cmd := exec.Command("claude", "-p", fixPrompt)
+	cmd := exec.Command("gemini", "-p", fixPrompt)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start Claude: %w", err)
+		return "", fmt.Errorf("failed to start Gemini: %w", err)
 	}
 
 	if err := waitWithSpinner(cmd, "Fixing JSON", "Fixing prd.json...", &stderr); err != nil {
@@ -360,10 +360,10 @@ func renderProgressBox(title, activity string, elapsed time.Duration, joke strin
 		contentWidth = 20
 	}
 
-	// Header: "chief  <title>"
-	chiefStr := lipgloss.NewStyle().Bold(true).Foreground(cPrimary).Render("chief")
+	// Header: "melliza  <title>"
+	mellizaStr := lipgloss.NewStyle().Bold(true).Foreground(cPrimary).Render("melliza")
 	titleStr := lipgloss.NewStyle().Foreground(cText).Render(title)
-	header := chiefStr + "  " + titleStr
+	header := mellizaStr + "  " + titleStr
 
 	// Divider
 	divider := lipgloss.NewStyle().Foreground(cBorder).Render(strings.Repeat("─", contentWidth))
@@ -403,9 +403,9 @@ func renderSpinnerBox(title, activity string, elapsed time.Duration, panelWidth 
 		contentWidth = 20
 	}
 
-	chiefStr := lipgloss.NewStyle().Bold(true).Foreground(cPrimary).Render("chief")
+	mellizaStr := lipgloss.NewStyle().Bold(true).Foreground(cPrimary).Render("melliza")
 	titleStr := lipgloss.NewStyle().Foreground(cText).Render(title)
-	header := chiefStr + "  " + titleStr
+	header := mellizaStr + "  " + titleStr
 
 	divider := lipgloss.NewStyle().Foreground(cBorder).Render(strings.Repeat("─", contentWidth))
 	activityLine := renderActivityLine(activity, elapsed, contentWidth)
@@ -501,7 +501,7 @@ func waitWithSpinner(cmd *exec.Cmd, title, message string, stderr *bytes.Buffer)
 		case err := <-done:
 			clearPanelLines(prevLines)
 			if err != nil {
-				return fmt.Errorf("Claude failed: %s", stderr.String())
+				return fmt.Errorf("Gemini failed: %s", stderr.String())
 			}
 			return nil
 		case <-ticker.C:
@@ -542,7 +542,7 @@ func waitWithPanel(cmd *exec.Cmd, title, activity string, stderr *bytes.Buffer) 
 		case err := <-done:
 			clearPanelLines(prevLines)
 			if err != nil {
-				return fmt.Errorf("Claude failed: %s", stderr.String())
+				return fmt.Errorf("Gemini failed: %s", stderr.String())
 			}
 			return nil
 		case <-ticker.C:
@@ -607,7 +607,7 @@ func NeedsConversion(prdDir string) (bool, error) {
 }
 
 // cleanJSONOutput removes markdown code blocks, conversational preamble, and trims
-// whitespace from Claude's output to extract the JSON object.
+// whitespace from Gemini's output to extract the JSON object.
 func cleanJSONOutput(output string) string {
 	output = strings.TrimSpace(output)
 
@@ -624,7 +624,7 @@ func cleanJSONOutput(output string) string {
 
 	output = strings.TrimSpace(output)
 
-	// If output doesn't start with '{', Claude may have added preamble text.
+	// If output doesn't start with '{', Gemini may have added preamble text.
 	// Extract the JSON object by finding the first '{' and matching closing '}'.
 	if len(output) > 0 && output[0] != '{' {
 		start := strings.Index(output, "{")

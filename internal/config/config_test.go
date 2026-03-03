@@ -70,11 +70,11 @@ func TestExists(t *testing.T) {
 	}
 
 	// Create the config
-	chiefDir := filepath.Join(dir, ".chief")
-	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+	mellizaDir := filepath.Join(dir, ".melliza")
+	if err := os.MkdirAll(mellizaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(mellizaDir, "config.yaml"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

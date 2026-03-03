@@ -1,4 +1,4 @@
-# Chief - GoReleaser Configuration
+# Melliza - GoReleaser Configuration
 # https://goreleaser.com
 #
 # Build targets:
@@ -19,8 +19,8 @@ before:
     - go mod tidy
 
 builds:
-  - main: ./cmd/chief
-    binary: chief
+  - main: ./cmd/melliza
+    binary: melliza
     goos:
       - darwin
       - linux
@@ -38,7 +38,7 @@ builds:
       - -X main.Version={{.Version}}
 
 archives:
-  - id: chief-archive
+  - id: melliza-archive
     formats:
       - tar.gz
     # Use zip for Windows
@@ -76,25 +76,25 @@ changelog:
 release:
   draft: false
   prerelease: auto
-  name_template: "Chief v{{.Version}}"
+  name_template: "Melliza v{{.Version}}"
 
 # Homebrew tap configuration
 brews:
-  - name: chief
+  - name: melliza
     # Repository to push the formula to
     repository:
-      owner: minicodemonkey
-      name: homebrew-chief
+      owner: lvcoi
+      name: homebrew-melliza
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
-    homepage: "https://chiefloop.com"
-    description: "Autonomous agent loop for working through PRDs with Claude Code"
+    homepage: "https://melliza.dev"
+    description: "Autonomous agent loop for working through PRDs with Gemini CLI"
     license: "MIT"
     # Custom install script
     install: |
-      bin.install "chief"
+      bin.install "melliza"
     # Test block
     test: |
-      assert_match "chief", shell_output("#{bin}/chief --version")
+      assert_match "melliza", shell_output("#{bin}/melliza --version")
     # Skip upload on snapshot builds
     skip_upload: auto

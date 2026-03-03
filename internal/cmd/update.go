@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/minicodemonkey/chief/internal/update"
+	"github.com/lvcoi/melliza/internal/update"
 )
 
 // UpdateOptions holds configuration for the update command.
@@ -13,7 +13,7 @@ type UpdateOptions struct {
 	ReleasesURL string // Override GitHub API URL (for testing)
 }
 
-// RunUpdate downloads and installs the latest version of Chief.
+// RunUpdate downloads and installs the latest version of Melliza.
 func RunUpdate(opts UpdateOptions) error {
 	fmt.Println("Checking for updates...")
 
@@ -39,7 +39,7 @@ func RunUpdate(opts UpdateOptions) error {
 		return err
 	}
 
-	fmt.Printf("Updated to v%s. Restart 'chief serve' to apply.\n", result.LatestVersion)
+	fmt.Printf("Updated to v%s. Restart 'melliza serve' to apply.\n", result.LatestVersion)
 	return nil
 }
 
@@ -53,7 +53,7 @@ func CheckVersionOnStartup(version string) {
 			return
 		}
 		if result.UpdateAvailable {
-			fmt.Printf("Chief v%s available (you have v%s). Run 'chief update' to upgrade.\n",
+			fmt.Printf("Melliza v%s available (you have v%s). Run 'melliza update' to upgrade.\n",
 				result.LatestVersion, result.CurrentVersion)
 		}
 	}()

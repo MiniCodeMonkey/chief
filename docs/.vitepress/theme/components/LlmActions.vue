@@ -17,7 +17,7 @@ function getPageTitle(): string {
 
 function buildPrompt(raw: string): string {
   const title = getPageTitle()
-  return `I'm reading the Chief documentation page "${title}". Here is the full page content:\n\n${raw}\n\nPlease help me understand this and answer any questions I have about it.`
+  return `I'm reading the Melliza documentation page "${title}". Here is the full page content:\n\n${raw}\n\nPlease help me understand this and answer any questions I have about it.`
 }
 
 async function copyAsMarkdown() {
@@ -56,11 +56,11 @@ function openInChatGPT() {
   isOpen.value = false
 }
 
-function openInClaude() {
+function openInGemini() {
   const raw = getRawMarkdown()
   if (!raw) return
   const prompt = buildPrompt(raw)
-  const url = `https://claude.ai/new?q=${encodeURIComponent(prompt)}`
+  const url = `https://gemini.google.com/app?q=${encodeURIComponent(prompt)}`
   window.open(url, '_blank')
   isOpen.value = false
 }
@@ -110,13 +110,13 @@ onUnmounted(() => {
           </svg>
           <span>Open in ChatGPT</span>
         </button>
-        <button class="llm-actions-item" @click="openInClaude">
+        <button class="llm-actions-item" @click="openInGemini">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
             <path d="M2 17l10 5 10-5"></path>
             <path d="M2 12l10 5 10-5"></path>
           </svg>
-          <span>Open in Claude</span>
+          <span>Open in Gemini</span>
         </button>
       </div>
     </Transition>

@@ -16,7 +16,7 @@ import (
 func TestCheckForUpdate_UpdateAvailable(t *testing.T) {
 	release := Release{
 		TagName: "v0.5.1",
-		Assets:  []Asset{{Name: "chief-linux-amd64", BrowserDownloadURL: "http://example.com/chief"}},
+		Assets:  []Asset{{Name: "melliza-linux-amd64", BrowserDownloadURL: "http://example.com/melliza"}},
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(release)
@@ -212,29 +212,29 @@ func TestCompareVersions(t *testing.T) {
 
 func TestFindAssets(t *testing.T) {
 	assets := []Asset{
-		{Name: "chief-linux-amd64", BrowserDownloadURL: "http://example.com/chief-linux-amd64"},
-		{Name: "chief-linux-amd64.sha256", BrowserDownloadURL: "http://example.com/chief-linux-amd64.sha256"},
-		{Name: "chief-darwin-arm64", BrowserDownloadURL: "http://example.com/chief-darwin-arm64"},
+		{Name: "melliza-linux-amd64", BrowserDownloadURL: "http://example.com/melliza-linux-amd64"},
+		{Name: "melliza-linux-amd64.sha256", BrowserDownloadURL: "http://example.com/melliza-linux-amd64.sha256"},
+		{Name: "melliza-darwin-arm64", BrowserDownloadURL: "http://example.com/melliza-darwin-arm64"},
 	}
 
 	binary, checksum := findAssets(assets, "linux", "amd64")
 	if binary == nil {
 		t.Fatal("expected to find binary asset")
 	}
-	if binary.Name != "chief-linux-amd64" {
-		t.Errorf("expected chief-linux-amd64, got %s", binary.Name)
+	if binary.Name != "melliza-linux-amd64" {
+		t.Errorf("expected melliza-linux-amd64, got %s", binary.Name)
 	}
 	if checksum == nil {
 		t.Fatal("expected to find checksum asset")
 	}
-	if checksum.Name != "chief-linux-amd64.sha256" {
-		t.Errorf("expected chief-linux-amd64.sha256, got %s", checksum.Name)
+	if checksum.Name != "melliza-linux-amd64.sha256" {
+		t.Errorf("expected melliza-linux-amd64.sha256, got %s", checksum.Name)
 	}
 }
 
 func TestFindAssets_NoMatch(t *testing.T) {
 	assets := []Asset{
-		{Name: "chief-linux-amd64", BrowserDownloadURL: "http://example.com/chief-linux-amd64"},
+		{Name: "melliza-linux-amd64", BrowserDownloadURL: "http://example.com/melliza-linux-amd64"},
 	}
 
 	binary, _ := findAssets(assets, "windows", "amd64")
@@ -245,7 +245,7 @@ func TestFindAssets_NoMatch(t *testing.T) {
 
 func TestFindAssets_NoChecksum(t *testing.T) {
 	assets := []Asset{
-		{Name: "chief-linux-amd64", BrowserDownloadURL: "http://example.com/chief-linux-amd64"},
+		{Name: "melliza-linux-amd64", BrowserDownloadURL: "http://example.com/melliza-linux-amd64"},
 	}
 
 	binary, checksum := findAssets(assets, "linux", "amd64")
@@ -371,7 +371,7 @@ func TestPerformUpdate_AlreadyLatest(t *testing.T) {
 func TestPerformUpdate_FullFlow(t *testing.T) {
 	// Create a fake "current binary"
 	dir := t.TempDir()
-	binaryPath := filepath.Join(dir, "chief")
+	binaryPath := filepath.Join(dir, "melliza")
 	os.WriteFile(binaryPath, []byte("old binary"), 0o755)
 
 	// New binary content
@@ -379,7 +379,7 @@ func TestPerformUpdate_FullFlow(t *testing.T) {
 	h := sha256.Sum256(newContent)
 	expectedHash := hex.EncodeToString(h[:])
 
-	binaryName := fmt.Sprintf("chief-%s-%s", runtime.GOOS, runtime.GOARCH)
+	binaryName := fmt.Sprintf("melliza-%s-%s", runtime.GOOS, runtime.GOARCH)
 
 	// Set up download server
 	downloadSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

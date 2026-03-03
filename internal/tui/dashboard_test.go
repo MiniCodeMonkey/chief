@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
 // newTestApp creates a minimal App for testing scroll and rendering.

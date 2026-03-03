@@ -1,12 +1,12 @@
 #!/bin/sh
-# Chief Install Script
-# https://github.com/minicodemonkey/chief
+# Melliza Install Script
+# https://github.com/minicodemonkey/melliza
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/refs/heads/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/melliza/refs/heads/main/install.sh | sh
 #
 # Or with a specific version:
-#   curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/refs/heads/main/install.sh | sh -s -- --version v0.1.0
+#   curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/melliza/refs/heads/main/install.sh | sh -s -- --version v0.1.0
 #
 # This script:
 #   - Detects OS (darwin/linux) and architecture (amd64/arm64)
@@ -33,8 +33,8 @@ else
 fi
 
 # Configuration
-GITHUB_REPO="minicodemonkey/chief"
-BINARY_NAME="chief"
+GITHUB_REPO="minicodemonkey/melliza"
+BINARY_NAME="melliza"
 VERSION=""
 
 # Print colored message
@@ -212,18 +212,18 @@ parse_args() {
                 ;;
             --help|-h)
                 cat <<EOF
-Chief Install Script
+Melliza Install Script
 
 Usage:
-    curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/refs/heads/main/install.sh | sh
-    curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/chief/refs/heads/main/install.sh | sh -s -- --version v0.1.0
+    curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/melliza/refs/heads/main/install.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/MiniCodeMonkey/melliza/refs/heads/main/install.sh | sh -s -- --version v0.1.0
 
 Options:
     --version, -v VERSION    Install a specific version (e.g., v0.1.0)
     --help, -h               Show this help message
 
 Environment Variables:
-    CHIEF_INSTALL_DIR        Override installation directory
+    MELLIZA_INSTALL_DIR        Override installation directory
 EOF
                 exit 0
                 ;;
@@ -238,7 +238,7 @@ EOF
 main() {
     parse_args "$@"
 
-    info "Installing Chief..."
+    info "Installing Melliza..."
 
     # Detect platform
     OS=$(detect_os)
@@ -298,8 +298,8 @@ main() {
     tar -xzf "$ARCHIVE_PATH" -C "$TMP_DIR"
 
     # Find installation directory
-    if [ -n "$CHIEF_INSTALL_DIR" ]; then
-        INSTALL_DIR="$CHIEF_INSTALL_DIR"
+    if [ -n "$MELLIZA_INSTALL_DIR" ]; then
+        INSTALL_DIR="$MELLIZA_INSTALL_DIR"
         if [ ! -d "$INSTALL_DIR" ]; then
             mkdir -p "$INSTALL_DIR"
         fi
@@ -313,7 +313,7 @@ main() {
 
     # Verify installation
     if [ -x "$INSTALL_DIR/$BINARY_NAME" ]; then
-        success "Chief installed successfully to $INSTALL_DIR/$BINARY_NAME"
+        success "Melliza installed successfully to $INSTALL_DIR/$BINARY_NAME"
 
         # Check if install dir is in PATH
         if ! check_path "$INSTALL_DIR"; then

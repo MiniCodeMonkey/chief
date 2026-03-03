@@ -7,15 +7,15 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/minicodemonkey/chief/internal/loop"
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/loop"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
 // TabEntry represents a PRD tab in the tab bar.
 type TabEntry struct {
 	Name      string         // Directory name (e.g., "main", "feature-x")
 	Path      string         // Full path to prd.json
-	Branch    string         // Git branch name (e.g., "chief/auth"), empty if none
+	Branch    string         // Git branch name (e.g., "melliza/auth"), empty if none
 	LoopState loop.LoopState // Current loop state from manager
 	Completed int            // Number of completed stories
 	Total     int            // Total number of stories
@@ -45,11 +45,11 @@ func NewTabBar(baseDir, currentPRD string, manager *loop.Manager) *TabBar {
 	return t
 }
 
-// Refresh reloads the list of PRDs from the .chief/prds/ directory.
+// Refresh reloads the list of PRDs from the .melliza/prds/ directory.
 func (t *TabBar) Refresh() {
 	t.entries = make([]TabEntry, 0)
 
-	prdsDir := filepath.Join(t.baseDir, ".chief", "prds")
+	prdsDir := filepath.Join(t.baseDir, ".melliza", "prds")
 
 	// Read the prds directory
 	dirEntries, err := os.ReadDir(prdsDir)
@@ -73,8 +73,8 @@ func (t *TabBar) Refresh() {
 		addedNames[name] = true
 	}
 
-	// Also check if there's a "main" PRD directly in .chief/ (legacy location)
-	mainPrdPath := filepath.Join(t.baseDir, ".chief", "prd.json")
+	// Also check if there's a "main" PRD directly in .melliza/ (legacy location)
+	mainPrdPath := filepath.Join(t.baseDir, ".melliza", "prd.json")
 	if _, err := os.Stat(mainPrdPath); err == nil && !addedNames["main"] {
 		tabEntry := t.loadTabEntry("main", mainPrdPath)
 		t.entries = append(t.entries, tabEntry)

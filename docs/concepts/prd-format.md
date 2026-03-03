@@ -1,31 +1,31 @@
 ---
-description: Complete guide to Chief's PRD format including prd.md and prd.json structure, user story fields, selection logic, and best practices.
+description: Complete guide to Melliza's PRD format including prd.md and prd.json structure, user story fields, selection logic, and best practices.
 ---
 
 # PRD Format
 
-Chief uses a structured PRD format with two files: a human-readable markdown file (`prd.md`) and a machine-readable JSON file (`prd.json`). Together, they give Chief everything it needs to autonomously build your feature.
+Melliza uses a structured PRD format with two files: a human-readable markdown file (`prd.md`) and a machine-readable JSON file (`prd.json`). Together, they give Melliza everything it needs to autonomously build your feature.
 
 ## File Structure
 
-Each PRD lives in its own subdirectory inside `.chief/prds/`:
+Each PRD lives in its own subdirectory inside `.melliza/prds/`:
 
 ```
-.chief/prds/my-feature/
-├── prd.md        # Human-readable context for Claude
-├── prd.json      # Structured data Chief reads and updates
+.melliza/prds/my-feature/
+├── prd.md        # Human-readable context for Gemini
+├── prd.json      # Structured data Melliza reads and updates
 ├── progress.md   # Auto-generated progress log
-└── claude.log    # Raw Claude output from each iteration
+└── gemini.log    # Raw Gemini output from each iteration
 ```
 
 - **`prd.md`** — Written by you. Provides context, background, and guidance.
-- **`prd.json`** — The source of truth. Chief reads, updates, and drives execution from this file.
-- **`progress.md`** — Written by Claude. Tracks what was done, what changed, and what was learned.
-- **`claude.log`** — Written by Chief. Raw output from Claude for debugging.
+- **`prd.json`** — The source of truth. Melliza reads, updates, and drives execution from this file.
+- **`progress.md`** — Written by Gemini. Tracks what was done, what changed, and what was learned.
+- **`gemini.log`** — Written by Melliza. Raw output from Gemini for debugging.
 
 ## prd.md — The Human-Readable File
 
-The markdown file is your chance to give Claude context that doesn't fit into structured fields. Write whatever helps Claude understand the project — there's no required format.
+The markdown file is your chance to give Gemini context that doesn't fit into structured fields. Write whatever helps Gemini understand the project — there's no required format.
 
 ### What to Include
 
@@ -61,15 +61,15 @@ Users need to register, log in, reset passwords, and manage sessions.
 - API route pattern: `src/routes/health.ts`
 ```
 
-This file is included in Claude's context but never parsed programmatically. Claude reads it to understand what you're building and how.
+This file is included in Gemini's context but never parsed programmatically. Gemini reads it to understand what you're building and how.
 
 ::: tip
-The better your `prd.md`, the better Claude's output. Spend time here — it pays off across every story.
+The better your `prd.md`, the better Gemini's output. Spend time here — it pays off across every story.
 :::
 
 ## prd.json — The Machine-Readable File
 
-The JSON file is what Chief actually uses to drive execution. It defines the project metadata, optional settings, and an ordered list of user stories.
+The JSON file is what Melliza actually uses to drive execution. It defines the project metadata, optional settings, and an ordered list of user stories.
 
 ### Top-Level Schema
 
@@ -88,10 +88,10 @@ Each story in the `userStories` array has the following fields:
 | `id` | `string` | Yes | — | Unique identifier (e.g., `US-001`). Appears in commit messages. |
 | `title` | `string` | Yes | — | Short, descriptive title. Keep under 50 characters. |
 | `description` | `string` | Yes | — | Full description. User story format recommended. |
-| `acceptanceCriteria` | `string[]` | Yes | — | List of requirements. Claude uses these to know when the story is done. |
+| `acceptanceCriteria` | `string[]` | Yes | — | List of requirements. Gemini uses these to know when the story is done. |
 | `priority` | `number` | Yes | — | Execution order. Lower number = higher priority. |
 | `passes` | `boolean` | Yes | `false` | Whether the story has been completed and verified. |
-| `inProgress` | `boolean` | Yes | `false` | Whether Claude is currently working on this story. |
+| `inProgress` | `boolean` | Yes | `false` | Whether Gemini is currently working on this story. |
 
 ### Minimal Example
 
@@ -119,7 +119,7 @@ Each story in the `userStories` array has the following fields:
 
 ## Story Selection Logic
 
-Chief picks the next story to work on using a simple, deterministic algorithm:
+Melliza picks the next story to work on using a simple, deterministic algorithm:
 
 ```
 1. Filter stories where passes = false
@@ -131,7 +131,7 @@ Chief picks the next story to work on using a simple, deterministic algorithm:
 
 ### How Priority Works
 
-Priority is a number where **lower = higher priority**. Chief always picks the lowest-numbered incomplete story:
+Priority is a number where **lower = higher priority**. Melliza always picks the lowest-numbered incomplete story:
 
 | Story | Priority | Passes | Selected? |
 |-------|----------|--------|-----------|
@@ -141,16 +141,16 @@ Priority is a number where **lower = higher priority**. Chief always picks the l
 
 ### What `inProgress` Does
 
-When Chief starts working on a story, it sets `inProgress: true`. This serves as a signal that the story is being actively worked on. When the story completes:
+When Melliza starts working on a story, it sets `inProgress: true`. This serves as a signal that the story is being actively worked on. When the story completes:
 
 - `passes` is set to `true`
 - `inProgress` is set back to `false`
 
-If Chief is interrupted mid-iteration (e.g., you stop it), `inProgress` may remain `true`. On the next run, Chief will pick up the same story and continue.
+If Melliza is interrupted mid-iteration (e.g., you stop it), `inProgress` may remain `true`. On the next run, Melliza will pick up the same story and continue.
 
 ### Completion Signal
 
-When all stories have `passes: true`, the iteration ends and Chief reports completion. No more iterations are started.
+When all stories have `passes: true`, the iteration ends and Melliza reports completion. No more iterations are started.
 
 ## Annotated Example PRD
 
@@ -161,7 +161,7 @@ Here's a complete `prd.json` with annotations explaining each part:
   // The project name — shown in the TUI header and logs
   "project": "User Authentication",
 
-  // A brief description — helps Claude understand scope
+  // A brief description — helps Gemini understand scope
   "description": "Complete auth system with login, registration, and password reset",
 
   "userStories": [
@@ -172,10 +172,10 @@ Here's a complete `prd.json` with annotations explaining each part:
       // Short title — keep it under 50 chars for clean commits
       "title": "User Registration",
 
-      // Description — user story format gives Claude clear context
+      // Description — user story format gives Gemini clear context
       "description": "As a new user, I want to register an account so that I can access the application.",
 
-      // Acceptance criteria — Claude checks these off as it works
+      // Acceptance criteria — Gemini checks these off as it works
       // Each item should be specific and verifiable
       "acceptanceCriteria": [
         "Registration form with email and password fields",
@@ -188,10 +188,10 @@ Here's a complete `prd.json` with annotations explaining each part:
       // Priority 1 = done first
       "priority": 1,
 
-      // Chief sets this to true when the story passes all checks
+      // Melliza sets this to true when the story passes all checks
       "passes": false,
 
-      // Chief sets this to true while Claude is working on it
+      // Melliza sets this to true while Gemini is working on it
       "inProgress": false
     },
     {
@@ -235,7 +235,7 @@ JSON doesn't support comments. The annotations above are for illustration only �
 
 ### Write Specific Acceptance Criteria
 
-Each criterion should be concrete and verifiable. Claude uses these to determine what to build and when the story is done.
+Each criterion should be concrete and verifiable. Gemini uses these to determine what to build and when the story is done.
 
 ```json
 // ✓ Good — specific and testable
@@ -282,7 +282,7 @@ A story should represent one logical piece of work. If a story has more than 5�
 
 ### Order Stories by Dependency
 
-Use priority to ensure foundational stories are completed before dependent ones. Claude works through stories sequentially, so earlier stories can set up what later stories need.
+Use priority to ensure foundational stories are completed before dependent ones. Gemini works through stories sequentially, so earlier stories can set up what later stories need.
 
 ```json
 [
@@ -301,7 +301,7 @@ Story IDs appear in commit messages (`feat: [US-001] - User Registration`). Pick
 - `AUTH-001`, `AUTH-002` — feature-scoped prefixes
 - `BUG-001`, `FIX-001` — for bug fix PRDs
 
-### Give Claude Context in prd.md
+### Give Gemini Context in prd.md
 
 The more context you provide in `prd.md`, the better the output. Include:
 
@@ -310,12 +310,12 @@ The more context you provide in `prd.md`, the better the output. Include:
 - Any constraints or conventions
 - What "done" looks like beyond acceptance criteria
 
-### Use `chief new` to Get Started
+### Use `melliza new` to Get Started
 
-Running `chief new` scaffolds both files with a template. You can also run `chief edit` to open an existing PRD for editing. This is the easiest way to create a well-structured PRD.
+Running `melliza new` scaffolds both files with a template. You can also run `melliza edit` to open an existing PRD for editing. This is the easiest way to create a well-structured PRD.
 
 ## What's Next
 
 - [PRD Schema Reference](/reference/prd-schema) — Complete TypeScript type definitions and field details
-- [The .chief Directory](/concepts/chief-directory) — Understanding the full directory structure
-- [How Chief Works](/concepts/how-it-works) — How Chief uses these files during execution
+- [The .melliza Directory](/concepts/melliza-directory) — Understanding the full directory structure
+- [How Melliza Works](/concepts/how-it-works) — How Melliza uses these files during execution

@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/minicodemonkey/chief/internal/prd"
+	"github.com/lvcoi/melliza/internal/prd"
 )
 
-// createMockClaudeScript creates a shell script that outputs predefined stream-json.
-func createMockClaudeScript(t *testing.T, dir string, output []string) string {
+// createMockGeminiScript creates a shell script that outputs predefined stream-json.
+func createMockGeminiScript(t *testing.T, dir string, output []string) string {
 	t.Helper()
 
-	scriptPath := filepath.Join(dir, "mock-claude")
+	scriptPath := filepath.Join(dir, "mock-gemini")
 	content := "#!/bin/bash\n"
 	for _, line := range output {
 		content += "echo '" + line + "'\n"
@@ -139,16 +139,16 @@ func TestLoop_Stop(t *testing.T) {
 	}
 }
 
-// TestLoop_RunWithMockClaude tests the loop with a mock Claude script.
+// TestLoop_RunWithMockGemini tests the loop with a mock Gemini script.
 // This is an integration test that requires a Unix-like shell.
-func TestLoop_RunWithMockClaude(t *testing.T) {
+func TestLoop_RunWithMockGemini(t *testing.T) {
 	if os.Getenv("CI") != "" {
 		t.Skip("Skipping integration test in CI")
 	}
 
 	tmpDir := t.TempDir()
 
-	// Create a mock Claude output
+	// Create a mock Gemini output
 	mockOutput := []string{
 		`{"type":"system","subtype":"init"}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"Starting work on story"}]}}`,
@@ -157,10 +157,10 @@ func TestLoop_RunWithMockClaude(t *testing.T) {
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"Work complete"}]}}`,
 	}
 
-	scriptPath := createMockClaudeScript(t, tmpDir, mockOutput)
+	scriptPath := createMockGeminiScript(t, tmpDir, mockOutput)
 	prdPath := createTestPRD(t, tmpDir, true) // Already complete so loop stops after one iteration
 
-	// Create a prompt that invokes our mock script instead of real Claude
+	// Create a prompt that invokes our mock script instead of real Gemini
 	// For the actual test, we'll test the internal methods
 	l := NewLoop(prdPath, "test prompt", 1)
 
@@ -284,7 +284,7 @@ func TestLoop_LogFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	_ = createTestPRD(t, tmpDir, true)
 
-	logPath := filepath.Join(tmpDir, "claude.log")
+	logPath := filepath.Join(tmpDir, "gemini.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		t.Fatalf("Failed to create log file: %v", err)
@@ -307,8 +307,8 @@ func TestLoop_LogFile(t *testing.T) {
 	}
 }
 
-// TestLoop_ChiefCompleteEvent tests detection of <chief-complete/> event.
-func TestLoop_ChiefCompleteEvent(t *testing.T) {
+// TestLoop_MellizaCompleteEvent tests detection of <melliza-complete/> event.
+func TestLoop_MellizaCompleteEvent(t *testing.T) {
 	l := NewLoop("/test/prd.json", "test", 5)
 	l.iteration = 1
 
@@ -324,10 +324,10 @@ func TestLoop_ChiefCompleteEvent(t *testing.T) {
 		done <- true
 	}()
 
-	// Simulate processing a line with chief-complete
+	// Simulate processing a line with melliza-complete
 	r, w, _ := os.Pipe()
 	go func() {
-		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"All done! <chief-complete/>"}]}}` + "\n")
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"All done! <melliza-complete/>"}]}}` + "\n")
 		w.Close()
 	}()
 
@@ -344,7 +344,7 @@ func TestLoop_ChiefCompleteEvent(t *testing.T) {
 	}
 
 	if !hasComplete {
-		t.Error("Expected Complete event for <chief-complete/>")
+		t.Error("Expected Complete event for <melliza-complete/>")
 	}
 }
 

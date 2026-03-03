@@ -9,35 +9,35 @@ import (
 	"strings"
 )
 
-// IsChiefIgnored checks if .chief is gitignored either locally or globally.
-// Returns true if .chief is already ignored, false otherwise.
-func IsChiefIgnored(dir string) bool {
+// IsMellizaIgnored checks if .melliza is gitignored either locally or globally.
+// Returns true if .melliza is already ignored, false otherwise.
+func IsMellizaIgnored(dir string) bool {
 	// Use git check-ignore which respects both local and global gitignore
-	cmd := exec.Command("git", "check-ignore", "-q", ".chief")
+	cmd := exec.Command("git", "check-ignore", "-q", ".melliza")
 	cmd.Dir = dir
 	err := cmd.Run()
 	// Exit code 0 means it IS ignored, exit code 1 means it's NOT ignored
 	return err == nil
 }
 
-// AddChiefToGitignore adds .chief to the local .gitignore file.
+// AddMellizaToGitignore adds .melliza to the local .gitignore file.
 // Creates the file if it doesn't exist.
-func AddChiefToGitignore(dir string) error {
+func AddMellizaToGitignore(dir string) error {
 	gitignorePath := filepath.Join(dir, ".gitignore")
 
-	// Check if .gitignore exists and if .chief is already in it
+	// Check if .gitignore exists and if .melliza is already in it
 	if _, err := os.Stat(gitignorePath); err == nil {
-		// File exists, check if .chief is already there
+		// File exists, check if .melliza is already there
 		content, err := os.ReadFile(gitignorePath)
 		if err != nil {
 			return fmt.Errorf("failed to read .gitignore: %w", err)
 		}
 
-		// Check each line for .chief entry
+		// Check each line for .melliza entry
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
-			if trimmed == ".chief" || trimmed == ".chief/" {
+			if trimmed == ".melliza" || trimmed == ".melliza/" {
 				// Already present
 				return nil
 			}
@@ -57,12 +57,12 @@ func AddChiefToGitignore(dir string) error {
 			}
 		}
 
-		if _, err := f.WriteString(".chief/\n"); err != nil {
+		if _, err := f.WriteString(".melliza/\n"); err != nil {
 			return fmt.Errorf("failed to write to .gitignore: %w", err)
 		}
 	} else if os.IsNotExist(err) {
 		// Create new .gitignore file
-		if err := os.WriteFile(gitignorePath, []byte(".chief/\n"), 0644); err != nil {
+		if err := os.WriteFile(gitignorePath, []byte(".melliza/\n"), 0644); err != nil {
 			return fmt.Errorf("failed to create .gitignore: %w", err)
 		}
 	} else {
@@ -72,13 +72,13 @@ func AddChiefToGitignore(dir string) error {
 	return nil
 }
 
-// PromptAddChiefToGitignore asks the user if they want to add .chief to .gitignore.
+// PromptAddMellizaToGitignore asks the user if they want to add .melliza to .gitignore.
 // Returns true if the user wants to add it, false otherwise.
-func PromptAddChiefToGitignore() bool {
-	fmt.Println("Would you like to add .chief to .gitignore?")
+func PromptAddMellizaToGitignore() bool {
+	fmt.Println("Would you like to add .melliza to .gitignore?")
 	fmt.Println("This keeps your PRD plans local and out of version control.")
 	fmt.Println("(Not required, but recommended if you prefer local-only plans)")
-	fmt.Print("\nAdd .chief to .gitignore? [y/N]: ")
+	fmt.Print("\nAdd .melliza to .gitignore? [y/N]: ")
 
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')

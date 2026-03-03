@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/minicodemonkey/chief/internal/cmd"
-	"github.com/minicodemonkey/chief/internal/config"
-	"github.com/minicodemonkey/chief/internal/git"
-	"github.com/minicodemonkey/chief/internal/prd"
-	"github.com/minicodemonkey/chief/internal/tui"
+	"github.com/lvcoi/melliza/internal/cmd"
+	"github.com/lvcoi/melliza/internal/config"
+	"github.com/lvcoi/melliza/internal/git"
+	"github.com/lvcoi/melliza/internal/prd"
+	"github.com/lvcoi/melliza/internal/tui"
 )
 
 // Version is set at build time via ldflags
@@ -51,7 +51,7 @@ func main() {
 			printHelp()
 			return
 		case "--version", "-v":
-			fmt.Printf("chief version %s\n", Version)
+			fmt.Printf("melliza version %s\n", Version)
 			return
 		case "update":
 			runUpdate()
@@ -78,10 +78,10 @@ func main() {
 	runTUIWithOptions(opts)
 }
 
-// findAvailablePRD looks for any available PRD in .chief/prds/
+// findAvailablePRD looks for any available PRD in .melliza/prds/
 // Returns the path to the first PRD found, or empty string if none exist.
 func findAvailablePRD() string {
-	prdsDir := ".chief/prds"
+	prdsDir := ".melliza/prds"
 	entries, err := os.ReadDir(prdsDir)
 	if err != nil {
 		return ""
@@ -98,9 +98,9 @@ func findAvailablePRD() string {
 	return ""
 }
 
-// listAvailablePRDs returns all PRD names in .chief/prds/
+// listAvailablePRDs returns all PRD names in .melliza/prds/
 func listAvailablePRDs() []string {
-	prdsDir := ".chief/prds"
+	prdsDir := ".melliza/prds"
 	entries, err := os.ReadDir(prdsDir)
 	if err != nil {
 		return nil
@@ -137,7 +137,7 @@ func parseTUIFlags() *TUIOptions {
 			printHelp()
 			return nil
 		case arg == "--version" || arg == "-v":
-			fmt.Printf("chief version %s\n", Version)
+			fmt.Printf("melliza version %s\n", Version)
 			return nil
 		case arg == "--verbose":
 			opts.Verbose = true
@@ -192,7 +192,7 @@ func parseTUIFlags() *TUIOptions {
 		case strings.HasPrefix(arg, "-"):
 			// Unknown flag
 			fmt.Fprintf(os.Stderr, "Error: unknown flag: %s\n", arg)
-			fmt.Fprintf(os.Stderr, "Run 'chief --help' for usage.\n")
+			fmt.Fprintf(os.Stderr, "Run 'melliza --help' for usage.\n")
 			os.Exit(1)
 		default:
 			// Positional argument: PRD name or path
@@ -200,7 +200,7 @@ func parseTUIFlags() *TUIOptions {
 				opts.PRDPath = arg
 			} else {
 				// Treat as PRD name
-				opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", arg)
+				opts.PRDPath = fmt.Sprintf(".melliza/prds/%s/prd.json", arg)
 			}
 		}
 	}
@@ -211,7 +211,7 @@ func parseTUIFlags() *TUIOptions {
 func runNew() {
 	opts := cmd.NewOptions{}
 
-	// Parse arguments: chief new [name] [context...]
+	// Parse arguments: melliza new [name] [context...]
 	if len(os.Args) > 2 {
 		opts.Name = os.Args[2]
 	}
@@ -228,7 +228,7 @@ func runNew() {
 func runEdit() {
 	opts := cmd.EditOptions{}
 
-	// Parse arguments: chief edit [name] [--merge] [--force]
+	// Parse arguments: melliza edit [name] [--merge] [--force]
 	for i := 2; i < len(os.Args); i++ {
 		arg := os.Args[i]
 		switch arg {
@@ -253,7 +253,7 @@ func runEdit() {
 func runStatus() {
 	opts := cmd.StatusOptions{}
 
-	// Parse arguments: chief status [name]
+	// Parse arguments: melliza status [name]
 	if len(os.Args) > 2 && !strings.HasPrefix(os.Args[2], "-") {
 		opts.Name = os.Args[2]
 	}
@@ -288,7 +288,7 @@ func runTUIWithOptions(opts *TUIOptions) {
 	// If no PRD specified, try to find one
 	if prdPath == "" {
 		// Try "main" first
-		mainPath := ".chief/prds/main/prd.json"
+		mainPath := ".melliza/prds/main/prd.json"
 		if _, err := os.Stat(mainPath); err == nil {
 			prdPath = mainPath
 		} else {
@@ -299,7 +299,7 @@ func runTUIWithOptions(opts *TUIOptions) {
 		// If still no PRD found, run first-time setup
 		if prdPath == "" {
 			cwd, _ := os.Getwd()
-			showGitignore := git.IsGitRepo(cwd) && !git.IsChiefIgnored(cwd)
+			showGitignore := git.IsGitRepo(cwd) && !git.IsMellizaIgnored(cwd)
 
 			// Run the first-time setup TUI
 			result, err := tui.RunFirstTimeSetup(cwd, showGitignore)
@@ -330,7 +330,7 @@ func runTUIWithOptions(opts *TUIOptions) {
 			}
 
 			// Restart TUI with the new PRD
-			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", result.PRDName)
+			opts.PRDPath = fmt.Sprintf(".melliza/prds/%s/prd.json", result.PRDName)
 			runTUIWithOptions(opts)
 			return
 		}
@@ -367,13 +367,13 @@ func runTUIWithOptions(opts *TUIOptions) {
 			if len(available) > 0 {
 				fmt.Println("Available PRDs:")
 				for _, name := range available {
-					fmt.Printf("  chief %s\n", name)
+					fmt.Printf("  melliza %s\n", name)
 				}
 				fmt.Println()
 			}
 			fmt.Println("Or create a new one:")
-			fmt.Println("  chief new               # Create default PRD")
-			fmt.Println("  chief new <name>        # Create named PRD")
+			fmt.Println("  melliza new               # Create default PRD")
+			fmt.Println("  melliza new <name>        # Create named PRD")
 		} else {
 			fmt.Printf("Error: %v\n", err)
 		}
@@ -410,7 +410,7 @@ func runTUIWithOptions(opts *TUIOptions) {
 				os.Exit(1)
 			}
 			// Restart TUI with the new PRD
-			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", finalApp.PostExitPRD)
+			opts.PRDPath = fmt.Sprintf(".melliza/prds/%s/prd.json", finalApp.PostExitPRD)
 			runTUIWithOptions(opts)
 
 		case tui.PostExitEdit:
@@ -425,31 +425,31 @@ func runTUIWithOptions(opts *TUIOptions) {
 				os.Exit(1)
 			}
 			// Restart TUI with the edited PRD
-			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", finalApp.PostExitPRD)
+			opts.PRDPath = fmt.Sprintf(".melliza/prds/%s/prd.json", finalApp.PostExitPRD)
 			runTUIWithOptions(opts)
 		}
 	}
 }
 
 func printHelp() {
-	fmt.Println(`Chief - Autonomous PRD Agent
+	fmt.Println(`Melliza - Autonomous PRD Agent
 
 Usage:
-  chief [options] [<name>|<path/to/prd.json>]
-  chief <command> [arguments]
+  melliza [options] [<name>|<path/to/prd.json>]
+  melliza <command> [arguments]
 
 Commands:
   new [name] [context]      Create a new PRD interactively
   edit [name] [options]     Edit an existing PRD interactively
   status [name]             Show progress for a PRD (default: main)
   list                      List all PRDs with progress
-  update                    Update Chief to the latest version
+  update                    Update Melliza to the latest version
   help                      Show this help message
 
 Global Options:
   --max-iterations N, -n N  Set maximum iterations (default: dynamic)
-  --no-retry                Disable auto-retry on Claude crashes
-  --verbose                 Show raw Claude output in log
+  --no-retry                Disable auto-retry on Gemini crashes
+  --verbose                 Show raw Gemini output in log
   --merge                   Auto-merge progress on conversion conflicts
   --force                   Auto-overwrite on conversion conflicts
   --help, -h                Show this help message
@@ -460,28 +460,28 @@ Edit Options:
   --force                   Auto-overwrite on conversion conflicts
 
 Positional Arguments:
-  <name>                    PRD name (loads .chief/prds/<name>/prd.json)
+  <name>                    PRD name (loads .melliza/prds/<name>/prd.json)
   <path/to/prd.json>        Direct path to a prd.json file
 
 Examples:
-  chief                     Launch TUI with default PRD (.chief/prds/main/)
-  chief auth                Launch TUI with named PRD (.chief/prds/auth/)
-  chief ./my-prd.json       Launch TUI with specific PRD file
-  chief -n 20               Launch with 20 max iterations
-  chief --max-iterations=5 auth
+  melliza                     Launch TUI with default PRD (.melliza/prds/main/)
+  melliza auth                Launch TUI with named PRD (.melliza/prds/auth/)
+  melliza ./my-prd.json       Launch TUI with specific PRD file
+  melliza -n 20               Launch with 20 max iterations
+  melliza --max-iterations=5 auth
                             Launch auth PRD with 5 max iterations
-  chief --verbose           Launch with raw Claude output visible
-  chief new                 Create PRD in .chief/prds/main/
-  chief new auth            Create PRD in .chief/prds/auth/
-  chief new auth "JWT authentication for REST API"
+  melliza --verbose           Launch with raw Gemini output visible
+  melliza new                 Create PRD in .melliza/prds/main/
+  melliza new auth            Create PRD in .melliza/prds/auth/
+  melliza new auth "JWT authentication for REST API"
                             Create PRD with context hint
-  chief edit                Edit PRD in .chief/prds/main/
-  chief edit auth           Edit PRD in .chief/prds/auth/
-  chief edit auth --merge   Edit and auto-merge progress
-  chief status              Show progress for default PRD
-  chief status auth         Show progress for auth PRD
-  chief list                List all PRDs with progress
-  chief --version           Show version number`)
+  melliza edit                Edit PRD in .melliza/prds/main/
+  melliza edit auth           Edit PRD in .melliza/prds/auth/
+  melliza edit auth --merge   Edit and auto-merge progress
+  melliza status              Show progress for default PRD
+  melliza status auth         Show progress for auth PRD
+  melliza list                List all PRDs with progress
+  melliza --version           Show version number`)
 }
 
 func printWiggum() {
@@ -555,7 +555,7 @@ func printWiggum() {
                              #%%%%%%%%%%%@%@%@*       :@%%%%%%%%%%%%@%%@*
 ` + reset + `
                          "Bake 'em away, toys!"
-                               - Chief Wiggum
+                               - Melliza Wiggum
 `
 	fmt.Print(art)
 }

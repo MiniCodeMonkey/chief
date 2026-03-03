@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/minicodemonkey/chief/internal/loop"
+	"github.com/lvcoi/melliza/internal/loop"
 )
 
 func TestIsNarrowMode(t *testing.T) {
@@ -218,27 +218,27 @@ func TestGetWorktreeInfo_NoBranch(t *testing.T) {
 
 func TestGetWorktreeInfo_WithBranch(t *testing.T) {
 	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.melliza/worktrees/auth", "melliza/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
 	branch, dir := app.getWorktreeInfo()
-	if branch != "chief/auth" {
-		t.Errorf("branch = %q, want %q", branch, "chief/auth")
+	if branch != "melliza/auth" {
+		t.Errorf("branch = %q, want %q", branch, "melliza/auth")
 	}
-	if dir != ".chief/worktrees/auth/" {
-		t.Errorf("dir = %q, want %q", dir, ".chief/worktrees/auth/")
+	if dir != ".melliza/worktrees/auth/" {
+		t.Errorf("dir = %q, want %q", dir, ".melliza/worktrees/auth/")
 	}
 }
 
 func TestGetWorktreeInfo_WithBranchNoWorktree(t *testing.T) {
 	// Branch set but no worktree dir (branch-only mode)
 	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "melliza/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
 	branch, dir := app.getWorktreeInfo()
-	if branch != "chief/auth" {
-		t.Errorf("branch = %q, want %q", branch, "chief/auth")
+	if branch != "melliza/auth" {
+		t.Errorf("branch = %q, want %q", branch, "melliza/auth")
 	}
 	if dir != "./ (current directory)" {
 		t.Errorf("dir = %q, want %q", dir, "./ (current directory)")
@@ -266,7 +266,7 @@ func TestHasWorktreeInfo(t *testing.T) {
 
 	// With branch
 	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.melliza/worktrees/auth", "melliza/auth")
 	app.manager = mgr
 	if !app.hasWorktreeInfo() {
 		t.Error("expected hasWorktreeInfo=true with branch set")
@@ -282,7 +282,7 @@ func TestEffectiveHeaderHeight_NoBranch(t *testing.T) {
 
 func TestEffectiveHeaderHeight_WithBranch(t *testing.T) {
 	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.melliza/worktrees/auth", "melliza/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
 	if got := app.effectiveHeaderHeight(); got != headerHeight+1 {
@@ -299,7 +299,7 @@ func TestRenderWorktreeInfoLine_NoBranch(t *testing.T) {
 
 func TestRenderWorktreeInfoLine_WithBranch(t *testing.T) {
 	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.chief/worktrees/auth", "chief/auth")
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "/tmp/.melliza/worktrees/auth", "melliza/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
 	got := app.renderWorktreeInfoLine()
@@ -309,20 +309,20 @@ func TestRenderWorktreeInfoLine_WithBranch(t *testing.T) {
 	if !strings.Contains(got, "branch:") {
 		t.Errorf("renderWorktreeInfoLine() should contain 'branch:', got %q", got)
 	}
-	if !strings.Contains(got, "chief/auth") {
-		t.Errorf("renderWorktreeInfoLine() should contain branch name 'chief/auth', got %q", got)
+	if !strings.Contains(got, "melliza/auth") {
+		t.Errorf("renderWorktreeInfoLine() should contain branch name 'melliza/auth', got %q", got)
 	}
 	if !strings.Contains(got, "dir:") {
 		t.Errorf("renderWorktreeInfoLine() should contain 'dir:', got %q", got)
 	}
-	if !strings.Contains(got, ".chief/worktrees/auth/") {
+	if !strings.Contains(got, ".melliza/worktrees/auth/") {
 		t.Errorf("renderWorktreeInfoLine() should contain worktree path, got %q", got)
 	}
 }
 
 func TestRenderWorktreeInfoLine_BranchNoWorktree(t *testing.T) {
 	mgr := loop.NewManager(10)
-	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "chief/auth")
+	mgr.RegisterWithWorktree("auth", "/tmp/prd.json", "", "melliza/auth")
 
 	app := &App{prdName: "auth", manager: mgr}
 	got := app.renderWorktreeInfoLine()

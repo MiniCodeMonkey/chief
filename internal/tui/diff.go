@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/minicodemonkey/chief/internal/git"
+	"github.com/lvcoi/melliza/internal/git"
 )
 
 // DiffViewer displays git diffs with syntax highlighting and scrolling.

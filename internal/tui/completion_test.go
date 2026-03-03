@@ -7,13 +7,13 @@ import (
 
 func TestCompletionScreen_Configure(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 10, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 10, "melliza/auth", 5, true, 0, nil)
 
 	if cs.PRDName() != "auth" {
 		t.Errorf("expected prdName 'auth', got '%s'", cs.PRDName())
 	}
-	if cs.Branch() != "chief/auth" {
-		t.Errorf("expected branch 'chief/auth', got '%s'", cs.Branch())
+	if cs.Branch() != "melliza/auth" {
+		t.Errorf("expected branch 'melliza/auth', got '%s'", cs.Branch())
 	}
 	if !cs.HasBranch() {
 		t.Error("expected HasBranch() to be true")
@@ -31,7 +31,7 @@ func TestCompletionScreen_NoBranch(t *testing.T) {
 
 func TestCompletionScreen_RenderHeader(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 10, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 10, "melliza/auth", 5, true, 0, nil)
 	cs.SetSize(80, 40)
 
 	rendered := cs.Render()
@@ -48,12 +48,12 @@ func TestCompletionScreen_RenderHeader(t *testing.T) {
 
 func TestCompletionScreen_RenderBranchInfo(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetSize(80, 40)
 
 	rendered := cs.Render()
-	if !strings.Contains(rendered, "chief/auth") {
-		t.Error("expected branch 'chief/auth' in render output")
+	if !strings.Contains(rendered, "melliza/auth") {
+		t.Error("expected branch 'melliza/auth' in render output")
 	}
 	if !strings.Contains(rendered, "5 commits") {
 		t.Error("expected '5 commits' in render output")
@@ -62,7 +62,7 @@ func TestCompletionScreen_RenderBranchInfo(t *testing.T) {
 
 func TestCompletionScreen_RenderSingleCommit(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 1, 1, "chief/auth", 1, false, 0, nil)
+	cs.Configure("auth", 1, 1, "melliza/auth", 1, false, 0, nil)
 	cs.SetSize(80, 40)
 
 	rendered := cs.Render()
@@ -87,7 +87,7 @@ func TestCompletionScreen_RenderNoBranch(t *testing.T) {
 
 func TestCompletionScreen_RenderNoAutoActions(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, false, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, false, 0, nil)
 	cs.SetSize(80, 40)
 
 	rendered := cs.Render()
@@ -98,7 +98,7 @@ func TestCompletionScreen_RenderNoAutoActions(t *testing.T) {
 
 func TestCompletionScreen_RenderWithAutoActions(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetSize(80, 40)
 
 	rendered := cs.Render()
@@ -109,7 +109,7 @@ func TestCompletionScreen_RenderWithAutoActions(t *testing.T) {
 
 func TestCompletionScreen_RenderFooterWithBranch(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetSize(80, 40)
 
 	rendered := cs.Render()
@@ -149,7 +149,7 @@ func TestCompletionScreen_RenderFooterNoBranch(t *testing.T) {
 
 func TestCompletionScreen_PushInProgress(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushInProgress()
 	cs.SetSize(80, 40)
 
@@ -167,7 +167,7 @@ func TestCompletionScreen_PushInProgress(t *testing.T) {
 
 func TestCompletionScreen_PushSuccess(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushSuccess()
 	cs.SetSize(80, 40)
 
@@ -183,7 +183,7 @@ func TestCompletionScreen_PushSuccess(t *testing.T) {
 
 func TestCompletionScreen_PushError(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushError("authentication failed")
 	cs.SetSize(80, 40)
 
@@ -198,7 +198,7 @@ func TestCompletionScreen_PushError(t *testing.T) {
 
 func TestCompletionScreen_PRInProgress(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushSuccess()
 	cs.SetPRInProgress()
 	cs.SetSize(80, 40)
@@ -214,7 +214,7 @@ func TestCompletionScreen_PRInProgress(t *testing.T) {
 
 func TestCompletionScreen_PRSuccess(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushSuccess()
 	cs.SetPRSuccess("https://github.com/org/repo/pull/42", "feat(auth): Authentication")
 	cs.SetSize(80, 40)
@@ -236,7 +236,7 @@ func TestCompletionScreen_PRSuccess(t *testing.T) {
 
 func TestCompletionScreen_PRError(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushSuccess()
 	cs.SetPRError("gh not found, Install: https://cli.github.com")
 	cs.SetSize(80, 40)
@@ -252,12 +252,12 @@ func TestCompletionScreen_PRError(t *testing.T) {
 
 func TestCompletionScreen_ConfigureResetsAutoActions(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushSuccess()
 	cs.SetPRSuccess("https://example.com", "title")
 
 	// Reconfigure should reset
-	cs.Configure("payments", 3, 5, "chief/payments", 2, false, 0, nil)
+	cs.Configure("payments", 3, 5, "melliza/payments", 2, false, 0, nil)
 
 	if cs.pushState != AutoActionIdle {
 		t.Error("expected push state to be reset after Configure")
@@ -272,7 +272,7 @@ func TestCompletionScreen_ConfigureResetsAutoActions(t *testing.T) {
 
 func TestCompletionScreen_Tick(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushInProgress()
 
 	initial := cs.spinnerFrame
@@ -284,7 +284,7 @@ func TestCompletionScreen_Tick(t *testing.T) {
 
 func TestCompletionScreen_PushErrorNonBlocking(t *testing.T) {
 	cs := NewCompletionScreen()
-	cs.Configure("auth", 8, 8, "chief/auth", 5, true, 0, nil)
+	cs.Configure("auth", 8, 8, "melliza/auth", 5, true, 0, nil)
 	cs.SetPushError("network error")
 	cs.SetSize(80, 40)
 

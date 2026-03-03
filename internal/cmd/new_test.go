@@ -40,9 +40,9 @@ func TestRunNewCreatesDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Test that directory structure is created correctly
-	// We can't fully test RunNew without Claude, but we can verify directory creation logic
+	// We can't fully test RunNew without Gemini, but we can verify directory creation logic
 	name := "test-prd"
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", name)
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", name)
 
 	// Simulate what RunNew does for directory creation
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
@@ -55,14 +55,14 @@ func TestRunNewCreatesDirectory(t *testing.T) {
 	}
 
 	// Verify parent directories also exist
-	chiefDir := filepath.Join(tmpDir, ".chief")
-	if _, err := os.Stat(chiefDir); os.IsNotExist(err) {
-		t.Error("Expected .chief directory to be created")
+	mellizaDir := filepath.Join(tmpDir, ".melliza")
+	if _, err := os.Stat(mellizaDir); os.IsNotExist(err) {
+		t.Error("Expected .melliza directory to be created")
 	}
 
-	prdsDir := filepath.Join(chiefDir, "prds")
+	prdsDir := filepath.Join(mellizaDir, "prds")
 	if _, err := os.Stat(prdsDir); os.IsNotExist(err) {
-		t.Error("Expected .chief/prds directory to be created")
+		t.Error("Expected .melliza/prds directory to be created")
 	}
 }
 
@@ -85,7 +85,7 @@ func TestRunNewCleansUpEmptyDirOnCancel(t *testing.T) {
 
 	// Simulate what RunNew does: create directory, then check prd.md doesn't exist
 	name := "cancelled"
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", name)
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", name)
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
@@ -106,12 +106,12 @@ func TestRunNewKeepsDirWhenPrdMdExists(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	name := "has-prd"
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", name)
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", name)
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
 
-	// Create prd.md (simulates successful Claude session)
+	// Create prd.md (simulates successful Gemini session)
 	prdMdPath := filepath.Join(prdDir, "prd.md")
 	if err := os.WriteFile(prdMdPath, []byte("# My PRD"), 0644); err != nil {
 		t.Fatalf("Failed to create prd.md: %v", err)
@@ -132,7 +132,7 @@ func TestRunNewRejectsExistingPRD(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create existing prd.md
-	prdDir := filepath.Join(tmpDir, ".chief", "prds", "existing")
+	prdDir := filepath.Join(tmpDir, ".melliza", "prds", "existing")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}

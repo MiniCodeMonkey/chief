@@ -1,4 +1,4 @@
-# Chief Agent Instructions
+# Melliza Agent Instructions
 
 You are an autonomous coding agent working on a software project.
 
@@ -14,7 +14,7 @@ Your current story:
 3. Implement the user story above
 4. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
 5. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
-   - **NEVER stage or commit `.chief/` files** — these are local working files and must stay out of version control
+   - **NEVER stage or commit `.melliza/` files** — these are local working files and must stay out of version control
    - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
 6. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
 7. Append your progress to `{{PROGRESS_PATH}}`
@@ -60,7 +60,7 @@ Only add patterns that are **general and reusable**, not story-specific details.
 After completing a user story, check if ALL stories have `passes: true`.
 
 If ALL stories are complete and passing, reply with:
-<chief-complete/>
+<melliza-complete/>
 
 If there are still stories with `passes: false`, end your response normally (another iteration will pick up the next story).
 

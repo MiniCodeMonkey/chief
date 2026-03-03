@@ -11,7 +11,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/minicodemonkey/chief/internal/loop"
+	"github.com/lvcoi/melliza/internal/loop"
 )
 
 // LogEntry represents a single entry in the log viewer.
@@ -286,7 +286,7 @@ func (l *LogViewer) Render() string {
 		emptyStyle := lipgloss.NewStyle().
 			Foreground(MutedColor).
 			Padding(1, 2)
-		return emptyStyle.Render("No log entries yet. Start the loop to see Claude's activity.")
+		return emptyStyle.Render("No log entries yet. Start the loop to see Gemini's activity.")
 	}
 
 	// Calculate visible range

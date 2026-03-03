@@ -103,7 +103,7 @@ func TestCreateWorktree(t *testing.T) {
 		dir := initTestRepo(t)
 		wtPath := filepath.Join(dir, "worktrees", "test-prd")
 
-		err := CreateWorktree(dir, wtPath, "chief/test-prd")
+		err := CreateWorktree(dir, wtPath, "melliza/test-prd")
 		if err != nil {
 			t.Fatalf("CreateWorktree() error = %v", err)
 		}
@@ -113,8 +113,8 @@ func TestCreateWorktree(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetCurrentBranch() error = %v", err)
 		}
-		if branch != "chief/test-prd" {
-			t.Errorf("branch = %q, want %q", branch, "chief/test-prd")
+		if branch != "melliza/test-prd" {
+			t.Errorf("branch = %q, want %q", branch, "melliza/test-prd")
 		}
 	})
 
@@ -123,7 +123,7 @@ func TestCreateWorktree(t *testing.T) {
 		wtPath := filepath.Join(dir, "worktrees", "test-prd")
 
 		// Create worktree first time
-		if err := CreateWorktree(dir, wtPath, "chief/test-prd"); err != nil {
+		if err := CreateWorktree(dir, wtPath, "melliza/test-prd"); err != nil {
 			t.Fatalf("first CreateWorktree() error = %v", err)
 		}
 
@@ -134,7 +134,7 @@ func TestCreateWorktree(t *testing.T) {
 		}
 
 		// Create again - should reuse
-		if err := CreateWorktree(dir, wtPath, "chief/test-prd"); err != nil {
+		if err := CreateWorktree(dir, wtPath, "melliza/test-prd"); err != nil {
 			t.Fatalf("second CreateWorktree() error = %v", err)
 		}
 
@@ -149,12 +149,12 @@ func TestCreateWorktree(t *testing.T) {
 		wtPath := filepath.Join(dir, "worktrees", "test-prd")
 
 		// Create worktree with one branch
-		if err := CreateWorktree(dir, wtPath, "chief/branch-a"); err != nil {
+		if err := CreateWorktree(dir, wtPath, "melliza/branch-a"); err != nil {
 			t.Fatalf("first CreateWorktree() error = %v", err)
 		}
 
 		// Create again with a different branch - should remove and recreate
-		if err := CreateWorktree(dir, wtPath, "chief/branch-b"); err != nil {
+		if err := CreateWorktree(dir, wtPath, "melliza/branch-b"); err != nil {
 			t.Fatalf("second CreateWorktree() error = %v", err)
 		}
 
@@ -162,8 +162,8 @@ func TestCreateWorktree(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetCurrentBranch() error = %v", err)
 		}
-		if branch != "chief/branch-b" {
-			t.Errorf("branch = %q, want %q", branch, "chief/branch-b")
+		if branch != "melliza/branch-b" {
+			t.Errorf("branch = %q, want %q", branch, "melliza/branch-b")
 		}
 	})
 }
@@ -173,7 +173,7 @@ func TestRemoveWorktree(t *testing.T) {
 		dir := initTestRepo(t)
 		wtPath := filepath.Join(dir, "worktrees", "test-prd")
 
-		if err := CreateWorktree(dir, wtPath, "chief/test-prd"); err != nil {
+		if err := CreateWorktree(dir, wtPath, "melliza/test-prd"); err != nil {
 			t.Fatalf("CreateWorktree() error = %v", err)
 		}
 
@@ -194,7 +194,7 @@ func TestListWorktrees(t *testing.T) {
 		dir := initTestRepo(t)
 		wtPath := filepath.Join(dir, "worktrees", "test-prd")
 
-		if err := CreateWorktree(dir, wtPath, "chief/test-prd"); err != nil {
+		if err := CreateWorktree(dir, wtPath, "melliza/test-prd"); err != nil {
 			t.Fatalf("CreateWorktree() error = %v", err)
 		}
 
@@ -210,7 +210,7 @@ func TestListWorktrees(t *testing.T) {
 		// Find our worktree
 		found := false
 		for _, wt := range worktrees {
-			if wt.Branch == "chief/test-prd" {
+			if wt.Branch == "melliza/test-prd" {
 				found = true
 				if wt.HEAD == "" {
 					t.Error("worktree HEAD is empty")
@@ -218,7 +218,7 @@ func TestListWorktrees(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Error("worktree with branch chief/test-prd not found in list")
+			t.Error("worktree with branch melliza/test-prd not found in list")
 		}
 	})
 }
@@ -228,7 +228,7 @@ func TestIsWorktree(t *testing.T) {
 		dir := initTestRepo(t)
 		wtPath := filepath.Join(dir, "worktrees", "test-prd")
 
-		if err := CreateWorktree(dir, wtPath, "chief/test-prd"); err != nil {
+		if err := CreateWorktree(dir, wtPath, "melliza/test-prd"); err != nil {
 			t.Fatalf("CreateWorktree() error = %v", err)
 		}
 
@@ -253,7 +253,7 @@ func TestIsWorktree(t *testing.T) {
 
 func TestWorktreePathForPRD(t *testing.T) {
 	result := WorktreePathForPRD("/home/user/project", "auth")
-	expected := filepath.Join("/home/user/project", ".chief", "worktrees", "auth")
+	expected := filepath.Join("/home/user/project", ".melliza", "worktrees", "auth")
 	if result != expected {
 		t.Errorf("WorktreePathForPRD() = %q, want %q", result, expected)
 	}
@@ -401,7 +401,7 @@ func TestDetectOrphanedWorktrees(t *testing.T) {
 
 	t.Run("returns empty map when worktrees directory is empty", func(t *testing.T) {
 		dir := t.TempDir()
-		worktreesDir := filepath.Join(dir, ".chief", "worktrees")
+		worktreesDir := filepath.Join(dir, ".melliza", "worktrees")
 		if err := os.MkdirAll(worktreesDir, 0755); err != nil {
 			t.Fatalf("failed to create worktrees dir: %v", err)
 		}
@@ -413,7 +413,7 @@ func TestDetectOrphanedWorktrees(t *testing.T) {
 
 	t.Run("detects worktree directories on disk", func(t *testing.T) {
 		dir := t.TempDir()
-		worktreesDir := filepath.Join(dir, ".chief", "worktrees")
+		worktreesDir := filepath.Join(dir, ".melliza", "worktrees")
 
 		// Create some worktree directories
 		for _, name := range []string{"auth", "payments"} {
@@ -446,7 +446,7 @@ func TestDetectOrphanedWorktrees(t *testing.T) {
 
 	t.Run("ignores files in worktrees directory", func(t *testing.T) {
 		dir := t.TempDir()
-		worktreesDir := filepath.Join(dir, ".chief", "worktrees")
+		worktreesDir := filepath.Join(dir, ".melliza", "worktrees")
 		if err := os.MkdirAll(worktreesDir, 0755); err != nil {
 			t.Fatalf("failed to create worktrees dir: %v", err)
 		}

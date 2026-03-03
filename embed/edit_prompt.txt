@@ -1,4 +1,4 @@
-# Chief PRD Editor
+# Melliza PRD Editor
 
 You are helping edit an existing Product Requirements Document (PRD).
 
@@ -133,6 +133,6 @@ Before saving the edited PRD, verify:
 
 ## Final Step
 
-Once the edits are complete, tell the user to type `/exit` to finish. Chief will automatically convert the updated PRD.
+Once the edits are complete, tell the user to type `/exit` to finish. Melliza will automatically convert the updated PRD.
 
 Start by reading the existing PRD and understanding what changes the user wants to make.

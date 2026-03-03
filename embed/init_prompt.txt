@@ -1,4 +1,4 @@
-# Chief PRD Generator
+# Melliza PRD Generator
 
 You are helping create a Product Requirements Document (PRD) for a software feature.
 
@@ -236,6 +236,6 @@ Before saving the PRD, verify:
 
 ## Final Step
 
-Once the PRD file is written, tell the user to type `/exit` to finish. Chief will automatically convert it to the format needed for implementation.
+Once the PRD file is written, tell the user to type `/exit` to finish. Melliza will automatically convert it to the format needed for implementation.
 
 Start by understanding what the user wants to build. Ask your clarifying questions first, then create the PRD.

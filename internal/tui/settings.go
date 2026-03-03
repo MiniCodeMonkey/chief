@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/minicodemonkey/chief/internal/config"
+	"github.com/lvcoi/melliza/internal/config"
 )
 
 // SettingsItemType represents the type of a settings item.
@@ -193,7 +193,7 @@ func (s *SettingsOverlay) Render() string {
 
 	var content strings.Builder
 
-	// Header: "Settings" left-aligned, ".chief/config.yaml" right-aligned
+	// Header: "Settings" left-aligned, ".melliza/config.yaml" right-aligned
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(PrimaryColor)
@@ -201,7 +201,7 @@ func (s *SettingsOverlay) Render() string {
 		Foreground(MutedColor)
 
 	title := titleStyle.Render("Settings")
-	path := pathStyle.Render(".chief/config.yaml")
+	path := pathStyle.Render(".melliza/config.yaml")
 	titleWidth := lipgloss.Width(title)
 	pathWidth := lipgloss.Width(path)
 	titlePadding := modalWidth - 4 - titleWidth - pathWidth

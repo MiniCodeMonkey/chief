@@ -7,7 +7,7 @@ import (
 func TestBranchWarningProtectedBranch(t *testing.T) {
 	bw := NewBranchWarning()
 	bw.SetSize(80, 24)
-	bw.SetContext("main", "auth", ".chief/worktrees/auth/")
+	bw.SetContext("main", "auth", ".melliza/worktrees/auth/")
 	bw.SetDialogContext(DialogProtectedBranch)
 	bw.Reset()
 
@@ -48,7 +48,7 @@ func TestBranchWarningProtectedBranch(t *testing.T) {
 func TestBranchWarningAnotherPRDRunning(t *testing.T) {
 	bw := NewBranchWarning()
 	bw.SetSize(80, 24)
-	bw.SetContext("feature/x", "payments", ".chief/worktrees/payments/")
+	bw.SetContext("feature/x", "payments", ".melliza/worktrees/payments/")
 	bw.SetDialogContext(DialogAnotherPRDRunning)
 	bw.Reset()
 
@@ -76,7 +76,7 @@ func TestBranchWarningAnotherPRDRunning(t *testing.T) {
 func TestBranchWarningNoConflicts(t *testing.T) {
 	bw := NewBranchWarning()
 	bw.SetSize(80, 24)
-	bw.SetContext("feature/x", "auth", ".chief/worktrees/auth/")
+	bw.SetContext("feature/x", "auth", ".melliza/worktrees/auth/")
 	bw.SetDialogContext(DialogNoConflicts)
 	bw.Reset()
 
@@ -107,7 +107,7 @@ func TestBranchWarningNoConflicts(t *testing.T) {
 func TestBranchWarningNavigation(t *testing.T) {
 	bw := NewBranchWarning()
 	bw.SetSize(80, 24)
-	bw.SetContext("main", "auth", ".chief/worktrees/auth/")
+	bw.SetContext("main", "auth", ".melliza/worktrees/auth/")
 	bw.SetDialogContext(DialogProtectedBranch)
 	bw.Reset()
 
@@ -158,13 +158,13 @@ func TestBranchWarningNavigation(t *testing.T) {
 func TestBranchWarningBranchEdit(t *testing.T) {
 	bw := NewBranchWarning()
 	bw.SetSize(80, 24)
-	bw.SetContext("main", "auth", ".chief/worktrees/auth/")
+	bw.SetContext("main", "auth", ".melliza/worktrees/auth/")
 	bw.SetDialogContext(DialogProtectedBranch)
 	bw.Reset()
 
 	// Default branch name
-	if bw.GetSuggestedBranch() != "chief/auth" {
-		t.Errorf("expected branch 'chief/auth', got %q", bw.GetSuggestedBranch())
+	if bw.GetSuggestedBranch() != "melliza/auth" {
+		t.Errorf("expected branch 'melliza/auth', got %q", bw.GetSuggestedBranch())
 	}
 
 	// Enter edit mode
@@ -184,15 +184,15 @@ func TestBranchWarningBranchEdit(t *testing.T) {
 	bw.AddInputChar('p')
 	bw.AddInputChar('r')
 	bw.AddInputChar('d')
-	if bw.GetSuggestedBranch() != "chief/my-prd" {
-		t.Errorf("expected 'chief/my-prd', got %q", bw.GetSuggestedBranch())
+	if bw.GetSuggestedBranch() != "melliza/my-prd" {
+		t.Errorf("expected 'melliza/my-prd', got %q", bw.GetSuggestedBranch())
 	}
 
 	// Invalid characters should be rejected
 	bw.AddInputChar(' ')
 	bw.AddInputChar('!')
-	if bw.GetSuggestedBranch() != "chief/my-prd" {
-		t.Errorf("expected 'chief/my-prd' (unchanged), got %q", bw.GetSuggestedBranch())
+	if bw.GetSuggestedBranch() != "melliza/my-prd" {
+		t.Errorf("expected 'melliza/my-prd' (unchanged), got %q", bw.GetSuggestedBranch())
 	}
 
 	// Cancel edit mode
@@ -205,14 +205,14 @@ func TestBranchWarningBranchEdit(t *testing.T) {
 func TestBranchWarningPathHints(t *testing.T) {
 	bw := NewBranchWarning()
 	bw.SetSize(80, 24)
-	bw.SetContext("main", "auth", ".chief/worktrees/auth/")
+	bw.SetContext("main", "auth", ".melliza/worktrees/auth/")
 	bw.SetDialogContext(DialogProtectedBranch)
 
 	// Check that options have correct path hints
 	if bw.options[0].hint != "./ (current directory)" {
 		t.Errorf("expected current dir hint for branch only, got %q", bw.options[0].hint)
 	}
-	if bw.options[1].hint != ".chief/worktrees/auth/" {
+	if bw.options[1].hint != ".melliza/worktrees/auth/" {
 		t.Errorf("expected worktree path hint, got %q", bw.options[1].hint)
 	}
 	if bw.options[2].hint != "./ (current directory)" {
@@ -226,7 +226,7 @@ func TestBranchWarningRender(t *testing.T) {
 	for _, ctx := range contexts {
 		bw := NewBranchWarning()
 		bw.SetSize(80, 24)
-		bw.SetContext("main", "auth", ".chief/worktrees/auth/")
+		bw.SetContext("main", "auth", ".melliza/worktrees/auth/")
 		bw.SetDialogContext(ctx)
 		bw.Reset()
 
@@ -239,7 +239,7 @@ func TestBranchWarningRender(t *testing.T) {
 
 func TestBranchWarningGetDialogContext(t *testing.T) {
 	bw := NewBranchWarning()
-	bw.SetContext("main", "auth", ".chief/worktrees/auth/")
+	bw.SetContext("main", "auth", ".melliza/worktrees/auth/")
 
 	bw.SetDialogContext(DialogProtectedBranch)
 	if bw.GetDialogContext() != DialogProtectedBranch {
