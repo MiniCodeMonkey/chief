@@ -120,11 +120,12 @@ Here's a simplified version of what Gemini receives:
 2. Read `progress.md` if it exists (check Codebase Patterns first)
 3. Pick the highest priority story where `passes: false`
 4. Mark it as `inProgress: true` in the PRD
-5. Implement that single user story
+5. Implement that single user story using test-first TDD (red → green → refactor)
 6. Run quality checks (typecheck, lint, test)
-7. If checks pass, commit with message: `feat: [Story ID] - [Story Title]`
-8. Update the PRD to set `passes: true` and `inProgress: false`
-9. Append your progress to `progress.md`
+7. For visual/UI changes, capture screenshot verification (or document environment limitations)
+8. If checks pass, commit with message: `feat: [Story ID] - [Story Title]`
+9. Update the PRD to set `passes: true` and `inProgress: false`
+10. Append your progress to `progress.md`
 ```
 
 The prompt is embedded directly in Melliza's code. There's no external template file to manage.

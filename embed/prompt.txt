@@ -12,12 +12,21 @@ Your current story:
 1. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
 2. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
 3. Implement the user story above
-4. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-5. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
+4. Follow test-first TDD:
+   - Write or update tests that describe the desired behavior BEFORE changing implementation
+   - Run tests and confirm they fail for the expected reason
+   - Implement the minimal code change to make the tests pass
+   - Refactor only after tests pass
+5. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
+6. For visual/UI changes, verify behavior with screenshots:
+   - Capture at least one screenshot of the updated UI state
+   - If possible, include before/after screenshots for perceptible visual changes
+   - If screenshot capture is not possible in the current environment, explicitly explain why in progress notes
+7. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
    - **NEVER stage or commit `.melliza/` files** — these are local working files and must stay out of version control
    - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
-6. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
-7. Append your progress to `{{PROGRESS_PATH}}`
+8. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
+9. Append your progress to `{{PROGRESS_PATH}}`
 
 ## Progress Report Format
 
@@ -26,6 +35,14 @@ APPEND to `{{PROGRESS_PATH}}` (never replace, always append):
 ## [Date/Time] - [Story ID]
 - What was implemented
 - Files changed
+- TDD evidence:
+  - tests added/updated first
+  - failing test command + brief failure reason
+  - passing test command(s)
+- Visual verification (for UI changes):
+  - screenshot path(s) or artifact reference(s)
+  - what was visually confirmed
+  - if unavailable, explicit reason
 - **Learnings for future iterations:**
   - Patterns discovered (e.g., "this codebase uses X for Y")
   - Gotchas encountered (e.g., "don't forget to update Z when changing W")

@@ -265,6 +265,10 @@ func TestCheckWritePermission_Success(t *testing.T) {
 }
 
 func TestCheckWritePermission_Fail(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("skipping permission failure test when running as root")
+	}
+
 	dir := t.TempDir()
 	os.Chmod(dir, 0o555)
 	defer os.Chmod(dir, 0o755) // restore for cleanup

@@ -32,7 +32,8 @@ Built on the "Ralph Wiggum loop" pattern, Melliza breaks down complex project re
 *   📈 **Persistent Progress**: Progress is tracked in `prd.json` and `progress.md`, ensuring work can be resumed across sessions.
 *   🖥️ **TUI Dashboard**: A real-time terminal user interface to monitor Gemini's progress, logs, and diffs.
 *   🌿 **Smart Worktrees**: Automatically creates git branches or worktrees for each PRD to keep your main workspace clean.
-*   ✅ **Auto-Commit & Test**: Gemini implements the story, runs your project's tests, and commits changes automatically.
+*   ✅ **Test-First + Auto-Commit**: Gemini follows test-first TDD (red → green → refactor), runs your project's checks, and commits changes automatically.
+*   🖼️ **Visual Verification**: For UI changes, Melliza requires screenshot-based confirmation (or an explicit environment limitation note).
 
 ## 🚀 Quick Start
 

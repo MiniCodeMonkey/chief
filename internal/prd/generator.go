@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
 	"github.com/lvcoi/melliza/embed"
+	"github.com/lvcoi/melliza/internal/gemini"
 )
 
 // Colors duplicated from tui/styles.go to avoid import cycle (tui → git → prd).
@@ -199,12 +200,15 @@ func Convert(opts ConvertOptions) error {
 // Gemini reads prd.md itself using file-reading tools, avoiding token limits for large PRDs.
 // The idPrefix determines the story ID convention (e.g., "US" → US-001, "MFR" → MFR-001).
 func runGeminiConversion(absPRDDir, idPrefix string) (string, error) {
+	if err := gemini.EnsureAuth(); err != nil {
+		return "", err
+	}
+
 	prdMdPath := filepath.Join(absPRDDir, "prd.md")
 	prompt := embed.GetConvertPrompt(prdMdPath, idPrefix)
 
-	cmd := exec.Command("gemini", "-p", "")
+	cmd := exec.Command("gemini", gemini.BuildHeadlessArgs(prompt, "", false)...)
 	cmd.Dir = absPRDDir
-	cmd.Stdin = strings.NewReader(prompt)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -217,12 +221,19 @@ func runGeminiConversion(absPRDDir, idPrefix string) (string, error) {
 	if err := waitWithPanel(cmd, "Converting PRD", "Analyzing PRD...", &stderr); err != nil {
 		return "", err
 	}
+	if _, err := gemini.ParseSingleJSONObject(stdout.Bytes()); err != nil {
+		return "", err
+	}
 
-	return stdout.String(), nil
+	return mustExtractResponse(stdout.String()), nil
 }
 
 // runGeminiJSONFix asks Gemini to fix invalid JSON inline and returns the corrected output.
 func runGeminiJSONFix(badJSON string, validationErr error) (string, error) {
+	if err := gemini.EnsureAuth(); err != nil {
+		return "", err
+	}
+
 	fixPrompt := fmt.Sprintf(
 		"The following JSON is invalid. The error is: %s\n\n"+
 			"Fix the JSON (pay special attention to escaping double quotes inside string values with backslashes) "+
@@ -230,7 +241,7 @@ func runGeminiJSONFix(badJSON string, validationErr error) (string, error) {
 		validationErr.Error(), badJSON,
 	)
 
-	cmd := exec.Command("gemini", "-p", fixPrompt)
+	cmd := exec.Command("gemini", gemini.BuildHeadlessArgs(fixPrompt, "", false)...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -243,8 +254,19 @@ func runGeminiJSONFix(badJSON string, validationErr error) (string, error) {
 	if err := waitWithSpinner(cmd, "Fixing JSON", "Fixing prd.json...", &stderr); err != nil {
 		return "", err
 	}
+	if _, err := gemini.ParseSingleJSONObject(stdout.Bytes()); err != nil {
+		return "", err
+	}
 
-	return stdout.String(), nil
+	return mustExtractResponse(stdout.String()), nil
+}
+
+func mustExtractResponse(raw string) string {
+	var out struct {
+		Response string `json:"response"`
+	}
+	_ = json.Unmarshal([]byte(strings.TrimSpace(raw)), &out)
+	return out.Response
 }
 
 // parseAndValidatePRD unmarshals a JSON string and validates it as a PRD.
