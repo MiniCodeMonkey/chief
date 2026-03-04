@@ -109,7 +109,7 @@ func promptBuilderForPRD(prdPath string) func() (string, error) {
 
 		storyCtx := p.NextStoryContext()
 
-		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), *storyCtx, story.ID, story.Title), nil
+		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), *storyCtx, story.ID, story.Title, false, nil), nil
 	}
 }
 

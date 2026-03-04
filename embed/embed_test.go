@@ -9,7 +9,7 @@ func TestGetPrompt(t *testing.T) {
 	prdPath := "/path/to/prd.json"
 	progressPath := "/path/to/progress.md"
 	storyContext := `{"id":"US-001","title":"Test Story"}`
-	prompt := GetPrompt(prdPath, progressPath, storyContext, "US-001", "Test Story")
+	prompt := GetPrompt(prdPath, progressPath, storyContext, "US-001", "Test Story", false, nil)
 
 	// Verify all placeholders were substituted
 	if strings.Contains(prompt, "{{PRD_PATH}}") {
@@ -63,7 +63,7 @@ func TestGetPrompt(t *testing.T) {
 }
 
 func TestGetPrompt_NoFileReadInstruction(t *testing.T) {
-	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story", false, nil)
 
 	// The prompt should NOT instruct Claude to read the PRD file
 	if strings.Contains(prompt, "Read the PRD") {
@@ -78,7 +78,7 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 }
 
 func TestGetPrompt_ChiefExclusion(t *testing.T) {
-	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story", false, nil)
 
 	// The prompt must instruct Claude to never stage or commit .chief/ files
 	if !strings.Contains(prompt, ".chief/") {
@@ -90,6 +90,56 @@ func TestGetPrompt_ChiefExclusion(t *testing.T) {
 	// The commit step should not say "commit ALL changes" anymore
 	if strings.Contains(prompt, "commit ALL changes") {
 		t.Error("Expected prompt to NOT say 'commit ALL changes' — it should exclude .chief/ files")
+	}
+}
+
+func TestGetPrompt_FrontPressureDisabled(t *testing.T) {
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story", false, nil)
+
+	if strings.Contains(prompt, "Front Pressure") {
+		t.Error("Expected prompt to NOT contain 'Front Pressure' section when fp disabled")
+	}
+	if strings.Contains(prompt, "front-pressure") {
+		t.Error("Expected prompt to NOT contain front-pressure tag instructions when fp disabled")
+	}
+}
+
+func TestGetPrompt_FrontPressureEnabled(t *testing.T) {
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story", true, nil)
+
+	if !strings.Contains(prompt, "## Front Pressure") {
+		t.Error("Expected prompt to contain '## Front Pressure' section when fp enabled")
+	}
+	if !strings.Contains(prompt, "<front-pressure>") {
+		t.Error("Expected prompt to contain front-pressure tag example when fp enabled")
+	}
+	if !strings.Contains(prompt, "plan-level problem") {
+		t.Error("Expected prompt to mention plan-level problem constraint")
+	}
+	// No dismissed concerns section when slice is nil
+	if strings.Contains(prompt, "Previously Dismissed Concerns") {
+		t.Error("Expected prompt to NOT contain dismissed concerns section when none provided")
+	}
+}
+
+func TestGetPrompt_FrontPressureEnabledWithDismissedConcerns(t *testing.T) {
+	dismissed := []string{"The database schema is wrong", "The API is not RESTful"}
+	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story", true, dismissed)
+
+	if !strings.Contains(prompt, "## Front Pressure") {
+		t.Error("Expected prompt to contain '## Front Pressure' section")
+	}
+	if !strings.Contains(prompt, "## Previously Dismissed Concerns") {
+		t.Error("Expected prompt to contain '## Previously Dismissed Concerns' section")
+	}
+	if !strings.Contains(prompt, "The database schema is wrong") {
+		t.Error("Expected prompt to list first dismissed concern")
+	}
+	if !strings.Contains(prompt, "The API is not RESTful") {
+		t.Error("Expected prompt to list second dismissed concern")
+	}
+	if !strings.Contains(prompt, "Do NOT re-raise") {
+		t.Error("Expected prompt to instruct agent not to re-raise dismissed concerns")
 	}
 }
 
