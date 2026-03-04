@@ -1,6 +1,3 @@
----
-description: Troubleshoot common Melliza issues including Gemini not found, permission errors, worktree problems, and loop failures.
----
 
 # Common Issues
 
@@ -10,9 +7,9 @@ Solutions to frequently encountered problems.
 
 **Symptom:** Error message about Gemini CLI not being installed.
 
-```
-Error: Gemini CLI not found. Please install it first.
-```
+<div style="max-width: 600px; margin: 1rem 0;">
+  <img src="../public/images/cmd-error.svg" alt="Melliza Error Output" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+</div>
 
 **Cause:** Gemini CLI isn't installed or isn't in your PATH.
 
@@ -234,7 +231,7 @@ Melliza automatically prunes git's internal worktree tracking on startup, but do
 
 If none of these solutions help:
 
-1. Check the [FAQ](/troubleshooting/faq)
+1. Check the [FAQ](faq.md)
 2. Search [GitHub Issues](https://github.com/lvcoi/melliza/issues)
 3. Open a new issue with:
    - Melliza version (`melliza --version`)

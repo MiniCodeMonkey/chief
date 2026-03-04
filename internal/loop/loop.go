@@ -457,6 +457,7 @@ func (l *Loop) processOutput(r io.Reader) {
 		// Update last output time for watchdog
 		l.mu.Lock()
 		l.lastOutputTime = time.Now()
+		iter := l.iteration
 		l.mu.Unlock()
 
 		// Log raw output
@@ -464,19 +465,35 @@ func (l *Loop) processOutput(r io.Reader) {
 
 		// Parse the line and emit event if valid
 		if event := ParseLine(line); event != nil {
-			l.mu.Lock()
-			event.Iteration = l.iteration
-			l.mu.Unlock()
+			event.Iteration = iter
 			l.events <- *event
+		} else {
+			// If not parsed as a semantic event, emit as raw stdout event
+			l.events <- Event{
+				Type:      EventStdout,
+				Iteration: iter,
+				Text:      line,
+			}
 		}
 	}
 }
 
-// logStream logs a stream with a prefix.
+// logStream logs a stream with a prefix and emits stderr events.
 func (l *Loop) logStream(r io.Reader, prefix string) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		l.logLine(prefix + scanner.Text())
+		line := scanner.Text()
+		l.logLine(prefix + line)
+
+		// Emit stderr events
+		l.mu.Lock()
+		iter := l.iteration
+		l.mu.Unlock()
+		l.events <- Event{
+			Type:      EventStderr,
+			Iteration: iter,
+			Text:      line,
+		}
 	}
 }
 

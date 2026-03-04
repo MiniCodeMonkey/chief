@@ -1,6 +1,3 @@
----
-description: Understand the .melliza directory structure where Melliza stores all state. Self-contained, portable, and git-friendly.
----
 
 # The .melliza Directory
 
@@ -27,7 +24,7 @@ your-project/
 ```
 
 The root `.melliza/` directory contains:
-- `config.yaml` — Project-level settings (see [Configuration](/reference/configuration))
+- `config.yaml` — Project-level settings (see [Configuration](../reference/configuration.md))
 - `prds/` — One subdirectory per PRD with requirements, state, and logs
 - `worktrees/` — Git worktrees for parallel PRD isolation (created on demand)
 
@@ -80,7 +77,7 @@ Key fields:
 | `userStories[].passes` | boolean | Whether the story is complete |
 | `userStories[].inProgress` | boolean | Whether Melliza is currently working on this story |
 
-Melliza selects the next story by finding the highest-priority story (lowest `priority` number) where `passes` is `false`. See the [PRD Format](/concepts/prd-format) reference for full details.
+Melliza selects the next story by finding the highest-priority story (lowest `priority` number) where `passes` is `false`. See the [PRD Format](prd-format.md) reference for full details.
 
 ### `progress.md`
 
@@ -101,157 +98,3 @@ A typical entry looks like:
 - **Learnings for future iterations:**
   - Middleware pattern uses `req.user` for authenticated user data
   - JWT secret is in environment variable `JWT_SECRET`
----
-```
-
-The `Codebase Patterns` section at the top of this file consolidates reusable patterns discovered across iterations — things like naming conventions, file locations, and architectural decisions that future iterations should follow.
-
-### `gemini.log`
-
-Raw output from Gemini CLI during execution. This file captures everything Gemini outputs, including tool calls, reasoning, and results. It's primarily useful for debugging when something goes wrong.
-
-This file can get large (multiple megabytes per run) and is regenerated on each execution. You typically don't need to read it unless you're investigating an issue.
-
-## The `worktrees/` Subdirectory
-
-When you run multiple PRDs in parallel, each PRD can get its own isolated git worktree under `.melliza/worktrees/`. A worktree is a full checkout of your project on a separate branch, so parallel Gemini instances never conflict over files or git state.
-
-```
-.melliza/worktrees/
-├── auth-system/         # Full checkout on branch melliza/auth-system
-└── payment-integration/ # Full checkout on branch melliza/payment-integration
-```
-
-Worktrees are created when you choose "Create worktree + branch" from the start dialog. Each worktree:
-- Has its own branch (named `melliza/<prd-name>`)
-- Is a complete copy of your project
-- Runs the configured setup command (e.g., `npm install`) automatically
-
-You can merge completed branches via `m` in the picker, and clean up worktrees via `c`.
-
-## The `config.yaml` File
-
-Project-level settings are stored in `.melliza/config.yaml`. This file is created during first-time setup or when you change settings via the Settings TUI (`,`).
-
-```yaml
-worktree:
-  setup: "npm install"
-onComplete:
-  push: true
-  createPR: true
-```
-
-See [Configuration](/reference/configuration) for all available settings.
-
-## Self-Contained by Design
-
-Melliza has no global configuration. There is no `~/.mellizarc`, no `~/.config/melliza/`, no environment variables required. Every piece of state Melliza needs is inside `.melliza/`.
-
-This means:
-
-- **No setup beyond installation** — Install the binary, run `melliza new`, and you're ready
-- **No conflicts between projects** — Each project has its own isolated state
-- **No "works on my machine" issues** — The state is the same for everyone who clones the repo
-- **No cleanup needed** — Delete `.melliza/` and it's as if Melliza was never there
-
-## Portability
-
-Because everything is self-contained, your project is fully portable:
-
-```bash
-# Move your project anywhere — Melliza picks up right where it left off
-mv my-project /new/location/
-cd /new/location/my-project
-melliza  # Continues from the last completed story
-```
-
-```bash
-# Clone on a different machine — same state, same progress
-git clone git@github.com:you/my-project.git
-cd my-project
-melliza  # Sees the same PRD state as the original machine
-```
-
-This also works for remote servers. SSH into a machine, clone your repo, and run Melliza — no additional setup required.
-
-## Multiple PRDs in One Project
-
-A single project can have multiple PRDs, each tracking a separate feature or initiative:
-
-```
-.melliza/
-├── config.yaml
-├── prds/
-│   ├── auth-system/
-│   │   ├── prd.md
-│   │   ├── prd.json
-│   │   └── progress.md
-│   ├── payment-integration/
-│   │   ├── prd.md
-│   │   ├── prd.json
-│   │   └── progress.md
-│   └── admin-dashboard/
-│       ├── prd.md
-│       ├── prd.json
-│       └── progress.md
-└── worktrees/
-    ├── auth-system/
-    └── payment-integration/
-```
-
-Run a specific PRD by name:
-
-```bash
-melliza auth-system
-melliza payment-integration
-```
-
-Each PRD tracks its own stories, progress, and logs independently. When running multiple PRDs in parallel, each gets its own git worktree and branch for full isolation. You can run them simultaneously without worrying about file conflicts or interleaved commits.
-
-## Git Considerations
-
-You have two options depending on whether you want to share Melliza state with your team.
-
-### Option 1: Keep It Private
-
-If Melliza is just for your personal workflow, ignore the entire directory:
-
-```gitignore
-# In your repo's .gitignore
-.melliza/
-```
-
-Or add it to your global gitignore to keep it private across all projects without modifying each repo:
-
-```bash
-# Check if you have a global gitignore configured
-git config --global core.excludesFile
-
-# If not set, create one
-git config --global core.excludesFile ~/.gitignore
-
-# Then add .melliza/ to that file
-echo ".melliza/" >> "$(git config --global core.excludesFile)"
-```
-
-### Option 2: Share With Your Team
-
-If you want collaborators to see progress and continue where you left off, commit everything except the log files:
-
-```gitignore
-# In your repo's .gitignore
-.melliza/prds/*/gemini.log
-```
-
-This shares:
-- `prd.md`: Your requirements, the source of truth for what to build
-- `prd.json`: Story state and progress, so collaborators see what's done
-- `progress.md`: Implementation history and learnings, valuable project context
-
-The `gemini.log` files are large, regenerated each run, and only useful for debugging.
-
-## What's Next
-
-- [PRD Format](/concepts/prd-format) — Learn how to write effective PRDs
-- [The Ralph Loop](/concepts/ralph-loop) — Understand what happens during execution
-- [CLI Reference](/reference/cli) — See all available commands

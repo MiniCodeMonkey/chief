@@ -1,6 +1,3 @@
----
-description: Melliza configuration reference. Project config file, CLI flags, Settings TUI, and first-time setup flow.
----
 
 # Configuration
 
@@ -108,8 +105,8 @@ See [Gemini CLI documentation](https://github.com/google/gemini-cli) for details
 
 By default, Gemini CLI asks for permission before executing bash commands, writing files, and making network requests. Melliza automatically disables these prompts when invoking Gemini to enable autonomous operation.
 
-::: warning
+!!! warning
 Melliza runs Gemini with full permissions to modify your codebase. Only run Melliza on PRDs you trust.
 
 For additional isolation, consider using [Gemini CLI's sandbox mode](https://docs.anthropic.com/en/docs/gemini-code/sandboxing) or running Melliza in a Docker container.
-:::
+   

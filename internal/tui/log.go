@@ -36,6 +36,7 @@ type LogViewer struct {
 	autoScroll       bool   // Auto-scroll to bottom when new content arrives
 	lastReadFilePath string // Track the last Read tool's file path for syntax highlighting
 	totalLineCount   int    // Running total of all rendered lines (O(1) lookup)
+	verbose          bool   // Whether to show raw stdout/stderr events
 }
 
 // NewLogViewer creates a new log viewer.
@@ -44,7 +45,13 @@ func NewLogViewer() *LogViewer {
 		entries:    make([]LogEntry, 0),
 		scrollPos:  0,
 		autoScroll: true,
+		verbose:    false,
 	}
+}
+
+// SetVerbose sets whether raw stdout/stderr events should be displayed.
+func (l *LogViewer) SetVerbose(v bool) {
+	l.verbose = v
 }
 
 // AddEvent adds a loop event to the log.
@@ -78,16 +85,23 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 	case loop.EventAssistantText, loop.EventToolStart, loop.EventToolResult,
 		loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventRetrying,
 		loop.EventWatchdogTimeout:
-		// Pre-render and cache lines
-		if l.width > 0 {
-			entry.cachedLines = l.renderEntry(entry)
-			l.totalLineCount += len(entry.cachedLines)
+		// Always show these semantic events
+	case loop.EventStdout, loop.EventStderr:
+		// Only show raw output in verbose mode
+		if !l.verbose {
+			return
 		}
-		l.entries = append(l.entries, entry)
 	default:
 		// Skip iteration start, unknown events, etc.
 		return
 	}
+
+	// Pre-render and cache lines
+	if l.width > 0 {
+		entry.cachedLines = l.renderEntry(entry)
+		l.totalLineCount += len(entry.cachedLines)
+	}
+	l.entries = append(l.entries, entry)
 
 	// Auto-scroll to bottom if enabled
 	if l.autoScroll && l.height > 0 {
@@ -364,6 +378,10 @@ func (l *LogViewer) renderEntry(entry LogEntry) []string {
 		return l.renderRetrying(entry)
 	case loop.EventWatchdogTimeout:
 		return l.renderWatchdogTimeout(entry)
+	case loop.EventStdout:
+		return l.renderStdout(entry)
+	case loop.EventStderr:
+		return l.renderStderr(entry)
 	default:
 		return l.renderText(entry)
 	}
@@ -384,6 +402,18 @@ func (l *LogViewer) renderText(entry LogEntry) []string {
 		result = append(result, textStyle.Render(line))
 	}
 	return result
+}
+
+// renderStdout renders a raw stdout line.
+func (l *LogViewer) renderStdout(entry LogEntry) []string {
+	style := lipgloss.NewStyle().Foreground(MutedColor)
+	return []string{style.Render("  " + entry.Text)}
+}
+
+// renderStderr renders a raw stderr line.
+func (l *LogViewer) renderStderr(entry LogEntry) []string {
+	style := lipgloss.NewStyle().Foreground(ErrorColor).Italic(true)
+	return []string{style.Render("  ! " + entry.Text)}
 }
 
 // renderToolCard renders a tool call as a single styled line with icon and argument.

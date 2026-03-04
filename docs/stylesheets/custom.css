@@ -1,0 +1,44 @@
+/* Modern Customizations for Melliza Docs */
+
+:root {
+  /* Override default material theme colors to match the Hero image (vibrant purples/pinks) */
+  --md-primary-fg-color: #8A2BE2; /* BlueViolet */
+  --md-primary-fg-color--light: #9932CC; /* DarkOrchid */
+  --md-primary-fg-color--dark: #4B0082; /* Indigo */
+  
+  --md-accent-fg-color: #FF1493; /* DeepPink */
+  
+  /* Try to make the header slightly transparent for a glassmorphism effect */
+  --md-primary-bg-color: rgba(138, 43, 226, 0.85); 
+}
+
+/* Glassmorphism for the header */
+.md-header {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Modern typography adjustments */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Add some fun hover effects to cards/links */
+.md-typeset a {
+  transition: color 0.2s ease;
+}
+
+.md-typeset a:hover {
+  color: var(--md-accent-fg-color);
+}
+
+/* Round corners on content images */
+.md-typeset img {
+  border-radius: 8px;
+}

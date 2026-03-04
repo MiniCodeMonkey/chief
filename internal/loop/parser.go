@@ -33,6 +33,10 @@ const (
 	EventRetrying
 	// EventWatchdogTimeout is emitted when the watchdog kills a hung process.
 	EventWatchdogTimeout
+	// EventStdout is emitted for raw stdout lines that aren't parsed as other events.
+	EventStdout
+	// EventStderr is emitted for raw stderr lines.
+	EventStderr
 )
 
 // String returns the string representation of an EventType.
@@ -60,6 +64,10 @@ func (e EventType) String() string {
 		return "Retrying"
 	case EventWatchdogTimeout:
 		return "WatchdogTimeout"
+	case EventStdout:
+		return "Stdout"
+	case EventStderr:
+		return "Stderr"
 	default:
 		return "Unknown"
 	}

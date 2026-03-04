@@ -26,6 +26,9 @@ type TUIOptions struct {
 	Merge         bool
 	Force         bool
 	NoRetry       bool
+	StartWithInit bool   // Start in PRD creation chat mode
+	InitName      string // PRD name for init mode
+	InitContext   string // Optional context for init mode
 }
 
 func main() {
@@ -209,20 +212,21 @@ func parseTUIFlags() *TUIOptions {
 }
 
 func runNew() {
-	opts := cmd.NewOptions{}
+	opts := &TUIOptions{
+		StartWithInit: true,
+		InitName:      "main",
+		Verbose:       false, // Default to non-verbose
+	}
 
 	// Parse arguments: melliza new [name] [context...]
 	if len(os.Args) > 2 {
-		opts.Name = os.Args[2]
+		opts.InitName = os.Args[2]
 	}
 	if len(os.Args) > 3 {
-		opts.Context = strings.Join(os.Args[3:], " ")
+		opts.InitContext = strings.Join(os.Args[3:], " ")
 	}
 
-	if err := cmd.RunNew(opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	runTUIWithOptions(opts)
 }
 
 func runEdit() {
@@ -284,6 +288,25 @@ func runList() {
 
 func runTUIWithOptions(opts *TUIOptions) {
 	prdPath := opts.PRDPath
+
+	// If starting with init, we don't need a PRD path initially
+	if opts.StartWithInit {
+		cwd, _ := os.Getwd()
+		// If no PRD found, but we want init, we can't create an App easily with missing PRD
+		// Wait, NewAppWithOptions expects a valid PRD path.
+		
+		// If we're starting fresh, create a temporary/default prd.json if needed
+		// or just use a dummy path and have the TUI handle it.
+		
+		// Let's create the directory for the new PRD and an empty prd.json first
+		prdDir := filepath.Join(cwd, ".melliza", "prds", opts.InitName)
+		_ = os.MkdirAll(prdDir, 0755)
+		prdPath = filepath.Join(prdDir, "prd.json")
+		if _, err := os.Stat(prdPath); os.IsNotExist(err) {
+			emptyPRD := `{"project": "` + opts.InitName + `", "userStories": []}`
+			_ = os.WriteFile(prdPath, []byte(emptyPRD), 0644)
+		}
+	}
 
 	// If no PRD specified, try to find one
 	if prdPath == "" {
@@ -388,6 +411,11 @@ func runTUIWithOptions(opts *TUIOptions) {
 	// Disable retry if requested
 	if opts.NoRetry {
 		app.DisableRetry()
+	}
+
+	// Trigger init flow if requested
+	if opts.StartWithInit {
+		app.StartWithInit(opts.InitName, opts.InitContext)
 	}
 
 	p := tea.NewProgram(app, tea.WithAltScreen())

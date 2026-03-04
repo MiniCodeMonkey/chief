@@ -1,14 +1,11 @@
----
-description: Learn how Melliza works as an autonomous coding agent, transforming your requirements into working code through an automated execution loop.
----
 
 # How Melliza Works
 
 Melliza is an autonomous coding agent that transforms your requirements into working code, without constant back-and-forth prompting.
 
-::: tip Background
+!!! tip Background
 For the motivation behind Melliza and a deeper exploration of autonomous coding agents, read the blog post: [Introducing Melliza: Autonomous PRD Agent](https://minicodemonkey.com/blog/2025/melliza)
-:::
+   
 
 ## The Core Concept
 
@@ -83,6 +80,10 @@ feat: [US-003] - Add user authentication
 - Created auth middleware
 ```
 
+<div style="max-width: 600px; margin: 1rem 0;">
+  <img src="../public/images/commit-example.svg" alt="Conventional Commit Example" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+</div>
+
 Your git history becomes a timeline of features, matching 1:1 with your stories.
 
 ## Progress Tracking
@@ -126,6 +127,6 @@ Autonomous doesn't mean unattended. The TUI lets you:
 
 ## Further Reading
 
-- [The Ralph Loop](/concepts/ralph-loop): Deep dive into the execution loop mechanics
-- [PRD Format](/concepts/prd-format): How to structure your project with effective user stories
-- [The .melliza Directory](/concepts/melliza-directory): Understanding where state is stored
+- [The Ralph Loop](ralph-loop.md): Deep dive into the execution loop mechanics
+- [PRD Format](prd-format.md): How to structure your project with effective user stories
+- [The .melliza Directory](melliza-directory.md): Understanding where state is stored

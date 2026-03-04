@@ -1,7 +1,7 @@
 # Binaries
 /melliza
 *.exe
-
+.env
 # Log files
 *.log
 
@@ -14,3 +14,20 @@ docs/.vitepress/dist/
 
 .gemini/
 gha-creds-*.json
+
+# Secrets
+.env
+.env.*
+*.env
+
+# Generated Documents and IDE
+.melliza/
+*.code-workspace
+.venv/
+venv/
+.cache/
+
+# AI Docs not for distribution
+*_SPEC.md
+CHIEF_TUI_SPEC.md
+WORKTREES_SPEC.md

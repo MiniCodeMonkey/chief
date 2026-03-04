@@ -1,6 +1,3 @@
----
-description: Complete prd.json schema reference for Melliza. TypeScript interfaces, field types, and validation rules for PRD files.
----
 
 # PRD Schema Reference
 

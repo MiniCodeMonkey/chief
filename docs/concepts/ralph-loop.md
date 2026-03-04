@@ -1,14 +1,11 @@
----
-description: Deep dive into the Ralph Loop, Melliza's core execution model that drives Gemini to autonomously complete user stories one by one.
----
 
 # The Ralph Loop
 
 The Ralph Loop is Melliza's core execution model: a continuous cycle that drives Gemini to complete user stories one by one. It's the engine that makes autonomous development possible.
 
-::: tip Background Reading
+!!! tip Background Reading
 For the motivation and philosophy behind this approach, read the blog post [Ship Features in Your Sleep with Ralph Loops](https://larswadefalk.com/ship-features-in-your-sleep-with-ralph-loops/).
-:::
+   
 
 ## The Loop Visualized
 
@@ -150,19 +147,9 @@ As Gemini works, it produces a stream of JSON messages. Melliza parses this stre
 
 Here's what the output stream looks like:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Gemini's Output Stream (stream-json format)                │
-├─────────────────────────────────────────────────────────────┤
-│  {"type":"text","content":"Reading prd.json..."}            │
-│  {"type":"tool_use","name":"Read","input":{...}}            │
-│  {"type":"text","content":"Found story US-012..."}          │
-│  {"type":"tool_use","name":"Write","input":{...}}           │
-│  {"type":"text","content":"Running tests..."}               │
-│  {"type":"tool_use","name":"Bash","input":{...}}            │
-│  {"type":"text","content":"Story complete, committing..."}  │
-└─────────────────────────────────────────────────────────────┘
-```
+<div style="max-width: 600px; margin: 1rem 0;">
+  <img src="../public/images/stream-json.svg" alt="Stream JSON Output" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+</div>
 
 Each message contains:
 - **type**: What kind of output (text, tool_use, etc.)
@@ -234,6 +221,6 @@ Melliza's implementation was inspired by [snarktank/ralph](https://github.com/sn
 
 ## What's Next
 
-- [The .melliza Directory](/concepts/melliza-directory): Where all this state lives
-- [PRD Format](/concepts/prd-format): How to write effective user stories
-- [CLI Reference](/reference/cli): Running Melliza with different options
+- [The .melliza Directory](melliza-directory.md): Where all this state lives
+- [PRD Format](prd-format.md): How to write effective user stories
+- [CLI Reference](../reference/cli.md): Running Melliza with different options

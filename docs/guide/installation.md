@@ -1,6 +1,3 @@
----
-description: Install Melliza on macOS or Linux via Homebrew, install script, manual download, or from source. Single binary with no runtime dependencies.
----
 
 # Installation
 
@@ -10,7 +7,7 @@ Melliza is distributed as a single binary with no runtime dependencies. Choose y
 
 Before installing Melliza, ensure you have **Gemini CLI** installed and authenticated:
 
-::: code-group
+    code-group
 
 ```bash [npm (recommended)]
 # Install Gemini CLI globally
@@ -25,11 +22,11 @@ gemini login
 npx @google/gemini-cli login
 ```
 
-:::
+   
 
-::: tip Verify Gemini CLI Installation
+!!! tip Verify Gemini CLI Installation
 Run `gemini --version` to confirm Gemini CLI is installed. Melliza will not work without it.
-:::
+   
 
 ### Optional: GitHub CLI (`gh`)
 
@@ -108,13 +105,13 @@ curl -fsSL https://raw.githubusercontent.com/minicodemonkey/melliza/main/install
 curl -fsSL https://raw.githubusercontent.com/minicodemonkey/melliza/main/install.sh | bash -s -- --version v0.1.0 --dir /opt/melliza
 ```
 
-::: info Custom Directory
+!!! info Custom Directory
 If you install to a custom directory, make sure it's in your `PATH`:
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 Add this to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist it.
-:::
+   
 
 ## Manual Binary Download
 
@@ -131,7 +128,7 @@ Download the binary for your platform from the [GitHub Releases page](https://gi
 
 ### Installation Steps
 
-::: code-group
+    code-group
 
 ```bash [macOS Apple Silicon]
 # Download the binary
@@ -177,9 +174,9 @@ chmod +x melliza-linux-arm64
 sudo mv melliza-linux-arm64 /usr/local/bin/melliza
 ```
 
-:::
+   
 
-::: tip Detect Your Architecture
+!!! tip Detect Your Architecture
 Not sure which binary you need? Run these commands:
 ```bash
 # macOS
@@ -188,7 +185,7 @@ uname -m  # arm64 = Apple Silicon, x86_64 = Intel
 # Linux
 uname -m  # x86_64 = AMD64, aarch64 = ARM64
 ```
-:::
+   
 
 ## Building from Source
 
@@ -244,27 +241,23 @@ gemini --version
 
 Expected output:
 
-```
-$ melliza --version
-melliza version vX.Y.Z
+<div style="max-width: 600px; margin: 1rem 0;">
+  <img src="../public/images/cmd-version.svg" alt="Melliza Version Output" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+</div>
 
-$ gemini --version
-Gemini CLI vX.Y.Z
-```
-
-::: warning Troubleshooting
+!!! warning Troubleshooting
 If `melliza` is not found after installation:
 1. Check that the installation directory is in your `PATH`
 2. Open a new terminal window/tab to reload your shell
 3. Run `which melliza` to see if it's found and where
 
-See the [Troubleshooting Guide](/troubleshooting/common-issues) for more help.
-:::
+See the [Troubleshooting Guide](../troubleshooting/common-issues.md) for more help.
+   
 
 ## Next Steps
 
 Now that Melliza is installed:
 
-1. **[Quick Start Guide](/guide/quick-start)** - Get running with your first PRD
-2. **[How Melliza Works](/concepts/how-it-works)** - Understand the autonomous agent concept
-3. **[CLI Reference](/reference/cli)** - Explore all available commands
+1. **[Quick Start Guide](quick-start.md)** - Get running with your first PRD
+2. **[How Melliza Works](../concepts/how-it-works.md)** - Understand the autonomous agent concept
+3. **[CLI Reference](../reference/cli.md)** - Explore all available commands

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lvcoi/melliza/embed"
 	"github.com/lvcoi/melliza/internal/config"
 	"github.com/lvcoi/melliza/internal/git"
 	"github.com/lvcoi/melliza/internal/loop"
@@ -147,6 +148,7 @@ const (
 	ViewCompletion
 	ViewSettings
 	ViewQuitConfirm
+	ViewPRDCreationChat
 )
 
 // App is the main Bubble Tea model for the Melliza TUI.
@@ -217,6 +219,9 @@ type App struct {
 
 	// Quit confirmation dialog
 	quitConfirm *QuitConfirmation
+
+	// PRD creation chat
+	creationChat *PRDCreationChat
 
 	// Completion notification callback
 	onCompletion func(prdName string)
@@ -343,6 +348,13 @@ func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 	}, nil
 }
 
+// StartWithInit transitions the TUI to the PRD creation chat mode immediately.
+func (a *App) StartWithInit(name, context string) {
+	a.creationChat = NewPRDCreationChat(a.baseDir, name, context)
+	// Size will be set on next render/WindowSizeMsg
+	a.viewMode = ViewPRDCreationChat
+}
+
 // SetCompletionCallback sets a callback that is called when any PRD completes.
 func (a *App) SetCompletionCallback(fn func(prdName string)) {
 	a.onCompletion = fn
@@ -354,6 +366,9 @@ func (a *App) SetCompletionCallback(fn func(prdName string)) {
 // SetVerbose enables or disables verbose mode (raw Gemini output in log).
 func (a *App) SetVerbose(v bool) {
 	a.verbose = v
+	if a.logViewer != nil {
+		a.logViewer.SetVerbose(v)
+	}
 }
 
 // DisableRetry disables automatic retry on Gemini crashes.
@@ -378,12 +393,21 @@ func (a App) Init() tea.Cmd {
 		_ = a.progressWatcher.Start()
 	}
 
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		tea.EnterAltScreen,
 		a.listenForPRDChanges(),
 		a.listenForManagerEvents(),
 		a.listenForProgressChanges(),
-	)
+	}
+
+	// If starting in creation chat, initiate session
+	if a.viewMode == ViewPRDCreationChat && a.creationChat != nil {
+		prdDir := filepath.Join(a.baseDir, ".melliza", "prds", a.creationChat.prdName)
+		prompt := embed.GetInitPrompt(prdDir, a.creationChat.context)
+		cmds = append(cmds, a.creationChat.StartSession(prompt))
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // listenForManagerEvents listens for events from all managed loops.
@@ -481,10 +505,36 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PRDUpdateMsg:
 		return a.handlePRDUpdate(msg)
 
+	case ChatEventMsg:
+		if a.creationChat != nil {
+			var cmd tea.Cmd
+			_, cmd = a.creationChat.Update(msg)
+			
+			// Check if PRD was created and Gemini is done
+			if a.creationChat.prdSaved {
+				// Re-load the new PRD and switch to dashboard
+				prdPath := filepath.Join(a.creationChat.prdDir, "prd.md")
+				if _, err := os.Stat(prdPath); err == nil {
+					// Trigger conversion if prd.json doesn't exist yet
+					// ... but for now, we wait for user to finish
+				}
+			}
+			return a, cmd
+		}
+		return a, nil
+
 	case LaunchInitMsg:
-		a.PostExitAction = PostExitInit
-		a.PostExitPRD = msg.Name
-		return a, tea.Quit
+		// Switch to PRD creation chat instead of quitting
+		a.creationChat = NewPRDCreationChat(a.baseDir, msg.Name, "")
+		a.creationChat.SetSize(a.width, a.height)
+		a.viewMode = ViewPRDCreationChat
+		
+		// Create PRD directory if it doesn't exist
+		prdDir := filepath.Join(a.baseDir, ".melliza", "prds", msg.Name)
+		_ = os.MkdirAll(prdDir, 0755)
+		
+		prompt := embed.GetInitPrompt(prdDir, "")
+		return a, a.creationChat.StartSession(prompt)
 
 	case LaunchEditMsg:
 		a.PostExitAction = PostExitEdit
@@ -555,6 +605,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle completion screen view
 		if a.viewMode == ViewCompletion {
 			return a.handleCompletionKeys(msg)
+		}
+
+		// Handle PRD creation chat view
+		if a.viewMode == ViewPRDCreationChat {
+			return a.handleCreationChatKeys(msg)
 		}
 
 		// Handle quit confirmation dialog
@@ -1078,9 +1133,20 @@ func (a App) View() string {
 		return a.renderSettingsView()
 	case ViewQuitConfirm:
 		return a.renderQuitConfirmView()
+	case ViewPRDCreationChat:
+		return a.renderCreationChatView()
 	default:
 		return a.renderDashboard()
 	}
+}
+
+// renderCreationChatView renders the PRD creation chat view.
+func (a *App) renderCreationChatView() string {
+	if a.creationChat == nil {
+		return "Initializing chat..."
+	}
+	a.creationChat.SetSize(a.width, a.height)
+	return a.creationChat.View()
 }
 
 // renderBranchWarningView renders the branch warning dialog.
@@ -1202,6 +1268,43 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) renderWorktreeSpinnerView() string {
 	a.worktreeSpinner.SetSize(a.width, a.height)
 	return a.worktreeSpinner.Render()
+}
+
+// handleCreationChatKeys handles keyboard input for the PRD creation chat view.
+func (a App) handleCreationChatKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.creationChat == nil {
+		return a, nil
+	}
+
+	switch msg.String() {
+	case "esc":
+		// Only allow canceling if not in the middle of a request
+		if !a.creationChat.loading {
+			a.viewMode = ViewDashboard
+			return a, nil
+		}
+	case "enter":
+		if a.creationChat.done {
+			// PRD is ready, convert it and switch to dashboard
+			prdDir := a.creationChat.prdDir
+			prdPath := filepath.Join(prdDir, "prd.json")
+			
+			// Run conversion
+			if err := prd.Convert(prd.ConvertOptions{PRDDir: prdDir}); err != nil {
+				a.lastActivity = "Conversion failed: " + err.Error()
+				a.viewMode = ViewDashboard
+				return a, nil
+			}
+			
+			// Switch to the new PRD
+			return a.switchToPRD(a.creationChat.prdName, prdPath)
+		}
+		// Chat component handles its own Enter key to send messages
+	}
+
+	var cmd tea.Cmd
+	_, cmd = a.creationChat.Update(msg)
+	return a, cmd
 }
 
 // handleWorktreeSpinnerKeys handles keyboard input for the worktree spinner.

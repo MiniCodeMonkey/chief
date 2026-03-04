@@ -22,7 +22,7 @@ Melliza is an autonomous agent loop that orchestrates the **Gemini CLI** to work
 Built on the "Ralph Wiggum loop" pattern, Melliza breaks down complex project requirements into manageable tasks, invokes Gemini to implement them one by one, and maintains persistent progress tracking.
 
 <p align="center">
-  <img src="./docs/public/images/tui-screenshot.png" alt="Melliza TUI" width="800" style="border-radius: 10px;" />
+  <img src="./docs/public/images/tui-screenshot.svg" alt="Melliza TUI" width="800" style="border-radius: 10px;" />
 </p>
 
 ## ✨ Core Features
