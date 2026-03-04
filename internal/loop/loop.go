@@ -311,6 +311,7 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		"-p", l.prompt,
 		"--output-format", "stream-json",
 	)
+	l.geminiCmd.Stdin = nil // Ensure no stdin attachment
 	// Set working directory: use workDir if configured, otherwise default to PRD directory
 	l.geminiCmd.Dir = l.effectiveWorkDir()
 	// Initialize watchdog state

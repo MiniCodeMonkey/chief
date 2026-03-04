@@ -231,6 +231,7 @@ func runGeminiJSONFix(badJSON string, validationErr error) (string, error) {
 	)
 
 	cmd := exec.Command("gemini", "-p", fixPrompt)
+	cmd.Stdin = nil // Ensure no stdin attachment
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

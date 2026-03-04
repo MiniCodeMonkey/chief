@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -145,8 +146,14 @@ func (c *PRDCreationChat) runGemini(prompt string, sessionID string) tea.Cmd {
 
 		cmd := exec.Command("gemini", args...)
 		cmd.Dir = c.baseDir
+		cmd.Stdin = nil // Ensure no stdin attachment
 
 		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return ChatEventMsg{Type: "error", Content: err.Error()}
+		}
+
+		stderr, err := cmd.StderrPipe()
 		if err != nil {
 			return ChatEventMsg{Type: "error", Content: err.Error()}
 		}
@@ -154,6 +161,25 @@ func (c *PRDCreationChat) runGemini(prompt string, sessionID string) tea.Cmd {
 		if err := cmd.Start(); err != nil {
 			return ChatEventMsg{Type: "error", Content: err.Error()}
 		}
+
+		// Process stderr in a goroutine to avoid blocking
+		go func() {
+			// Log stderr to gemini.log for debugging
+			prdDir := filepath.Join(c.baseDir, ".melliza", "prds", c.prdName)
+			logPath := filepath.Join(prdDir, "gemini.log")
+			logFile, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if logFile != nil {
+				defer logFile.Close()
+				scanner := bufio.NewScanner(stderr)
+				for scanner.Scan() {
+					logFile.WriteString("[stderr] " + scanner.Text() + "\n")
+				}
+			} else {
+				// Sink stderr if log file can't be opened
+				scanner := bufio.NewScanner(stderr)
+				for scanner.Scan() {}
+			}
+		}()
 
 		scanner := bufio.NewScanner(stdout)
 		var lastAssistantMsg string
@@ -222,7 +248,7 @@ func (c *PRDCreationChat) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.viewport.GotoBottom()
 		case "error":
 			c.loading = false
-			c.err = fmt.Errorf(msg.Content)
+			c.err = fmt.Errorf("%s", msg.Content)
 			c.messages = append(c.messages, Message{Role: RoleSystem, Content: "Error: " + msg.Content})
 			c.renderViewport()
 			c.viewport.GotoBottom()
