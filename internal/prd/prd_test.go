@@ -492,6 +492,107 @@ func TestPRD_ExtractIDPrefix_SingleChar(t *testing.T) {
 	}
 }
 
+func TestDismissedConcerns_EmptyOmittedFromJSON(t *testing.T) {
+	story := UserStory{
+		ID:       "US-001",
+		Priority: 1,
+		Passes:   false,
+	}
+
+	data, err := json.Marshal(story)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if _, ok := raw["dismissedConcerns"]; ok {
+		t.Error("expected dismissedConcerns to be omitted when empty, but it was present")
+	}
+}
+
+func TestDismissedConcerns_RoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	p := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{
+				ID:                "US-001",
+				Title:             "Story with dismissed concerns",
+				Priority:          1,
+				Passes:            false,
+				DismissedConcerns: []string{"concern one", "concern two"},
+			},
+		},
+	}
+
+	if err := p.Save(prdPath); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := LoadPRD(prdPath)
+	if err != nil {
+		t.Fatalf("LoadPRD failed: %v", err)
+	}
+
+	if len(loaded.UserStories[0].DismissedConcerns) != 2 {
+		t.Fatalf("expected 2 dismissed concerns, got %d", len(loaded.UserStories[0].DismissedConcerns))
+	}
+	if loaded.UserStories[0].DismissedConcerns[0] != "concern one" {
+		t.Errorf("expected first concern 'concern one', got %q", loaded.UserStories[0].DismissedConcerns[0])
+	}
+	if loaded.UserStories[0].DismissedConcerns[1] != "concern two" {
+		t.Errorf("expected second concern 'concern two', got %q", loaded.UserStories[0].DismissedConcerns[1])
+	}
+}
+
+func TestDismissedConcerns_LegacyPRDDeserializesWithEmptySlice(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	// Legacy PRD JSON without dismissedConcerns field
+	legacyJSON := `{
+		"project": "Legacy Project",
+		"description": "A legacy PRD",
+		"userStories": [
+			{
+				"id": "US-001",
+				"title": "Old Story",
+				"description": "Old description",
+				"acceptanceCriteria": ["AC1"],
+				"priority": 1,
+				"passes": false
+			}
+		]
+	}`
+
+	if err := os.WriteFile(prdPath, []byte(legacyJSON), 0644); err != nil {
+		t.Fatalf("failed to write legacy PRD: %v", err)
+	}
+
+	p, err := LoadPRD(prdPath)
+	if err != nil {
+		t.Fatalf("LoadPRD failed on legacy PRD: %v", err)
+	}
+
+	if p.UserStories[0].DismissedConcerns != nil {
+		t.Errorf("expected DismissedConcerns to be nil for legacy PRD, got %v", p.UserStories[0].DismissedConcerns)
+	}
+	// Confirm it's safe to range over (nil slice behaves like empty slice)
+	count := 0
+	for range p.UserStories[0].DismissedConcerns {
+		count++
+	}
+	if count != 0 {
+		t.Errorf("expected 0 dismissed concerns in legacy PRD, got %d", count)
+	}
+}
+
 func TestCountMarkdownStories(t *testing.T) {
 	tests := []struct {
 		name     string

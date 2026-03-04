@@ -18,6 +18,7 @@ type UserStory struct {
 	Priority           int      `json:"priority"`
 	Passes             bool     `json:"passes"`
 	InProgress         bool     `json:"inProgress,omitempty"`
+	DismissedConcerns  []string `json:"dismissedConcerns,omitempty"`
 }
 
 // PRD represents a Product Requirements Document.
