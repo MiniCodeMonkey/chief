@@ -99,6 +99,18 @@
   - EventFrontPressureScrap should NOT be added to the log filter (it transitions to a new view instead of logging)
 ---
 
+## 2026-03-04 - US-009
+- What was implemented: Added comprehensive unit tests for parser and PRD type changes. Fixed a race condition in `TestLoop_WatchdogKillsHungProcess` (watchdog goroutine could send to `l.events` while the test was closing it). Added `EventFrontPressureResolved` and `EventFrontPressureScrap` to the `TestEventTypeString` table. Added `TestParseLineFrontPressureAtStart`, `TestParseLineFrontPressureMidText`, and `TestParseLineStandardEventsUnaffectedByFrontPressure` tests. All prd_test.go DismissedConcerns tests were already present from US-002.
+- Files changed:
+  - `internal/loop/loop_test.go` - fixed race in `TestLoop_WatchdogKillsHungProcess` by waiting for watchdog goroutine to exit before closing `l.events`
+  - `internal/loop/parser_test.go` - added `EventFrontPressureResolved`/`EventFrontPressureScrap` to string table; added `TestParseLineFrontPressureAtStart`, `TestParseLineFrontPressureMidText`, `TestParseLineStandardEventsUnaffectedByFrontPressure`
+- **Learnings for future iterations:**
+  - The `TestLoop_WatchdogKillsHungProcess` had a race: `close(watchdogDone)` signals the watchdog to stop but does NOT block until it exits; wrap `runWatchdog` in a goroutine that closes a separate `watchdogExited` channel and wait on that before closing `l.events`
+  - When adding new EventType constants to an iota, always add them to the `TestEventTypeString` table — it's easy to miss new constants added in later stories
+  - Parser tests for tag positioning: "tag at start" = no text before the opening tag; "tag at end" = text before the opening tag; "tag mid-text" = text both before and after the closing tag
+  - `go test ./internal/loop/... ./internal/prd/... -race` is the required command to verify US-009; without `-race`, race conditions go undetected
+---
+
 ## 2026-03-04 - US-007
 - What was implemented: Added front pressure integration to the Loop. Loop struct got `frontPressureEnabled`, `frontPressureEditor`, `pendingConcern`, and `currentStoryID` fields. Added `SetFrontPressure()` method. Modified `processOutput()` to capture concern text when FP is enabled. Added `handleFrontPressure()` method that loads PRD dismissed concerns, calls the editor, and emits `EventFrontPressureResolved` or `EventFrontPressureScrap`. Modified `Run()` to clear pending concern, capture current story ID before each iteration, call `handleFrontPressure()` after iteration, and return early if a scrap decision stopped the loop. Added two new event types: `EventFrontPressureResolved` and `EventFrontPressureScrap`.
 - Files changed:

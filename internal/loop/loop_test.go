@@ -810,6 +810,192 @@ func TestFrontPressure_Enabled_Dismiss(t *testing.T) {
 	}
 }
 
+// TestFrontPressureFullFlow is an integration test that exercises the complete front
+// pressure dismiss flow: concern raised → editor runs → dismiss decision applied →
+// dismissed concern persisted to prd.json → loop continues.
+func TestFrontPressureFullFlow(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a PRD with two stories.
+	prdFile := &prd.PRD{
+		Project:     "Test Project",
+		Description: "Test Description",
+		UserStories: []prd.UserStory{
+			{ID: "US-001", Title: "First Story", Priority: 1, Passes: false},
+			{ID: "US-002", Title: "Second Story", Priority: 2, Passes: false},
+		},
+	}
+	prdPath := filepath.Join(tmpDir, "prd.json")
+	data, _ := json.MarshalIndent(prdFile, "", "  ")
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to create test PRD: %v", err)
+	}
+
+	// Fake editor returns dismiss.
+	editor := &FrontPressureEditor{
+		ClaudeRunner: func(ctx context.Context, prompt, workDir string) (string, error) {
+			return "<fp-decision>dismiss</fp-decision>", nil
+		},
+	}
+
+	l := NewLoop(prdPath, "test", 5)
+	l.SetFrontPressure(true, editor)
+	l.iteration = 1
+	l.mu.Lock()
+	l.currentStoryID = "US-001"
+	l.mu.Unlock()
+
+	var events []Event
+	done := make(chan bool)
+	go func() {
+		for event := range l.Events() {
+			events = append(events, event)
+		}
+		done <- true
+	}()
+
+	// Feed front-pressure event via a fake Claude output stream.
+	r, w, _ := os.Pipe()
+	go func() {
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"<front-pressure>data model assumption wrong</front-pressure>"}]}}` + "\n")
+		w.Close()
+	}()
+	l.processOutput(r)
+
+	if err := l.handleFrontPressure(context.Background()); err != nil {
+		t.Fatalf("handleFrontPressure returned error: %v", err)
+	}
+
+	close(l.events)
+	<-done
+
+	// Verify EventFrontPressure was emitted.
+	hasFP := false
+	for _, e := range events {
+		if e.Type == EventFrontPressure {
+			hasFP = true
+			if e.Text != "data model assumption wrong" {
+				t.Errorf("Expected concern text 'data model assumption wrong', got %q", e.Text)
+			}
+		}
+	}
+	if !hasFP {
+		t.Error("Expected EventFrontPressure event")
+	}
+
+	// Verify EventFrontPressureResolved was emitted.
+	hasResolved := false
+	for _, e := range events {
+		if e.Type == EventFrontPressureResolved {
+			hasResolved = true
+			if e.Text != "Concern dismissed" {
+				t.Errorf("Expected text 'Concern dismissed', got %q", e.Text)
+			}
+		}
+	}
+	if !hasResolved {
+		t.Error("Expected EventFrontPressureResolved event")
+	}
+
+	// Verify concern appears in DismissedConcerns on US-001 in prd.json.
+	p, err := prd.LoadPRD(prdPath)
+	if err != nil {
+		t.Fatalf("Failed to reload PRD: %v", err)
+	}
+	found := false
+	for _, story := range p.UserStories {
+		if story.ID == "US-001" {
+			for _, c := range story.DismissedConcerns {
+				if c == "data model assumption wrong" {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("Expected concern text in DismissedConcerns for US-001 in prd.json")
+	}
+
+	// Verify loop continues (not stopped after dismissal).
+	if l.IsStopped() {
+		t.Error("Expected loop to continue after dismiss decision")
+	}
+}
+
+// TestFrontPressureScrap is an integration test that exercises the scrap path:
+// fake editor returns scrap → EventFrontPressureScrap emitted → loop stops.
+func TestFrontPressureScrap(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a PRD with two stories.
+	prdFile := &prd.PRD{
+		Project:     "Test Project",
+		Description: "Test Description",
+		UserStories: []prd.UserStory{
+			{ID: "US-001", Title: "First Story", Priority: 1, Passes: false},
+			{ID: "US-002", Title: "Second Story", Priority: 2, Passes: false},
+		},
+	}
+	prdPath := filepath.Join(tmpDir, "prd.json")
+	data, _ := json.MarshalIndent(prdFile, "", "  ")
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to create test PRD: %v", err)
+	}
+
+	// Fake editor returns scrap.
+	editor := &FrontPressureEditor{
+		ClaudeRunner: func(ctx context.Context, prompt, workDir string) (string, error) {
+			return "<fp-decision>scrap</fp-decision>", nil
+		},
+	}
+
+	l := NewLoop(prdPath, "test", 5)
+	l.SetFrontPressure(true, editor)
+	l.iteration = 1
+	l.mu.Lock()
+	l.currentStoryID = "US-001"
+	l.mu.Unlock()
+
+	var events []Event
+	done := make(chan bool)
+	go func() {
+		for event := range l.Events() {
+			events = append(events, event)
+		}
+		done <- true
+	}()
+
+	r, w, _ := os.Pipe()
+	go func() {
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"<front-pressure>fundamental flaw in data model</front-pressure>"}]}}` + "\n")
+		w.Close()
+	}()
+	l.processOutput(r)
+
+	if err := l.handleFrontPressure(context.Background()); err != nil {
+		t.Fatalf("handleFrontPressure returned error: %v", err)
+	}
+
+	close(l.events)
+	<-done
+
+	// Verify EventFrontPressureScrap was emitted.
+	hasScrap := false
+	for _, e := range events {
+		if e.Type == EventFrontPressureScrap {
+			hasScrap = true
+		}
+	}
+	if !hasScrap {
+		t.Error("Expected EventFrontPressureScrap event")
+	}
+
+	// Verify loop stops.
+	if !l.IsStopped() {
+		t.Error("Expected loop to be stopped after scrap decision")
+	}
+}
+
 // TestFrontPressure_Enabled_Scrap tests that a scrap decision emits EventFrontPressureScrap
 // and stops the loop.
 func TestFrontPressure_Enabled_Scrap(t *testing.T) {

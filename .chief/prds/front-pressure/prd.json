@@ -141,7 +141,7 @@
         "No test requires a live Claude process"
       ],
       "priority": 9,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-010",

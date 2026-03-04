@@ -620,6 +620,16 @@ func (l *Loop) handleFrontPressure(ctx context.Context) error {
 	case FPDecisionEdit:
 		l.events <- Event{Type: EventFrontPressureResolved, Text: "Editor updated PRD"}
 	case FPDecisionDismiss:
+		// Persist the dismissed concern so future iterations won't re-raise it.
+		if p, loadErr := prd.LoadPRD(l.prdPath); loadErr == nil {
+			for i := range p.UserStories {
+				if p.UserStories[i].ID == storyID {
+					p.UserStories[i].DismissedConcerns = append(p.UserStories[i].DismissedConcerns, concern)
+					_ = p.Save(l.prdPath)
+					break
+				}
+			}
+		}
 		l.events <- Event{Type: EventFrontPressureResolved, Text: "Concern dismissed"}
 	case FPDecisionScrap:
 		l.events <- Event{Type: EventFrontPressureScrap}
