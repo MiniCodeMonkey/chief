@@ -8,9 +8,6 @@ extra_css = [
   "stylesheets/custom.css"
 ]
 
-[theme]
-name = "zensical"
-
 [[theme.palette]]
 # Light mode preference
 scheme = "default"
