@@ -9,16 +9,18 @@ extra_css = [
 ]
 
 [[theme.palette]]
-# Light mode preference
+# Light mode
 scheme = "default"
 primary = "teal"
 accent = "purple"
+toggle = { icon = "material/brightness-7", name = "Switch to dark mode" }
 
 [[theme.palette]]
-# Dark mode preference
+# Dark mode
 scheme = "slate"
 primary = "pink"
 accent = "amber"
+toggle = { icon = "material/brightness-4", name = "Switch to light mode" }
 
 [[nav]]
 Home = "index.md"
