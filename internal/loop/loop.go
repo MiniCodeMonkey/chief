@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -56,6 +57,11 @@ type Loop struct {
 	retryConfig      RetryConfig
 	lastOutputTime   time.Time
 	watchdogTimeout  time.Duration
+	// Front pressure fields
+	frontPressureEnabled bool
+	frontPressureEditor  *FrontPressureEditor
+	pendingConcern       string // concern raised during current iteration
+	currentStoryID       string // story ID being worked on in current iteration
 }
 
 // NewLoop creates a new Loop instance.
@@ -161,6 +167,18 @@ func (l *Loop) Run(ctx context.Context) error {
 			return nil
 		}
 
+		// Clear pending concern and capture current story ID before each iteration
+		l.mu.Lock()
+		l.pendingConcern = ""
+		l.mu.Unlock()
+		if p, err := prd.LoadPRD(l.prdPath); err == nil {
+			if story := p.NextStory(); story != nil {
+				l.mu.Lock()
+				l.currentStoryID = story.ID
+				l.mu.Unlock()
+			}
+		}
+
 		// Rebuild prompt if builder is set (inlines the current story each iteration)
 		if l.buildPrompt != nil {
 			prompt, err := l.buildPrompt()
@@ -190,6 +208,23 @@ func (l *Loop) Run(ctx context.Context) error {
 			}
 			return err
 		}
+
+		// Handle any pending front pressure concern after iteration completes
+		if err := l.handleFrontPressure(ctx); err != nil {
+			l.events <- Event{
+				Type: EventError,
+				Err:  err,
+			}
+			return err
+		}
+
+		// Check if front pressure scrap stopped the loop
+		l.mu.Lock()
+		if l.stopped {
+			l.mu.Unlock()
+			return nil
+		}
+		l.mu.Unlock()
 
 		// Check context cancellation
 		select {
@@ -465,6 +500,10 @@ func (l *Loop) processOutput(r io.Reader) {
 		if event := ParseLine(line); event != nil {
 			l.mu.Lock()
 			event.Iteration = l.iteration
+			// Capture front pressure concern when enabled
+			if event.Type == EventFrontPressure && l.frontPressureEnabled {
+				l.pendingConcern = event.Text
+			}
 			l.mu.Unlock()
 			l.events <- *event
 		}
@@ -525,6 +564,71 @@ func (l *Loop) IsStopped() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.stopped
+}
+
+// SetFrontPressure enables or disables front pressure mode for this loop.
+// When enabled, EventFrontPressure events cause the loop to pause after the
+// current iteration and run the editor before continuing.
+func (l *Loop) SetFrontPressure(enabled bool, editor *FrontPressureEditor) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.frontPressureEnabled = enabled
+	l.frontPressureEditor = editor
+}
+
+// handleFrontPressure processes any pending front pressure concern after an iteration.
+// It calls the editor, emits the appropriate event, and stops the loop on a scrap decision.
+// Does nothing when front pressure is disabled or no concern was captured.
+func (l *Loop) handleFrontPressure(ctx context.Context) error {
+	l.mu.Lock()
+	concern := l.pendingConcern
+	storyID := l.currentStoryID
+	enabled := l.frontPressureEnabled
+	editor := l.frontPressureEditor
+	l.mu.Unlock()
+
+	if !enabled || concern == "" || editor == nil {
+		return nil
+	}
+
+	// Load PRD to get dismissed concerns for this story
+	p, err := prd.LoadPRD(l.prdPath)
+	if err != nil {
+		return fmt.Errorf("front pressure: failed to load PRD: %w", err)
+	}
+
+	var dismissedConcerns []string
+	for _, story := range p.UserStories {
+		if story.ID == storyID {
+			dismissedConcerns = story.DismissedConcerns
+			break
+		}
+	}
+
+	workDir := l.effectiveWorkDir()
+	decision, err := editor.Review(ctx, l.prdPath, storyID, concern, strings.Join(dismissedConcerns, "\n"), workDir)
+	if err != nil {
+		return fmt.Errorf("front pressure review failed: %w", err)
+	}
+
+	// Clear pending concern
+	l.mu.Lock()
+	l.pendingConcern = ""
+	l.mu.Unlock()
+
+	switch decision {
+	case FPDecisionEdit:
+		l.events <- Event{Type: EventFrontPressureResolved, Text: "Editor updated PRD"}
+	case FPDecisionDismiss:
+		l.events <- Event{Type: EventFrontPressureResolved, Text: "Concern dismissed"}
+	case FPDecisionScrap:
+		l.events <- Event{Type: EventFrontPressureScrap}
+		l.mu.Lock()
+		l.stopped = true
+		l.mu.Unlock()
+	}
+
+	return nil
 }
 
 // effectiveWorkDir returns the working directory to use for Claude.

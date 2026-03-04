@@ -636,3 +636,227 @@ func TestLoop_WatchdogWithWorkDir(t *testing.T) {
 		t.Errorf("Expected default watchdog timeout for NewLoopWithWorkDir, got %v", l.WatchdogTimeout())
 	}
 }
+
+// TestFrontPressure_Disabled tests that FP events are emitted even when FP is disabled,
+// and that no concern is stored in the loop state.
+func TestFrontPressure_Disabled(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+	l.iteration = 1
+
+	var events []Event
+	done := make(chan bool)
+	go func() {
+		for event := range l.Events() {
+			events = append(events, event)
+		}
+		done <- true
+	}()
+
+	r, w, _ := os.Pipe()
+	go func() {
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"<front-pressure>bad assumption</front-pressure>"}]}}` + "\n")
+		w.Close()
+	}()
+
+	l.processOutput(r)
+	close(l.events)
+	<-done
+
+	// Event should still be emitted when FP is disabled
+	hasFP := false
+	for _, e := range events {
+		if e.Type == EventFrontPressure {
+			hasFP = true
+			if e.Text != "bad assumption" {
+				t.Errorf("Expected concern text 'bad assumption', got %q", e.Text)
+			}
+		}
+	}
+	if !hasFP {
+		t.Error("Expected EventFrontPressure event even when FP disabled")
+	}
+
+	// No concern should be stored when FP is disabled
+	l.mu.Lock()
+	concern := l.pendingConcern
+	l.mu.Unlock()
+	if concern != "" {
+		t.Errorf("Expected no pending concern when FP disabled, got %q", concern)
+	}
+}
+
+// TestFrontPressure_Enabled_Edit tests that an edit decision emits EventFrontPressureResolved
+// with "Editor updated PRD" and does not stop the loop.
+func TestFrontPressure_Enabled_Edit(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRD(t, tmpDir, false)
+
+	editor := &FrontPressureEditor{
+		ClaudeRunner: func(ctx context.Context, prompt, workDir string) (string, error) {
+			return "<fp-decision>edit</fp-decision>", nil
+		},
+	}
+
+	l := NewLoop(prdPath, "test", 5)
+	l.SetFrontPressure(true, editor)
+	l.iteration = 1
+	l.mu.Lock()
+	l.currentStoryID = "US-001"
+	l.mu.Unlock()
+
+	var events []Event
+	done := make(chan bool)
+	go func() {
+		for event := range l.Events() {
+			events = append(events, event)
+		}
+		done <- true
+	}()
+
+	// Feed front-pressure event
+	r, w, _ := os.Pipe()
+	go func() {
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"<front-pressure>bad assumption</front-pressure>"}]}}` + "\n")
+		w.Close()
+	}()
+	l.processOutput(r)
+
+	// Handle front pressure
+	if err := l.handleFrontPressure(context.Background()); err != nil {
+		t.Fatalf("handleFrontPressure returned error: %v", err)
+	}
+
+	close(l.events)
+	<-done
+
+	hasResolved := false
+	for _, e := range events {
+		if e.Type == EventFrontPressureResolved {
+			hasResolved = true
+			if e.Text != "Editor updated PRD" {
+				t.Errorf("Expected text 'Editor updated PRD', got %q", e.Text)
+			}
+		}
+	}
+	if !hasResolved {
+		t.Error("Expected EventFrontPressureResolved event for edit decision")
+	}
+	if l.IsStopped() {
+		t.Error("Expected loop to continue after edit decision")
+	}
+}
+
+// TestFrontPressure_Enabled_Dismiss tests that a dismiss decision emits EventFrontPressureResolved
+// with "Concern dismissed" and does not stop the loop.
+func TestFrontPressure_Enabled_Dismiss(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRD(t, tmpDir, false)
+
+	editor := &FrontPressureEditor{
+		ClaudeRunner: func(ctx context.Context, prompt, workDir string) (string, error) {
+			return "<fp-decision>dismiss</fp-decision>", nil
+		},
+	}
+
+	l := NewLoop(prdPath, "test", 5)
+	l.SetFrontPressure(true, editor)
+	l.iteration = 1
+	l.mu.Lock()
+	l.currentStoryID = "US-001"
+	l.mu.Unlock()
+
+	var events []Event
+	done := make(chan bool)
+	go func() {
+		for event := range l.Events() {
+			events = append(events, event)
+		}
+		done <- true
+	}()
+
+	r, w, _ := os.Pipe()
+	go func() {
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"<front-pressure>just an impl detail</front-pressure>"}]}}` + "\n")
+		w.Close()
+	}()
+	l.processOutput(r)
+
+	if err := l.handleFrontPressure(context.Background()); err != nil {
+		t.Fatalf("handleFrontPressure returned error: %v", err)
+	}
+
+	close(l.events)
+	<-done
+
+	hasResolved := false
+	for _, e := range events {
+		if e.Type == EventFrontPressureResolved {
+			hasResolved = true
+			if e.Text != "Concern dismissed" {
+				t.Errorf("Expected text 'Concern dismissed', got %q", e.Text)
+			}
+		}
+	}
+	if !hasResolved {
+		t.Error("Expected EventFrontPressureResolved event for dismiss decision")
+	}
+	if l.IsStopped() {
+		t.Error("Expected loop to continue after dismiss decision")
+	}
+}
+
+// TestFrontPressure_Enabled_Scrap tests that a scrap decision emits EventFrontPressureScrap
+// and stops the loop.
+func TestFrontPressure_Enabled_Scrap(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRD(t, tmpDir, false)
+
+	editor := &FrontPressureEditor{
+		ClaudeRunner: func(ctx context.Context, prompt, workDir string) (string, error) {
+			return "<fp-decision>scrap</fp-decision>", nil
+		},
+	}
+
+	l := NewLoop(prdPath, "test", 5)
+	l.SetFrontPressure(true, editor)
+	l.iteration = 1
+	l.mu.Lock()
+	l.currentStoryID = "US-001"
+	l.mu.Unlock()
+
+	var events []Event
+	done := make(chan bool)
+	go func() {
+		for event := range l.Events() {
+			events = append(events, event)
+		}
+		done <- true
+	}()
+
+	r, w, _ := os.Pipe()
+	go func() {
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"<front-pressure>fundamental flaw</front-pressure>"}]}}` + "\n")
+		w.Close()
+	}()
+	l.processOutput(r)
+
+	if err := l.handleFrontPressure(context.Background()); err != nil {
+		t.Fatalf("handleFrontPressure returned error: %v", err)
+	}
+
+	close(l.events)
+	<-done
+
+	hasScrap := false
+	for _, e := range events {
+		if e.Type == EventFrontPressureScrap {
+			hasScrap = true
+		}
+	}
+	if !hasScrap {
+		t.Error("Expected EventFrontPressureScrap event for scrap decision")
+	}
+	if !l.IsStopped() {
+		t.Error("Expected loop to be stopped after scrap decision")
+	}
+}

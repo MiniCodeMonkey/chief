@@ -35,6 +35,10 @@ const (
 	EventWatchdogTimeout
 	// EventFrontPressure is emitted when an agent raises a front pressure concern.
 	EventFrontPressure
+	// EventFrontPressureResolved is emitted when the front pressure editor makes a decision.
+	EventFrontPressureResolved
+	// EventFrontPressureScrap is emitted when the front pressure editor decides to scrap the plan.
+	EventFrontPressureScrap
 )
 
 // String returns the string representation of an EventType.
@@ -64,6 +68,10 @@ func (e EventType) String() string {
 		return "WatchdogTimeout"
 	case EventFrontPressure:
 		return "FrontPressure"
+	case EventFrontPressureResolved:
+		return "FrontPressureResolved"
+	case EventFrontPressureScrap:
+		return "FrontPressureScrap"
 	default:
 		return "Unknown"
 	}
