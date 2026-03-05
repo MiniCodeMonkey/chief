@@ -1375,8 +1375,11 @@ func (a App) handleCreationChatKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return a.tryQuit()
 	case "esc":
-		a.viewMode = ViewDashboard
-		return a, nil
+		// Only allow canceling if not in the middle of a request
+		if !a.creationChat.loading {
+			a.viewMode = ViewDashboard
+			return a, nil
+		}
 	case "enter":
 		if a.creationChat.done {
 			// PRD is ready, run conversion asynchronously
