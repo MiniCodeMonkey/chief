@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 )
@@ -16,14 +15,12 @@ type HeadlessResult struct {
 	Error    json.RawMessage `json:"error,omitempty"`
 }
 
+// EnsureAuth is a no-op kept for backward compatibility. Authentication is
+// handled by the Gemini CLI itself (API key env vars, Vertex AI env vars,
+// or token stored by `gemini login`). Melliza should not gate on env vars
+// because that rejects CLI-authenticated sessions.
 func EnsureAuth() error {
-	if os.Getenv("GEMINI_API_KEY") != "" || os.Getenv("GOOGLE_API_KEY") != "" {
-		return nil
-	}
-	if os.Getenv("GOOGLE_GENAI_USE_VERTEXAI") != "" || os.Getenv("GOOGLE_CLOUD_PROJECT") != "" || os.Getenv("GOOGLE_VERTEX_PROJECT") != "" {
-		return nil
-	}
-	return errors.New("Gemini authentication is not configured: set GEMINI_API_KEY (or Vertex AI auth environment variables) before running Melliza")
+	return nil
 }
 
 func BuildHeadlessArgs(prompt, model string, yolo bool) []string {

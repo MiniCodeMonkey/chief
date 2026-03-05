@@ -306,21 +306,11 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 
 // runIteration spawns Gemini and processes its output.
 func (l *Loop) runIteration(ctx context.Context) error {
-	if err := gemini.EnsureAuth(); err != nil {
-		return err
-	}
-
-	runCtx := ctx
-	var cancel context.CancelFunc
-	if l.watchdogTimeout > 0 {
-		runCtx, cancel = context.WithTimeout(ctx, l.watchdogTimeout)
-		defer cancel()
-	}
-
 	// Build Gemini command with stream-json for real-time event parsing
 	l.mu.Lock()
-	l.geminiCmd = exec.CommandContext(runCtx, "gemini", gemini.BuildStreamArgs(l.prompt, "", true)...)
+	l.geminiCmd = exec.CommandContext(ctx, "gemini", gemini.BuildStreamArgs(l.prompt, "", true)...)
 	l.geminiCmd.Dir = l.effectiveWorkDir()
+	l.lastOutputTime = time.Now()
 	l.mu.Unlock()
 
 	stdout, err := l.geminiCmd.StdoutPipe()
@@ -334,6 +324,13 @@ func (l *Loop) runIteration(ctx context.Context) error {
 
 	if err := l.geminiCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start Gemini: %w", err)
+	}
+
+	// Start inactivity-based watchdog (kills process if no output for watchdogTimeout)
+	var watchdogFired atomic.Bool
+	watchdogDone := make(chan struct{})
+	if l.watchdogTimeout > 0 {
+		go l.runWatchdog(l.watchdogTimeout, watchdogDone, &watchdogFired)
 	}
 
 	// Drain stderr in background, log it, and capture last meaningful lines
@@ -367,6 +364,12 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		// Reset inactivity watchdog on every line of output
+		l.mu.Lock()
+		l.lastOutputTime = time.Now()
+		l.mu.Unlock()
+
 		l.logLine(line)
 
 		event := ParseLine(line)
@@ -379,7 +382,8 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	}
 
 	waitErr := l.geminiCmd.Wait()
-	<-stderrDone // Ensure all stderr is captured before using it
+	close(watchdogDone) // Stop watchdog
+	<-stderrDone        // Ensure all stderr is captured before using it
 
 	l.mu.Lock()
 	l.geminiCmd = nil
@@ -390,12 +394,8 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if runCtx.Err() == context.DeadlineExceeded {
-			l.mu.Lock()
-			iter := l.iteration
-			l.mu.Unlock()
-			l.events <- Event{Type: EventWatchdogTimeout, Iteration: iter, Text: fmt.Sprintf("No completion before timeout (%s)", l.watchdogTimeout)}
-			return fmt.Errorf("watchdog timeout: command exceeded %s", l.watchdogTimeout)
+		if watchdogFired.Load() {
+			return fmt.Errorf("watchdog timeout: no output for %s", l.watchdogTimeout)
 		}
 		if stopped {
 			return nil
