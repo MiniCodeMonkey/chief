@@ -1,17 +1,18 @@
 package tui
 
 import (
+	"image/color"
 	"math/rand"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // confettiChars are the characters used for confetti particles.
 var confettiChars = []string{"✦", "★", "●", "◆", "♦", "▲", "■", "♥", "✧", "⬥"}
 
 // confettiColors are the colors used for confetti particles.
-var confettiColors = []lipgloss.Color{
+var confettiColors = []color.Color{
 	SuccessColor,
 	PrimaryColor,
 	WarningColor,
@@ -26,7 +27,7 @@ type Particle struct {
 	x, y   float64
 	vx, vy float64
 	char   string
-	color  lipgloss.Color
+	color  color.Color
 	life   int
 }
 

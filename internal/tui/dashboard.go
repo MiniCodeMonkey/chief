@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/lvcoi/melliza/internal/prd"
 )
 
@@ -15,8 +15,8 @@ const (
 	narrowWidthThreshold = 100 // Below this, switch to stacked layout
 	storiesPanelPct      = 35  // Stories panel takes 35% of width
 	detailsPanelPct      = 65  // Details panel takes 65% of width
-	headerHeight         = 5   // Increased to accommodate tab bar (brand line + tab bar + border)
-	footerHeight         = 3   // Increased to accommodate activity line
+	headerHeight         = 7   // brand line + tab bar (3 lines with border) + divider
+	footerHeight         = 3   // divider + activity line + shortcuts
 	activityHeight       = 1
 	progressBarWidth     = 20
 )
@@ -24,6 +24,22 @@ const (
 // isNarrowMode returns true if the terminal width is below the threshold for stacked layout.
 func (a *App) isNarrowMode() bool {
 	return a.width < narrowWidthThreshold
+}
+
+// clampHeight truncates or pads a rendered string to exactly h lines.
+// This ensures content never pushes the footer off-screen.
+func clampHeight(s string, h int) string {
+	if h <= 0 {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	for len(lines) < h {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderDashboard renders the full dashboard view.
@@ -37,7 +53,8 @@ func (a *App) renderDashboard() string {
 		return a.renderStackedDashboard()
 	}
 
-	header := a.renderHeader()
+	hh := a.effectiveHeaderHeight()
+	header := clampHeight(a.renderHeader(), hh)
 
 	// Hide footer when terminal height < 12
 	fh := footerHeight
@@ -46,11 +63,11 @@ func (a *App) renderDashboard() string {
 		fh = 0
 		footer = ""
 	} else {
-		footer = a.renderFooter()
+		footer = clampHeight(a.renderFooter(), fh)
 	}
 
-	// Calculate content area height
-	contentHeight := a.height - a.effectiveHeaderHeight() - fh - 2 // -2 for panel borders
+	// Content area = terminal height minus header and footer
+	contentHeight := a.height - hh - fh
 
 	// Render panels
 	storiesWidth := (a.width * storiesPanelPct / 100) - 2
@@ -59,8 +76,9 @@ func (a *App) renderDashboard() string {
 	storiesPanel := a.renderStoriesPanel(storiesWidth, contentHeight)
 	detailsPanel := a.renderDetailsPanel(detailsWidth, contentHeight)
 
-	// Join panels horizontally
+	// Join panels horizontally, then clamp to exact height so footer stays pinned
 	content := lipgloss.JoinHorizontal(lipgloss.Top, storiesPanel, detailsPanel)
+	content = clampHeight(content, contentHeight)
 
 	// Stack header, content, and footer
 	if footer == "" {
@@ -71,7 +89,8 @@ func (a *App) renderDashboard() string {
 
 // renderStackedDashboard renders the dashboard with stacked layout for narrow terminals.
 func (a *App) renderStackedDashboard() string {
-	header := a.renderNarrowHeader()
+	hh := a.effectiveHeaderHeight()
+	header := clampHeight(a.renderNarrowHeader(), hh)
 
 	// Hide footer when terminal height < 12
 	fh := footerHeight
@@ -80,11 +99,11 @@ func (a *App) renderStackedDashboard() string {
 		fh = 0
 		footer = ""
 	} else {
-		footer = a.renderNarrowFooter()
+		footer = clampHeight(a.renderNarrowFooter(), fh)
 	}
 
-	// Calculate content area height
-	contentHeight := a.height - a.effectiveHeaderHeight() - fh - 2 // -2 for panel borders
+	// Content area = terminal height minus header and footer
+	contentHeight := a.height - hh - fh
 
 	// Split height between stories (40%) and details (60%)
 	storiesHeight := max((contentHeight*40)/100, 5)
@@ -95,8 +114,9 @@ func (a *App) renderStackedDashboard() string {
 	storiesPanel := a.renderStoriesPanel(panelWidth, storiesHeight)
 	detailsPanel := a.renderDetailsPanel(panelWidth, detailsHeight)
 
-	// Join panels vertically
+	// Join panels vertically, then clamp to exact height so footer stays pinned
 	content := lipgloss.JoinVertical(lipgloss.Left, storiesPanel, detailsPanel)
+	content = clampHeight(content, contentHeight)
 
 	// Stack header, content, and footer
 	if footer == "" {
@@ -256,13 +276,13 @@ func (a *App) renderFooter() string {
 		// Dashboard view shortcuts
 		switch a.state {
 		case StateReady, StatePaused:
-			shortcuts = []string{"s: start", "d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"s: start", "d: diff", "e: edit", "t: log", "n: new", "l: list", "pgup/dn: scroll", "?: help", "q: quit"}
 		case StateRunning:
-			shortcuts = []string{"p: pause", "x: stop", "d: diff", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"p: pause", "x: stop", "d: diff", "t: log", "n: new", "l: list", "pgup/dn: scroll", "?: help", "q: quit"}
 		case StateStopped, StateError:
-			shortcuts = []string{"s: retry", "d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"s: retry", "d: diff", "e: edit", "t: log", "n: new", "l: list", "pgup/dn: scroll", "?: help", "q: quit"}
 		default:
-			shortcuts = []string{"d: diff", "e: edit", "t: log", "n: new", "l: list", "1-9: switch", "?: help", "q: quit"}
+			shortcuts = []string{"d: diff", "e: edit", "t: log", "n: new", "l: list", "pgup/dn: scroll", "?: help", "q: quit"}
 		}
 	}
 	shortcutsStr := footerStyle.Render(strings.Join(shortcuts, "  │  "))
@@ -369,8 +389,12 @@ func (a *App) renderActivityLine() string {
 func (a *App) renderStoriesPanel(width, height int) string {
 	var content strings.Builder
 
+	// In lipgloss v2, .Height(h) sets total height including border frame (2 lines).
+	// The usable content area is h-2, so adjust internal calculations accordingly.
+	innerHeight := height - 2
+
 	// Panel title — append scroll percentage when list is scrollable
-	listHeight := height - 5 // Account for title, border, and progress bar
+	listHeight := innerHeight - 5 // Account for title, border, and progress bar
 	totalStories := len(a.prd.UserStories)
 	titleText := "Stories"
 	if totalStories > listHeight && listHeight > 0 {
@@ -434,7 +458,7 @@ func (a *App) renderStoriesPanel(width, height int) string {
 
 	// Pad remaining space
 	linesWritten := visibleCount + 2 // +2 for title and divider
-	for i := linesWritten; i < height-3; i++ {
+	for i := linesWritten; i < innerHeight-3; i++ {
 		content.WriteString("\n")
 	}
 
@@ -523,7 +547,52 @@ func (a *App) renderDetailsPanel(width, height int) string {
 		}
 	}
 
-	return panelStyle.Width(width).Height(height).Render(content.String())
+	// Apply scrolling: inner height is panel height minus border frame
+	innerH := height - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	allLines := strings.Split(content.String(), "\n")
+	totalLines := len(allLines)
+
+	// Clamp scroll offset
+	maxScroll := totalLines - innerH
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if a.detailsScrollOffset > maxScroll {
+		a.detailsScrollOffset = maxScroll
+	}
+	if a.detailsScrollOffset < 0 {
+		a.detailsScrollOffset = 0
+	}
+
+	// Slice visible lines
+	start := a.detailsScrollOffset
+	end := start + innerH
+	if end > totalLines {
+		end = totalLines
+	}
+	visible := strings.Join(allLines[start:end], "\n")
+
+	// Show scroll indicator if content overflows
+	if totalLines > innerH {
+		pct := 0
+		if maxScroll > 0 {
+			pct = a.detailsScrollOffset * 100 / maxScroll
+		}
+		indicator := lipgloss.NewStyle().Foreground(MutedColor).Render(fmt.Sprintf(" ↕ %d%%", pct))
+		// Prepend scroll indicator to first visible line
+		visible = indicator + "\n" + visible
+		// Trim to innerH lines
+		vlines := strings.Split(visible, "\n")
+		if len(vlines) > innerH {
+			vlines = vlines[:innerH]
+		}
+		visible = strings.Join(vlines, "\n")
+	}
+
+	return panelStyle.Width(width).Height(height).Render(visible)
 }
 
 // renderErrorPanel renders the error details panel when in error state.
@@ -776,15 +845,19 @@ func (a *App) renderDiffView() string {
 		footer = a.renderFooter()
 	}
 
-	// Calculate content area height (same approach as log view)
-	contentHeight := a.height - headerHeight - footerHeight - 2
-
-	// Render diff content
-	a.diffViewer.SetSize(a.width-4, contentHeight)
+	// Calculate panel height. In lipgloss v2, .Height(h) sets total height
+	// including border frame, so inner content area is h-2.
+	panelHeight := a.height - headerHeight - footerHeight
+	innerHeight := panelHeight - 2
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+	a.diffViewer.SetSize(a.width-4, innerHeight)
 	diffContent := a.diffViewer.Render()
 
-	// Wrap in a panel
-	diffPanel := panelStyle.Width(a.width - 2).Height(contentHeight).Render(diffContent)
+	// Wrap in a panel, clamp to exact height so footer stays pinned
+	diffPanel := panelStyle.Width(a.width - 2).Height(panelHeight).Render(diffContent)
+	diffPanel = clampHeight(diffPanel, panelHeight)
 
 	// Stack header, content, and footer
 	return lipgloss.JoinVertical(lipgloss.Left, header, diffPanel, footer)
@@ -892,15 +965,19 @@ func (a *App) renderLogView() string {
 		footer = a.renderFooter()
 	}
 
-	// Calculate content area height
-	contentHeight := a.height - headerHeight - footerHeight - 2
-
-	// Render log content
-	a.logViewer.SetSize(a.width-4, contentHeight)
+	// Calculate panel height. In lipgloss v2, .Height(h) sets total height
+	// including border frame, so inner content area is h-2.
+	panelHeight := a.height - headerHeight - footerHeight
+	innerHeight := panelHeight - 2
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+	a.logViewer.SetSize(a.width-4, innerHeight)
 	logContent := a.logViewer.Render()
 
-	// Wrap in a panel
-	logPanel := panelStyle.Width(a.width - 2).Height(contentHeight).Render(logContent)
+	// Wrap in a panel, clamp to exact height so footer stays pinned
+	logPanel := panelStyle.Width(a.width - 2).Height(panelHeight).Render(logContent)
+	logPanel = clampHeight(logPanel, panelHeight)
 
 	// Stack header, content, and footer
 	return lipgloss.JoinVertical(lipgloss.Left, header, logPanel, footer)

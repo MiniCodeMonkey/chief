@@ -4,7 +4,7 @@ import "testing"
 
 func TestBuildHeadlessArgs(t *testing.T) {
 	args := BuildHeadlessArgs("hello", "", false)
-	want := []string{"--output-format", "json", "-e", "none", "--", "hello"}
+	want := []string{"--output-format", "json", "-e", "none", "-p", "hello"}
 	if len(args) != len(want) {
 		t.Fatalf("len mismatch: got %d want %d", len(args), len(want))
 	}
@@ -29,7 +29,7 @@ func TestParseSingleJSONObject(t *testing.T) {
 
 func TestBuildHeadlessArgs_Yolo(t *testing.T) {
 	args := BuildHeadlessArgs("hello", "", true)
-	want := []string{"--output-format", "json", "-e", "none", "-y", "--", "hello"}
+	want := []string{"--output-format", "json", "-e", "none", "-y", "-p", "hello"}
 	if len(args) != len(want) {
 		t.Fatalf("len mismatch: got %d want %d", len(args), len(want))
 	}

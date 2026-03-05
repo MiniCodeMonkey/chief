@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/lvcoi/melliza/embed"
 	"github.com/lvcoi/melliza/internal/config"
 	"github.com/lvcoi/melliza/internal/git"
@@ -173,8 +173,9 @@ type App struct {
 	state         AppState
 	iteration     int
 	startTime     time.Time
-	selectedIndex      int
+	selectedIndex       int
 	storiesScrollOffset int
+	detailsScrollOffset int
 	width              int
 	height             int
 	err           error
@@ -395,7 +396,6 @@ func (a App) Init() tea.Cmd {
 	}
 
 	cmds := []tea.Cmd{
-		tea.EnterAltScreen,
 		a.listenForPRDChanges(),
 		a.listenForManagerEvents(),
 		a.listenForProgressChanges(),
@@ -432,13 +432,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		// Log viewer size is set authoritatively in renderLogView (with correct -4 width).
-		// Only update height here for scroll calculations; width will match on next render.
+		// Panel inner height = total panel height minus border frame (2 lines)
 		a.logViewer.SetSize(a.width-4, a.height-headerHeight-footerHeight-2)
 		return a, nil
 
-	case tea.MouseMsg:
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
+	case tea.MouseWheelMsg:
+		if msg.Button == tea.MouseWheelUp {
 			switch a.viewMode {
 			case ViewLog:
 				a.logViewer.ScrollUp()
@@ -457,7 +456,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-		case tea.MouseButtonWheelDown:
+		} else if msg.Button == tea.MouseWheelDown {
 			switch a.viewMode {
 			case ViewLog:
 				a.logViewer.ScrollDown()
@@ -607,7 +606,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prompt := embed.GetEditPrompt(prdDir)
 		return a, tea.Batch(a.creationChat.StartSession(prompt), tickChatSpinner())
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Handle help overlay first (can be opened/closed from any view)
 		if msg.String() == "?" {
 			if a.viewMode == ViewHelp {
@@ -782,6 +781,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				if a.selectedIndex > 0 {
 					a.selectedIndex--
+					a.detailsScrollOffset = 0
 					if a.selectedIndex < a.storiesScrollOffset {
 						a.storiesScrollOffset = a.selectedIndex
 					}
@@ -795,22 +795,30 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				if a.selectedIndex < len(a.prd.UserStories)-1 {
 					a.selectedIndex++
+					a.detailsScrollOffset = 0
 					a.adjustStoriesScroll()
 				}
 			}
 
-		// Log/diff scrolling
+		// Scrolling — details panel in dashboard, or log/diff views
 		case "ctrl+d", "pgdown":
 			if a.viewMode == ViewLog {
 				a.logViewer.PageDown()
 			} else if a.viewMode == ViewDiff {
 				a.diffViewer.PageDown()
+			} else if a.viewMode == ViewDashboard {
+				a.detailsScrollOffset += 5
 			}
 		case "ctrl+u", "pgup":
 			if a.viewMode == ViewLog {
 				a.logViewer.PageUp()
 			} else if a.viewMode == ViewDiff {
 				a.diffViewer.PageUp()
+			} else if a.viewMode == ViewDashboard {
+				a.detailsScrollOffset -= 5
+				if a.detailsScrollOffset < 0 {
+					a.detailsScrollOffset = 0
+				}
 			}
 		case "g":
 			if a.viewMode == ViewLog {
@@ -1109,6 +1117,22 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		if isCurrentPRD {
 			a.lastActivity = event.Text
 		}
+	case loop.EventStderr:
+		// Show meaningful stderr in activity bar (errors, API issues)
+		if isCurrentPRD {
+			lower := strings.ToLower(event.Text)
+			if strings.Contains(lower, "error") ||
+				strings.Contains(lower, "unavailable") ||
+				strings.Contains(lower, "forbidden") ||
+				strings.Contains(lower, "quota") ||
+				strings.Contains(lower, "timeout") {
+				text := event.Text
+				if len(text) > 100 {
+					text = text[:97] + "..."
+				}
+				a.lastActivity = "⚠ " + text
+			}
+		}
 	}
 
 	// Reload PRD from disk only on meaningful state changes (not every event)
@@ -1179,31 +1203,36 @@ func (a App) handleLoopFinished(prdName string, err error) (tea.Model, tea.Cmd) 
 }
 
 // View renders the TUI.
-func (a App) View() string {
+func (a App) View() tea.View {
+	var content string
 	switch a.viewMode {
 	case ViewLog:
-		return a.renderLogView()
+		content = a.renderLogView()
 	case ViewDiff:
-		return a.renderDiffView()
+		content = a.renderDiffView()
 	case ViewPicker:
-		return a.renderPickerView()
+		content = a.renderPickerView()
 	case ViewHelp:
-		return a.renderHelpView()
+		content = a.renderHelpView()
 	case ViewBranchWarning:
-		return a.renderBranchWarningView()
+		content = a.renderBranchWarningView()
 	case ViewWorktreeSpinner:
-		return a.renderWorktreeSpinnerView()
+		content = a.renderWorktreeSpinnerView()
 	case ViewCompletion:
-		return a.renderCompletionView()
+		content = a.renderCompletionView()
 	case ViewSettings:
-		return a.renderSettingsView()
+		content = a.renderSettingsView()
 	case ViewQuitConfirm:
-		return a.renderQuitConfirmView()
+		content = a.renderQuitConfirmView()
 	case ViewPRDCreationChat:
-		return a.renderCreationChatView()
+		content = a.renderCreationChatView()
 	default:
-		return a.renderDashboard()
+		content = a.renderDashboard()
 	}
+	v := tea.NewView(content)
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // renderCreationChatView renders the PRD creation chat view.
@@ -1212,7 +1241,7 @@ func (a *App) renderCreationChatView() string {
 		return "Initializing chat..."
 	}
 	a.creationChat.SetSize(a.width, a.height)
-	return a.creationChat.View()
+	return a.creationChat.View().Content
 }
 
 // renderBranchWarningView renders the branch warning dialog.

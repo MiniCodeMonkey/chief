@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // ChatMode distinguishes between creating a new PRD and editing an existing one.
@@ -108,9 +108,9 @@ func NewPRDCreationChat(baseDir, prdName, context string) *PRDCreationChat {
 	ti.Placeholder = "Type your response..."
 	ti.Focus()
 	ti.CharLimit = 1000
-	ti.Width = 50
+	ti.SetWidth(50)
 
-	vp := viewport.New(0, 0)
+	vp := viewport.New()
 
 	return &PRDCreationChat{
 		prdName:   prdName,
@@ -147,9 +147,9 @@ func (c *PRDCreationChat) SetSize(width, height int) {
 		vpHeight = 1
 	}
 
-	c.viewport.Width = vpWidth
-	c.viewport.Height = vpHeight
-	c.input.Width = vpWidth - 10
+	c.viewport.SetWidth(vpWidth)
+	c.viewport.SetHeight(vpHeight)
+	c.input.SetWidth(vpWidth - 10)
 
 	c.renderViewport()
 }
@@ -208,15 +208,16 @@ func (c *PRDCreationChat) SendMessage() tea.Cmd {
 	return c.runGemini(content, c.sessionID)
 }
 
-// runGemini executes Gemini in agent mode with stream-json output.
-// Uses positional arg (not -p) so Gemini can use tools to write files.
+// runGemini executes Gemini in headless mode with stream-json output.
+// Uses -p (headless) so Gemini completes the full agent loop including tool calls.
+// Uses -e none to skip loading extensions (much faster startup).
 func (c *PRDCreationChat) runGemini(prompt string, sessionID string) tea.Cmd {
 	return func() tea.Msg {
-		args := []string{"--yolo", "--output-format", "stream-json"}
+		args := []string{"--yolo", "--output-format", "stream-json", "-e", "none"}
 		if sessionID != "" {
-			args = append(args, "-r", sessionID, prompt)
+			args = append(args, "-r", sessionID, "-p", prompt)
 		} else {
-			args = append(args, prompt)
+			args = append(args, "-p", prompt)
 		}
 
 		cmd := exec.Command("gemini", args...)
@@ -283,8 +284,21 @@ func (c *PRDCreationChat) runGemini(prompt string, sessionID string) tea.Cmd {
 			}
 		}
 
-		if err := cmd.Wait(); err != nil {
-			return ChatEventMsg{Type: "error", Content: err.Error()}
+		waitErr := cmd.Wait()
+
+		// If we captured output, return it even if Gemini exited non-zero.
+		// Gemini often exits with code 1 due to stdin closing, extension errors,
+		// or API timeouts — but may have still produced useful output and written files.
+		if lastAssistantMsg != "" || capturedSessionID != "" {
+			return ChatEventMsg{
+				Type:      "message",
+				Content:   lastAssistantMsg,
+				SessionID: capturedSessionID,
+			}
+		}
+
+		if waitErr != nil {
+			return ChatEventMsg{Type: "error", Content: waitErr.Error()}
 		}
 
 		return ChatEventMsg{
@@ -329,26 +343,21 @@ func (c *PRDCreationChat) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.viewport.GotoBottom()
 		}
 
-	case tea.KeyMsg:
-		// Viewport scrolling — always available via pgup/pgdown/ctrl keys,
-		// and via up/down/j/k when input is not active (loading or done)
+	case tea.KeyPressMsg:
+		// Viewport scrolling — always available
 		switch msg.String() {
 		case "pgup", "ctrl+u":
-			c.viewport.HalfViewUp()
+			c.viewport.HalfPageUp()
 			return c, nil
 		case "pgdown", "ctrl+d":
-			c.viewport.HalfViewDown()
+			c.viewport.HalfPageDown()
 			return c, nil
-		case "up", "k":
-			if c.loading || c.done {
-				c.viewport.LineUp(1)
-				return c, nil
-			}
-		case "down", "j":
-			if c.loading || c.done {
-				c.viewport.LineDown(1)
-				return c, nil
-			}
+		case "up":
+			c.viewport.ScrollUp(1)
+			return c, nil
+		case "down":
+			c.viewport.ScrollDown(1)
+			return c, nil
 		}
 
 		if c.loading || c.done {
@@ -394,7 +403,7 @@ func (c *PRDCreationChat) renderViewport() {
 		case RoleAssistant:
 			b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(SuccessColor).Render("Gemini: "))
 			b.WriteString("\n")
-			b.WriteString(renderGlamour(m.Content, c.viewport.Width-2))
+			b.WriteString(renderGlamour(m.Content, c.viewport.Width()-2))
 		case RoleSystem:
 			b.WriteString(lipgloss.NewStyle().Italic(true).Foreground(MutedColor).Render(m.Content))
 		}
@@ -428,9 +437,9 @@ func (c *PRDCreationChat) renderViewport() {
 }
 
 // View renders the component.
-func (c *PRDCreationChat) View() string {
+func (c *PRDCreationChat) View() tea.View {
 	if c.width < 5 {
-		return "Initializing..."
+		return tea.NewView("Initializing...")
 	}
 
 	var b strings.Builder
@@ -477,5 +486,5 @@ func (c *PRDCreationChat) View() string {
 	}
 	b.WriteString(lipgloss.NewStyle().Foreground(MutedColor).Padding(0, 1).Render(shortcuts))
 
-	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
+	return tea.NewView(lipgloss.NewStyle().Padding(1, 2).Render(b.String()))
 }

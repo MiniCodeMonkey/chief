@@ -115,8 +115,8 @@ func TestLayoutConstants(t *testing.T) {
 		t.Errorf("storiesPanelPct = %d, should be between 20-50%%", storiesPanelPct)
 	}
 
-	if headerHeight < 2 || headerHeight > 5 {
-		t.Errorf("headerHeight = %d, should be between 2-5", headerHeight)
+	if headerHeight < 2 || headerHeight > 8 {
+		t.Errorf("headerHeight = %d, should be between 2-8", headerHeight)
 	}
 
 	if footerHeight < 2 || footerHeight > 5 {

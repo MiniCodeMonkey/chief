@@ -58,9 +58,9 @@ func (p *PRD) AllComplete() bool {
 //   - Lowest priority story with passes: false, or
 //   - nil if all stories are complete
 func (p *PRD) NextStory() *UserStory {
-	// First, check for any in-progress story (interrupted)
+	// First, check for any in-progress story that hasn't passed (interrupted)
 	for i := range p.UserStories {
-		if p.UserStories[i].InProgress {
+		if p.UserStories[i].InProgress && !p.UserStories[i].Passes {
 			return &p.UserStories[i]
 		}
 	}

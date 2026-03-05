@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // CrawlPhase represents the current phase of the crawl animation.
@@ -367,7 +367,7 @@ func tickCrawlAnimation() tea.Cmd {
 }
 
 func (m crawlModel) Init() tea.Cmd {
-	return tea.Batch(tea.EnterAltScreen, tickCrawlAnimation())
+	return tickCrawlAnimation()
 }
 
 func (m crawlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -383,11 +383,11 @@ func (m crawlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tickCrawlAnimation()
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
-		case " ":
+		case "space":
 			m.crawl.TogglePause()
 			return m, nil
 		}
@@ -395,15 +395,17 @@ func (m crawlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m crawlModel) View() string {
-	return m.crawl.Render()
+func (m crawlModel) View() tea.View {
+	v := tea.NewView(m.crawl.Render())
+	v.AltScreen = true
+	return v
 }
 
 // RunCrawl runs the Star Wars crawl animation as a standalone bubbletea program.
 func RunCrawl() error {
 	c := NewCrawl(80, 24)
 	m := crawlModel{crawl: c}
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m)
 	_, err := p.Run()
 	return err
 }

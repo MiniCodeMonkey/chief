@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/lvcoi/melliza/internal/git"
 )
 
@@ -85,7 +85,7 @@ func NewFirstTimeSetup(baseDir string, showGitignore bool) *FirstTimeSetup {
 
 // Init initializes the model.
 func (f FirstTimeSetup) Init() tea.Cmd {
-	return tea.EnterAltScreen
+	return nil
 }
 
 // Update handles messages.
@@ -99,15 +99,14 @@ func (f FirstTimeSetup) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ghCheckResultMsg:
 		return f.handleGHCheckResult(msg)
 
-	case tea.MouseMsg:
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-		case tea.MouseButtonWheelDown:
-			return f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	case tea.MouseWheelMsg:
+		if msg.Button == tea.MouseWheelUp {
+			return f.Update(tea.KeyPressMsg{Code: 'k'})
+		} else if msg.Button == tea.MouseWheelDown {
+			return f.Update(tea.KeyPressMsg{Code: 'j'})
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch f.step {
 		case StepGitignore:
 			return f.handleGitignoreKeys(msg)
@@ -379,19 +378,21 @@ func (f FirstTimeSetup) handleGHErrorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the TUI.
-func (f FirstTimeSetup) View() string {
+func (f FirstTimeSetup) View() tea.View {
+	var content string
 	switch f.step {
 	case StepGitignore:
-		return f.renderGitignoreStep()
+		content = f.renderGitignoreStep()
 	case StepPRDName:
-		return f.renderPRDNameStep()
+		content = f.renderPRDNameStep()
 	case StepPostCompletion:
-		return f.renderPostCompletionStep()
+		content = f.renderPostCompletionStep()
 	case StepGHError:
-		return f.renderGHErrorStep()
-	default:
-		return ""
+		content = f.renderGHErrorStep()
 	}
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (f FirstTimeSetup) renderGitignoreStep() string {
@@ -766,7 +767,7 @@ func (f FirstTimeSetup) GetResult() FirstTimeSetupResult {
 // RunFirstTimeSetup runs the first-time setup TUI and returns the result.
 func RunFirstTimeSetup(baseDir string, showGitignore bool) (FirstTimeSetupResult, error) {
 	setup := NewFirstTimeSetup(baseDir, showGitignore)
-	p := tea.NewProgram(setup, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(setup)
 
 	model, err := p.Run()
 	if err != nil {

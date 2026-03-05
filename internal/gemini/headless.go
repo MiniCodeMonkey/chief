@@ -34,7 +34,21 @@ func BuildHeadlessArgs(prompt, model string, yolo bool) []string {
 	if strings.TrimSpace(model) != "" {
 		args = append(args, "--model", model)
 	}
-	args = append(args, "--", prompt)
+	args = append(args, "-p", prompt)
+	return args
+}
+
+// BuildStreamArgs builds args for streaming mode (stream-json output).
+// This allows real-time parsing of Gemini's output as it works.
+func BuildStreamArgs(prompt, model string, yolo bool) []string {
+	args := []string{"--output-format", "stream-json", "-e", "none"}
+	if yolo {
+		args = append(args, "-y")
+	}
+	if strings.TrimSpace(model) != "" {
+		args = append(args, "--model", model)
+	}
+	args = append(args, "-p", prompt)
 	return args
 }
 

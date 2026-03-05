@@ -6,7 +6,6 @@ package loop
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -318,19 +317,76 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		defer cancel()
 	}
 
-	// Build Gemini command with required flags
+	// Build Gemini command with stream-json for real-time event parsing
 	l.mu.Lock()
-	l.geminiCmd = exec.CommandContext(runCtx, "gemini", gemini.BuildHeadlessArgs(l.prompt, "", true)...)
-	// Set working directory: use workDir if configured, otherwise default to PRD directory
+	l.geminiCmd = exec.CommandContext(runCtx, "gemini", gemini.BuildStreamArgs(l.prompt, "", true)...)
 	l.geminiCmd.Dir = l.effectiveWorkDir()
 	l.mu.Unlock()
 
-	var stdout, stderr bytes.Buffer
-	l.geminiCmd.Stdout = &stdout
-	l.geminiCmd.Stderr = &stderr
+	stdout, err := l.geminiCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+	stderr, err := l.geminiCmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
 
-	if err := l.geminiCmd.Run(); err != nil {
-		// If the context was cancelled, don't treat it as an error
+	if err := l.geminiCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start Gemini: %w", err)
+	}
+
+	// Drain stderr in background, log it, and capture last meaningful lines
+	var stderrLines []string
+	var stderrMu sync.Mutex
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stderrDone)
+		scanner := bufio.NewScanner(stderr)
+		scanner.Buffer(make([]byte, 256*1024), 256*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			l.logLine("[stderr] " + line)
+			// Emit stderr as events so TUI can show them
+			l.mu.Lock()
+			iter := l.iteration
+			l.mu.Unlock()
+			l.events <- Event{Type: EventStderr, Iteration: iter, Text: line}
+			// Keep last 10 lines for error context
+			stderrMu.Lock()
+			stderrLines = append(stderrLines, line)
+			if len(stderrLines) > 10 {
+				stderrLines = stderrLines[len(stderrLines)-10:]
+			}
+			stderrMu.Unlock()
+		}
+	}()
+
+	// Parse stdout stream-json lines in real-time
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		l.logLine(line)
+
+		event := ParseLine(line)
+		if event != nil {
+			l.mu.Lock()
+			event.Iteration = l.iteration
+			l.mu.Unlock()
+			l.events <- *event
+		}
+	}
+
+	waitErr := l.geminiCmd.Wait()
+	<-stderrDone // Ensure all stderr is captured before using it
+
+	l.mu.Lock()
+	l.geminiCmd = nil
+	stopped := l.stopped
+	l.mu.Unlock()
+
+	if waitErr != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -341,54 +397,49 @@ func (l *Loop) runIteration(ctx context.Context) error {
 			l.events <- Event{Type: EventWatchdogTimeout, Iteration: iter, Text: fmt.Sprintf("No completion before timeout (%s)", l.watchdogTimeout)}
 			return fmt.Errorf("watchdog timeout: command exceeded %s", l.watchdogTimeout)
 		}
-		// Check if we were stopped intentionally
-		l.mu.Lock()
-		stopped := l.stopped
-		l.mu.Unlock()
 		if stopped {
 			return nil
 		}
-		l.logLine(stdout.String())
-		if stderr.Len() > 0 {
-			l.logLine("[stderr] " + strings.TrimSpace(stderr.String()))
+		// Build error with stderr context
+		stderrMu.Lock()
+		stderrContext := filterStderrForError(stderrLines)
+		stderrMu.Unlock()
+		if stderrContext != "" {
+			return fmt.Errorf("Gemini failed: %s", stderrContext)
 		}
-		return fmt.Errorf("Gemini exited with error: %w", err)
+		return fmt.Errorf("Gemini exited with error: %w", waitErr)
 	}
-
-	l.logLine(stdout.String())
-	if stderr.Len() > 0 {
-		l.logLine("[stderr] " + strings.TrimSpace(stderr.String()))
-	}
-
-	result, err := gemini.ParseSingleJSONObject(stdout.Bytes())
-	if err != nil {
-		return err
-	}
-
-	if strings.TrimSpace(result.Response) != "" {
-		l.emitResponseEvent(result.Response)
-	}
-
-	l.mu.Lock()
-	l.geminiCmd = nil
-	l.mu.Unlock()
 
 	return nil
 }
 
-func (l *Loop) emitResponseEvent(text string) {
-	event := Event{Type: EventAssistantText, Text: text}
-	if strings.Contains(text, "<melliza-complete/>") {
-		event.Type = EventComplete
+// filterStderrForError extracts the most useful error info from stderr lines.
+func filterStderrForError(lines []string) string {
+	// Look for API errors, stack traces, or meaningful messages
+	// Skip noise like "YOLO mode" and "Server ... supports"
+	var useful []string
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "error") ||
+			strings.Contains(lower, "apikey") ||
+			strings.Contains(lower, "unavailable") ||
+			strings.Contains(lower, "forbidden") ||
+			strings.Contains(lower, "unauthorized") ||
+			strings.Contains(lower, "quota") ||
+			strings.Contains(lower, "rate limit") ||
+			strings.Contains(lower, "timeout") ||
+			strings.Contains(lower, "status:") {
+			useful = append(useful, line)
+		}
 	}
-	if storyID := extractStoryID(text, "<ralph-status>", "</ralph-status>"); storyID != "" {
-		event.Type = EventStoryStarted
-		event.StoryID = storyID
+	if len(useful) > 0 {
+		return strings.Join(useful, "\n")
 	}
-	l.mu.Lock()
-	event.Iteration = l.iteration
-	l.mu.Unlock()
-	l.events <- event
+	// If no specific error found, return last few lines
+	if len(lines) > 3 {
+		lines = lines[len(lines)-3:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // runWatchdog monitors lastOutputTime and kills the process if no output is received

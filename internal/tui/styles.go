@@ -3,7 +3,7 @@
 // log viewer, PRD picker, help overlay, and consistent styling.
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 // Color palette - consistent colors used throughout the TUI
 var (

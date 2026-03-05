@@ -7,7 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"github.com/joho/godotenv"
 	"github.com/lvcoi/melliza/internal/cmd"
 	"github.com/lvcoi/melliza/internal/config"
 	"github.com/lvcoi/melliza/internal/git"
@@ -32,6 +33,9 @@ type TUIOptions struct {
 }
 
 func main() {
+	// Load .env file if present (for GEMINI_API_KEY, etc.)
+	_ = godotenv.Load()
+
 	// Handle subcommands first
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -428,7 +432,7 @@ func runTUIWithOptions(opts *TUIOptions) {
 		app.StartWithInit(opts.InitName, opts.InitContext)
 	}
 
-	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(app)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running program: %v\n", err)
 		os.Exit(1)
