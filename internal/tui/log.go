@@ -387,19 +387,39 @@ func (l *LogViewer) renderEntry(entry LogEntry) []string {
 	}
 }
 
+// isQuestionLine returns true if the line looks like a question (ends with '?').
+func isQuestionLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.HasSuffix(trimmed, "?") && len(trimmed) > 1
+}
+
 // renderText renders an assistant text entry.
+// Lines ending with '?' are rendered bold and colored as questions;
+// all other lines (including numbered options/responses) stay plain.
 func (l *LogViewer) renderText(entry LogEntry) []string {
 	if entry.Text == "" {
 		return []string{}
 	}
 
 	textStyle := lipgloss.NewStyle().Foreground(TextColor)
-	wrapped := wrapText(entry.Text, l.width-4)
-	lines := strings.Split(wrapped, "\n")
+	questionStyle := lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
+
+	// Process each original line individually so that question detection
+	// works correctly even when a long question wraps across multiple lines.
+	origLines := strings.Split(entry.Text, "\n")
 
 	var result []string
-	for _, line := range lines {
-		result = append(result, textStyle.Render(line))
+	for _, origLine := range origLines {
+		wrapped := wrapText(origLine, l.width-4)
+		wrappedLines := strings.Split(wrapped, "\n")
+
+		style := textStyle
+		if isQuestionLine(origLine) {
+			style = questionStyle
+		}
+		for _, wl := range wrappedLines {
+			result = append(result, style.Render(wl))
+		}
 	}
 	return result
 }

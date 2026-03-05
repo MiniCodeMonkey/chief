@@ -28,7 +28,7 @@ func (a *App) isNarrowMode() bool {
 
 // renderDashboard renders the full dashboard view.
 func (a *App) renderDashboard() string {
-	if a.width == 0 || a.height == 0 {
+	if a.width == 0 || a.height == 0 || a.prd == nil {
 		return "Loading..."
 	}
 

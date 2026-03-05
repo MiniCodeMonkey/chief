@@ -47,6 +47,9 @@ func main() {
 		case "list":
 			runList()
 			return
+		case "delete":
+			runDelete()
+			return
 		case "help":
 			printHelp()
 			return
@@ -61,6 +64,9 @@ func main() {
 			return
 		case "wiggum":
 			printWiggum()
+			return
+		case "crawl":
+			runCrawl()
 			return
 		}
 	}
@@ -286,6 +292,20 @@ func runList() {
 	}
 }
 
+func runDelete() {
+	opts := cmd.DeleteOptions{}
+
+	// Parse arguments: melliza delete <name>
+	if len(os.Args) > 2 && !strings.HasPrefix(os.Args[2], "-") {
+		opts.Name = os.Args[2]
+	}
+
+	if err := cmd.RunDelete(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func runTUIWithOptions(opts *TUIOptions) {
 	prdPath := opts.PRDPath
 
@@ -343,17 +363,9 @@ func runTUIWithOptions(opts *TUIOptions) {
 				fmt.Fprintf(os.Stderr, "Warning: failed to save config: %v\n", err)
 			}
 
-			// Create the PRD
-			newOpts := cmd.NewOptions{
-				Name: result.PRDName,
-			}
-			if err := cmd.RunNew(newOpts); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-
-			// Restart TUI with the new PRD
-			opts.PRDPath = fmt.Sprintf(".melliza/prds/%s/prd.json", result.PRDName)
+			// Launch TUI with init mode to create the PRD inside the TUI
+			opts.StartWithInit = true
+			opts.InitName = result.PRDName
 			runTUIWithOptions(opts)
 			return
 		}
@@ -366,7 +378,6 @@ func runTUIWithOptions(opts *TUIOptions) {
 	if err != nil {
 		fmt.Printf("Warning: failed to check conversion status: %v\n", err)
 	} else if needsConvert {
-		fmt.Println("prd.md is newer than prd.json, running conversion...")
 		convertOpts := prd.ConvertOptions{
 			PRDDir: prdDir,
 			Merge:  opts.Merge,
@@ -376,7 +387,6 @@ func runTUIWithOptions(opts *TUIOptions) {
 			fmt.Printf("Error converting PRD: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("Conversion complete.")
 	}
 
 	app, err := tui.NewAppWithOptions(prdPath, opts.MaxIterations)
@@ -418,44 +428,10 @@ func runTUIWithOptions(opts *TUIOptions) {
 		app.StartWithInit(opts.InitName, opts.InitContext)
 	}
 
-	p := tea.NewProgram(app, tea.WithAltScreen())
-	model, err := p.Run()
-	if err != nil {
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running program: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Check for post-exit actions
-	if finalApp, ok := model.(tui.App); ok {
-		switch finalApp.PostExitAction {
-		case tui.PostExitInit:
-			// Run new command then restart TUI
-			newOpts := cmd.NewOptions{
-				Name: finalApp.PostExitPRD,
-			}
-			if err := cmd.RunNew(newOpts); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			// Restart TUI with the new PRD
-			opts.PRDPath = fmt.Sprintf(".melliza/prds/%s/prd.json", finalApp.PostExitPRD)
-			runTUIWithOptions(opts)
-
-		case tui.PostExitEdit:
-			// Run edit command then restart TUI
-			editOpts := cmd.EditOptions{
-				Name:  finalApp.PostExitPRD,
-				Merge: opts.Merge,
-				Force: opts.Force,
-			}
-			if err := cmd.RunEdit(editOpts); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			// Restart TUI with the edited PRD
-			opts.PRDPath = fmt.Sprintf(".melliza/prds/%s/prd.json", finalApp.PostExitPRD)
-			runTUIWithOptions(opts)
-		}
 	}
 }
 
@@ -471,6 +447,7 @@ Commands:
   edit [name] [options]     Edit an existing PRD interactively
   status [name]             Show progress for a PRD (default: main)
   list                      List all PRDs with progress
+  delete <name>             Move a PRD to trash (.melliza/.trash/)
   update                    Update Melliza to the latest version
   help                      Show this help message
 
@@ -509,6 +486,7 @@ Examples:
   melliza status              Show progress for default PRD
   melliza status auth         Show progress for auth PRD
   melliza list                List all PRDs with progress
+  melliza delete auth         Move auth PRD to trash
   melliza --version           Show version number`)
 }
 
@@ -586,4 +564,11 @@ func printWiggum() {
                                - Melliza Wiggum
 `
 	fmt.Print(art)
+}
+
+func runCrawl() {
+	if err := tui.RunCrawl(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }

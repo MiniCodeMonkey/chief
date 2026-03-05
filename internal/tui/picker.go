@@ -59,6 +59,18 @@ type CleanResult struct {
 	Message string // Success or error message
 }
 
+// DeleteConfirmation holds the state of the delete confirmation dialog.
+type DeleteConfirmation struct {
+	EntryName   string // Name of the PRD being deleted
+	SelectedIdx int    // 0=Confirm, 1=Cancel
+}
+
+// DeleteResult holds the result of a delete (trash) operation for display.
+type DeleteResult struct {
+	Success bool   // Whether the delete succeeded
+	Message string // Success or error message
+}
+
 // PRDPicker manages the PRD picker modal state.
 type PRDPicker struct {
 	entries       []PRDEntry
@@ -73,6 +85,8 @@ type PRDPicker struct {
 	mergeResult        *MergeResult       // Result of the last merge operation (nil = none)
 	cleanConfirmation  *CleanConfirmation // Active clean confirmation dialog (nil = none)
 	cleanResult        *CleanResult       // Result of the last clean operation (nil = none)
+	deleteConfirmation *DeleteConfirmation // Active delete confirmation dialog (nil = none)
+	deleteResult       *DeleteResult       // Result of the last delete operation (nil = none)
 }
 
 // NewPRDPicker creates a new PRD picker.
@@ -426,6 +440,79 @@ func (p *PRDPicker) HasCleanResult() bool {
 	return p.cleanResult != nil
 }
 
+// CanDelete returns true if the selected entry exists and its loop is not running.
+func (p *PRDPicker) CanDelete() bool {
+	entry := p.GetSelectedEntry()
+	if entry == nil {
+		return false
+	}
+	return entry.LoopState != loop.LoopStateRunning
+}
+
+// StartDeleteConfirmation opens the delete confirmation dialog for the selected entry.
+func (p *PRDPicker) StartDeleteConfirmation() {
+	entry := p.GetSelectedEntry()
+	if entry == nil {
+		return
+	}
+	p.deleteConfirmation = &DeleteConfirmation{
+		EntryName:   entry.Name,
+		SelectedIdx: 0,
+	}
+}
+
+// CancelDeleteConfirmation closes the delete confirmation dialog.
+func (p *PRDPicker) CancelDeleteConfirmation() {
+	p.deleteConfirmation = nil
+}
+
+// HasDeleteConfirmation returns true if the delete confirmation dialog is active.
+func (p *PRDPicker) HasDeleteConfirmation() bool {
+	return p.deleteConfirmation != nil
+}
+
+// GetDeleteConfirmation returns the current delete confirmation state.
+func (p *PRDPicker) GetDeleteConfirmation() *DeleteConfirmation {
+	return p.deleteConfirmation
+}
+
+// DeleteConfirmMoveUp moves the selection up in the delete confirmation dialog.
+func (p *PRDPicker) DeleteConfirmMoveUp() {
+	if p.deleteConfirmation != nil && p.deleteConfirmation.SelectedIdx > 0 {
+		p.deleteConfirmation.SelectedIdx--
+	}
+}
+
+// DeleteConfirmMoveDown moves the selection down in the delete confirmation dialog.
+func (p *PRDPicker) DeleteConfirmMoveDown() {
+	if p.deleteConfirmation != nil && p.deleteConfirmation.SelectedIdx < 1 {
+		p.deleteConfirmation.SelectedIdx++
+	}
+}
+
+// GetDeleteOption returns the selected delete option index (0=Confirm, 1=Cancel).
+func (p *PRDPicker) GetDeleteOption() int {
+	if p.deleteConfirmation == nil {
+		return 1 // Cancel
+	}
+	return p.deleteConfirmation.SelectedIdx
+}
+
+// SetDeleteResult sets the delete result for display.
+func (p *PRDPicker) SetDeleteResult(result *DeleteResult) {
+	p.deleteResult = result
+}
+
+// ClearDeleteResult clears any displayed delete result.
+func (p *PRDPicker) ClearDeleteResult() {
+	p.deleteResult = nil
+}
+
+// HasDeleteResult returns true if there is a delete result to display.
+func (p *PRDPicker) HasDeleteResult() bool {
+	return p.deleteResult != nil
+}
+
 // Render renders the PRD picker modal.
 func (p *PRDPicker) Render() string {
 	// Modal dimensions
@@ -437,6 +524,16 @@ func (p *PRDPicker) Render() string {
 	}
 	if modalHeight < 10 {
 		modalHeight = 10
+	}
+
+	// If there's a delete result, render that instead
+	if p.deleteResult != nil {
+		return p.renderDeleteResult(modalWidth, modalHeight)
+	}
+
+	// If there's a delete confirmation, render that instead
+	if p.deleteConfirmation != nil {
+		return p.renderDeleteConfirmation(modalWidth, modalHeight)
 	}
 
 	// If there's a clean result, render that instead
@@ -762,16 +859,22 @@ func (p *PRDPicker) buildFooterShortcuts() string {
 		cleanHint = "c: clean  │  "
 	}
 
+	// Add delete shortcut for non-running PRDs
+	deleteHint := ""
+	if p.CanDelete() {
+		deleteHint = "d: delete  │  "
+	}
+
 	// Add state-specific controls
 	switch entry.LoopState {
 	case loop.LoopStateReady, loop.LoopStatePaused, loop.LoopStateStopped, loop.LoopStateError:
-		return "s: start  │  " + mergeHint + cleanHint + base
+		return "s: start  │  " + mergeHint + cleanHint + deleteHint + base
 	case loop.LoopStateRunning:
 		return "p: pause  │  x: stop  │  " + base
 	case loop.LoopStateComplete:
-		return mergeHint + cleanHint + base
+		return mergeHint + cleanHint + deleteHint + base
 	default:
-		return "s: start  │  " + mergeHint + cleanHint + base
+		return "s: start  │  " + mergeHint + cleanHint + deleteHint + base
 	}
 }
 
@@ -987,6 +1090,126 @@ func (p *PRDPicker) renderCleanResult(modalWidth, modalHeight int) string {
 	// Modal box style
 	borderColor := SuccessColor
 	if !p.cleanResult.Success {
+		borderColor = ErrorColor
+	}
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(1, 2).
+		Width(modalWidth).
+		Height(modalHeight)
+
+	modal := modalStyle.Render(content.String())
+	return p.centerModal(modal)
+}
+
+// renderDeleteConfirmation renders the delete confirmation dialog.
+func (p *PRDPicker) renderDeleteConfirmation(modalWidth, modalHeight int) string {
+	var content strings.Builder
+	dc := p.deleteConfirmation
+
+	// Title
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(WarningColor).
+		Padding(0, 1)
+	content.WriteString(titleStyle.Render("Delete PRD"))
+	content.WriteString("\n")
+	content.WriteString(DividerStyle.Render(strings.Repeat("─", modalWidth-4)))
+	content.WriteString("\n\n")
+
+	// Show what will be deleted
+	infoStyle := lipgloss.NewStyle().
+		Foreground(TextColor).
+		Padding(0, 1)
+	content.WriteString(infoStyle.Render(fmt.Sprintf("PRD: %s", dc.EntryName)))
+	content.WriteString("\n\n")
+
+	warnStyle := lipgloss.NewStyle().
+		Foreground(WarningColor).
+		Padding(0, 1)
+	content.WriteString(warnStyle.Render("This will move the PRD to .melliza/.trash/"))
+	content.WriteString("\n\n")
+
+	// Options
+	options := []struct {
+		label string
+	}{
+		{"Confirm delete"},
+		{"Cancel"},
+	}
+
+	for i, opt := range options {
+		prefix := "  "
+		style := lipgloss.NewStyle().Foreground(TextColor)
+		if i == dc.SelectedIdx {
+			prefix = "▸ "
+			style = style.Bold(true).Foreground(TextBrightColor)
+		}
+		content.WriteString(style.Render(prefix + opt.label))
+		content.WriteString("\n")
+	}
+
+	// Footer
+	content.WriteString("\n")
+	content.WriteString(DividerStyle.Render(strings.Repeat("─", modalWidth-4)))
+	content.WriteString("\n")
+	footerStyle := lipgloss.NewStyle().
+		Foreground(MutedColor).
+		Padding(0, 1)
+	content.WriteString(footerStyle.Render("↑/k ↓/j: nav  │  Enter: confirm  │  Esc: cancel"))
+
+	// Modal box style
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(WarningColor).
+		Padding(1, 2).
+		Width(modalWidth).
+		Height(modalHeight)
+
+	modal := modalStyle.Render(content.String())
+	return p.centerModal(modal)
+}
+
+// renderDeleteResult renders the delete result dialog.
+func (p *PRDPicker) renderDeleteResult(modalWidth, modalHeight int) string {
+	var content strings.Builder
+
+	if p.deleteResult.Success {
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(SuccessColor).
+			Padding(0, 1)
+		content.WriteString(titleStyle.Render("PRD Deleted"))
+	} else {
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ErrorColor).
+			Padding(0, 1)
+		content.WriteString(titleStyle.Render("Delete Failed"))
+	}
+	content.WriteString("\n")
+	content.WriteString(DividerStyle.Render(strings.Repeat("─", modalWidth-4)))
+	content.WriteString("\n\n")
+
+	msgStyle := lipgloss.NewStyle().
+		Foreground(TextColor).
+		Padding(0, 1)
+	content.WriteString(msgStyle.Render(p.deleteResult.Message))
+	content.WriteString("\n")
+
+	// Footer
+	content.WriteString("\n")
+	content.WriteString(DividerStyle.Render(strings.Repeat("─", modalWidth-4)))
+	content.WriteString("\n")
+	footerStyle := lipgloss.NewStyle().
+		Foreground(MutedColor).
+		Padding(0, 1)
+	content.WriteString(footerStyle.Render("Press any key to continue"))
+
+	// Modal box style
+	borderColor := SuccessColor
+	if !p.deleteResult.Success {
 		borderColor = ErrorColor
 	}
 	modalStyle := lipgloss.NewStyle().

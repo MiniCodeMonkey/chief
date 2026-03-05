@@ -99,6 +99,14 @@ func (f FirstTimeSetup) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ghCheckResultMsg:
 		return f.handleGHCheckResult(msg)
 
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			return f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		case tea.MouseButtonWheelDown:
+			return f.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		}
+
 	case tea.KeyMsg:
 		switch f.step {
 		case StepGitignore:
@@ -758,7 +766,7 @@ func (f FirstTimeSetup) GetResult() FirstTimeSetupResult {
 // RunFirstTimeSetup runs the first-time setup TUI and returns the result.
 func RunFirstTimeSetup(baseDir string, showGitignore bool) (FirstTimeSetupResult, error) {
 	setup := NewFirstTimeSetup(baseDir, showGitignore)
-	p := tea.NewProgram(setup, tea.WithAltScreen())
+	p := tea.NewProgram(setup, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	model, err := p.Run()
 	if err != nil {
