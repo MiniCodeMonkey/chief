@@ -110,8 +110,14 @@ func Convert(opts ConvertOptions) error {
 		hasProgress = HasProgress(existing)
 	}
 
+	// Extract ID prefix from existing PRD (defaults to "US" for new PRDs)
+	idPrefix := "US"
+	if existingPRD != nil {
+		idPrefix = existingPRD.ExtractIDPrefix()
+	}
+
 	// Run agent to convert prd.md → JSON string
-	rawJSON, err := opts.RunConversion(absPRDDir)
+	rawJSON, err := opts.RunConversion(absPRDDir, idPrefix)
 	if err != nil {
 		return err
 	}
@@ -134,6 +140,15 @@ func Convert(opts ConvertOptions) error {
 		newPRD, err = parseAndValidatePRD(cleanedJSON)
 		if err != nil {
 			return fmt.Errorf("conversion produced invalid JSON after retry:\n---\n%s\n---\n%w", cleanedJSON, err)
+		}
+	}
+
+	// Sanity check: warn if JSON has significantly fewer stories than markdown
+	if mdContent, readErr := os.ReadFile(prdMdPath); readErr == nil {
+		mdStoryCount := CountMarkdownStories(string(mdContent))
+		jsonStoryCount := len(newPRD.UserStories)
+		if mdStoryCount > 0 && jsonStoryCount < int(float64(mdStoryCount)*0.8) {
+			fmt.Printf("⚠️  Warning: possible truncation — JSON has %d stories but markdown has ~%d story headings\n", jsonStoryCount, mdStoryCount)
 		}
 	}
 
@@ -630,6 +645,19 @@ func validateJSON(content string) error {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil
+}
+
+// CountMarkdownStories counts the approximate number of user stories in a markdown PRD
+// by counting second-level headings (## ). This is a heuristic used for truncation detection.
+func CountMarkdownStories(content string) int {
+	count := 0
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "## ") {
+			count++
+		}
+	}
+	return count
 }
 
 // HasProgress checks if the PRD has any progress (passes: true or inProgress: true).

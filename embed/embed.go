@@ -22,10 +22,16 @@ var convertPromptTemplate string
 //go:embed detect_setup_prompt.txt
 var detectSetupPromptTemplate string
 
-// GetPrompt returns the agent prompt with the PRD and progress paths substituted.
-func GetPrompt(prdPath, progressPath string) string {
+// GetPrompt returns the agent prompt with the PRD path, progress path, and
+// current story context substituted. The storyContext is the JSON of the
+// current story to work on, inlined directly into the prompt so that the
+// agent does not need to read the entire prd.json file.
+func GetPrompt(prdPath, progressPath, storyContext, storyID, storyTitle string) string {
 	result := strings.ReplaceAll(promptTemplate, "{{PRD_PATH}}", prdPath)
-	return strings.ReplaceAll(result, "{{PROGRESS_PATH}}", progressPath)
+	result = strings.ReplaceAll(result, "{{PROGRESS_PATH}}", progressPath)
+	result = strings.ReplaceAll(result, "{{STORY_CONTEXT}}", storyContext)
+	result = strings.ReplaceAll(result, "{{STORY_ID}}", storyID)
+	return strings.ReplaceAll(result, "{{STORY_TITLE}}", storyTitle)
 }
 
 // GetInitPrompt returns the PRD generator prompt with the PRD directory and optional context substituted.
@@ -42,9 +48,12 @@ func GetEditPrompt(prdDir string) string {
 	return strings.ReplaceAll(editPromptTemplate, "{{PRD_DIR}}", prdDir)
 }
 
-// GetConvertPrompt returns the PRD converter prompt with the PRD content inlined.
-func GetConvertPrompt(prdContent string) string {
-	return strings.ReplaceAll(convertPromptTemplate, "{{PRD_CONTENT}}", prdContent)
+// GetConvertPrompt returns the PRD converter prompt with the file path and ID prefix substituted.
+// Claude reads the file itself using file-reading tools instead of receiving inlined content.
+// The idPrefix determines the story ID convention (e.g., "US" → US-001, "MFR" → MFR-001).
+func GetConvertPrompt(prdFilePath, idPrefix string) string {
+	result := strings.ReplaceAll(convertPromptTemplate, "{{PRD_FILE_PATH}}", prdFilePath)
+	return strings.ReplaceAll(result, "{{ID_PREFIX}}", idPrefix)
 }
 
 // GetDetectSetupPrompt returns the prompt for detecting project setup commands.

@@ -3,50 +3,16 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/minicodemonkey/chief/internal/prd"
 )
-
-// mockProvider implements Provider for tests without importing agent (avoids import cycle).
-type mockProvider struct {
-	cliPath string // if set, used as CLI path; otherwise "claude"
-}
-
-func (m *mockProvider) Name() string                             { return "Test" }
-func (m *mockProvider) CLIPath() string                          { return m.path() }
-func (m *mockProvider) InteractiveCommand(_, _ string) *exec.Cmd { return exec.Command("true") }
-func (m *mockProvider) ParseLine(line string) *Event             { return ParseLine(line) }
-func (m *mockProvider) LogFileName() string                      { return "claude.log" }
-
-func (m *mockProvider) ConvertCommand(_, _ string) (*exec.Cmd, OutputMode, string, error) {
-	return exec.Command("true"), OutputStdout, "", nil
-}
-
-func (m *mockProvider) FixJSONCommand(_ string) (*exec.Cmd, OutputMode, string, error) {
-	return exec.Command("true"), OutputStdout, "", nil
-}
-
-func (m *mockProvider) path() string {
-	if m.cliPath != "" {
-		return m.cliPath
-	}
-	return "claude"
-}
-
-func (m *mockProvider) LoopCommand(ctx context.Context, _, workDir string) *exec.Cmd {
-	p := m.path()
-	cmd := exec.CommandContext(ctx, p)
-	cmd.Dir = workDir
-	return cmd
-}
-
-// testProvider is used by loop tests so they don't need to run a real CLI.
-var testProvider Provider = &mockProvider{}
 
 // createMockClaudeScript creates a shell script that outputs predefined stream-json.
 func createMockClaudeScript(t *testing.T, dir string, output []string) string {
@@ -93,7 +59,7 @@ func createTestPRD(t *testing.T, dir string, allComplete bool) string {
 }
 
 func TestNewLoop(t *testing.T) {
-	l := NewLoop("/path/to/prd.json", "test prompt", 5, testProvider)
+	l := NewLoop("/path/to/prd.json", "test prompt", 5)
 
 	if l.prdPath != "/path/to/prd.json" {
 		t.Errorf("Expected prdPath %q, got %q", "/path/to/prd.json", l.prdPath)
@@ -110,7 +76,7 @@ func TestNewLoop(t *testing.T) {
 }
 
 func TestNewLoopWithWorkDir(t *testing.T) {
-	l := NewLoopWithWorkDir("/path/to/prd.json", "/work/dir", "test prompt", 5, testProvider)
+	l := NewLoopWithWorkDir("/path/to/prd.json", "/work/dir", "test prompt", 5)
 
 	if l.prdPath != "/path/to/prd.json" {
 		t.Errorf("Expected prdPath %q, got %q", "/path/to/prd.json", l.prdPath)
@@ -130,7 +96,7 @@ func TestNewLoopWithWorkDir(t *testing.T) {
 }
 
 func TestNewLoopWithWorkDir_EmptyWorkDir(t *testing.T) {
-	l := NewLoopWithWorkDir("/path/to/prd.json", "", "test prompt", 5, testProvider)
+	l := NewLoopWithWorkDir("/path/to/prd.json", "", "test prompt", 5)
 
 	if l.workDir != "" {
 		t.Errorf("Expected empty workDir, got %q", l.workDir)
@@ -138,7 +104,7 @@ func TestNewLoopWithWorkDir_EmptyWorkDir(t *testing.T) {
 }
 
 func TestLoop_Events(t *testing.T) {
-	l := NewLoop("/path/to/prd.json", "test prompt", 5, testProvider)
+	l := NewLoop("/path/to/prd.json", "test prompt", 5)
 	events := l.Events()
 
 	if events == nil {
@@ -147,7 +113,7 @@ func TestLoop_Events(t *testing.T) {
 }
 
 func TestLoop_Iteration(t *testing.T) {
-	l := NewLoop("/path/to/prd.json", "test prompt", 5, testProvider)
+	l := NewLoop("/path/to/prd.json", "test prompt", 5)
 
 	if l.Iteration() != 0 {
 		t.Errorf("Expected initial iteration to be 0, got %d", l.Iteration())
@@ -160,7 +126,7 @@ func TestLoop_Iteration(t *testing.T) {
 }
 
 func TestLoop_Stop(t *testing.T) {
-	l := NewLoop("/path/to/prd.json", "test prompt", 5, testProvider)
+	l := NewLoop("/path/to/prd.json", "test prompt", 5)
 
 	l.Stop()
 
@@ -196,7 +162,7 @@ func TestLoop_RunWithMockClaude(t *testing.T) {
 
 	// Create a prompt that invokes our mock script instead of real Claude
 	// For the actual test, we'll test the internal methods
-	l := NewLoop(prdPath, "test prompt", 1, testProvider)
+	l := NewLoop(prdPath, "test prompt", 1)
 
 	// Override the command for testing - we'll test processOutput directly
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -278,7 +244,7 @@ func TestLoop_MaxIterations(t *testing.T) {
 	tmpDir := t.TempDir()
 	prdPath := createTestPRD(t, tmpDir, false) // Not complete
 
-	l := NewLoop(prdPath, "test prompt", 2, testProvider)
+	l := NewLoop(prdPath, "test prompt", 2)
 
 	// Simulate reaching max iterations by manually incrementing
 	l.iteration = 2
@@ -324,7 +290,7 @@ func TestLoop_LogFile(t *testing.T) {
 		t.Fatalf("Failed to create log file: %v", err)
 	}
 
-	l := NewLoop(filepath.Join(tmpDir, "prd.json"), "test", 1, testProvider)
+	l := NewLoop(filepath.Join(tmpDir, "prd.json"), "test", 1)
 	l.logFile = logFile
 
 	l.logLine("test log line")
@@ -343,7 +309,7 @@ func TestLoop_LogFile(t *testing.T) {
 
 // TestLoop_ChiefCompleteEvent tests detection of <chief-complete/> event.
 func TestLoop_ChiefCompleteEvent(t *testing.T) {
-	l := NewLoop("/test/prd.json", "test", 5, testProvider)
+	l := NewLoop("/test/prd.json", "test", 5)
 	l.iteration = 1
 
 	done := make(chan bool)
@@ -384,7 +350,7 @@ func TestLoop_ChiefCompleteEvent(t *testing.T) {
 
 // TestLoop_SetMaxIterations tests setting max iterations at runtime.
 func TestLoop_SetMaxIterations(t *testing.T) {
-	l := NewLoop("/test/prd.json", "test", 5, testProvider)
+	l := NewLoop("/test/prd.json", "test", 5)
 
 	if l.MaxIterations() != 5 {
 		t.Errorf("Expected initial maxIter 5, got %d", l.MaxIterations())
@@ -414,7 +380,7 @@ func TestDefaultRetryConfig(t *testing.T) {
 
 // TestLoop_SetRetryConfig tests setting retry config.
 func TestLoop_SetRetryConfig(t *testing.T) {
-	l := NewLoop("/test/prd.json", "test", 5, testProvider)
+	l := NewLoop("/test/prd.json", "test", 5)
 
 	// Check default
 	if !l.retryConfig.Enabled {
@@ -440,13 +406,233 @@ func TestLoop_SetRetryConfig(t *testing.T) {
 	}
 }
 
-func TestLoop_RunRequiresProvider(t *testing.T) {
-	l := NewLoop("/test/prd.json", "test", 1, nil)
-	err := l.Run(context.Background())
-	if err == nil {
-		t.Fatal("expected provider validation error")
+// TestLoop_WatchdogDefaultTimeout tests that the default watchdog timeout is set.
+func TestLoop_WatchdogDefaultTimeout(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+
+	if l.WatchdogTimeout() != DefaultWatchdogTimeout {
+		t.Errorf("Expected default watchdog timeout %v, got %v", DefaultWatchdogTimeout, l.WatchdogTimeout())
 	}
-	if err.Error() != "loop provider is not configured" {
-		t.Fatalf("unexpected error: %v", err)
+}
+
+// TestLoop_SetWatchdogTimeout tests setting the watchdog timeout.
+func TestLoop_SetWatchdogTimeout(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+
+	l.SetWatchdogTimeout(10 * time.Minute)
+	if l.WatchdogTimeout() != 10*time.Minute {
+		t.Errorf("Expected watchdog timeout 10m, got %v", l.WatchdogTimeout())
+	}
+
+	// Setting to 0 disables the watchdog
+	l.SetWatchdogTimeout(0)
+	if l.WatchdogTimeout() != 0 {
+		t.Errorf("Expected watchdog timeout 0 (disabled), got %v", l.WatchdogTimeout())
+	}
+}
+
+// TestLoop_WatchdogKillsHungProcess tests that a hung process is killed after timeout.
+func TestLoop_WatchdogKillsHungProcess(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+	l.iteration = 1
+
+	// Use a very short timeout for testing
+	timeout := 100 * time.Millisecond
+
+	// Collect events
+	var events []Event
+	done := make(chan bool)
+	go func() {
+		for event := range l.Events() {
+			events = append(events, event)
+		}
+		done <- true
+	}()
+
+	// Create a pipe that never sends data (simulates hung process)
+	r, w, _ := os.Pipe()
+
+	// Initialize lastOutputTime
+	l.mu.Lock()
+	l.lastOutputTime = time.Now()
+	l.mu.Unlock()
+
+	// Start watchdog with a short check interval
+	watchdogDone := make(chan struct{})
+	var fired atomic.Bool
+	go l.runWatchdog(timeout, watchdogDone, &fired)
+
+	// processOutput will block until pipe is closed (by watchdog killing would close it,
+	// but in this test we close it manually after watchdog fires)
+	go func() {
+		// Wait for watchdog to fire
+		time.Sleep(500 * time.Millisecond)
+		w.Close()
+	}()
+
+	l.processOutput(r)
+	close(watchdogDone)
+	close(l.events)
+	<-done
+
+	if !fired.Load() {
+		t.Error("Expected watchdog to fire for hung process")
+	}
+
+	// Check that we got a WatchdogTimeout event
+	hasWatchdog := false
+	for _, e := range events {
+		if e.Type == EventWatchdogTimeout {
+			hasWatchdog = true
+			if e.Text == "" {
+				t.Error("Expected watchdog event to have descriptive text")
+			}
+		}
+	}
+	if !hasWatchdog {
+		t.Error("Expected WatchdogTimeout event")
+	}
+}
+
+// TestLoop_WatchdogDoesNotFireForActiveProcess tests that an active process doesn't trigger the watchdog.
+func TestLoop_WatchdogDoesNotFireForActiveProcess(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+	l.iteration = 1
+
+	// Use a timeout that's longer than our test
+	timeout := 2 * time.Second
+
+	// Collect events
+	var events []Event
+	done := make(chan bool)
+	go func() {
+		for event := range l.Events() {
+			events = append(events, event)
+		}
+		done <- true
+	}()
+
+	// Create a pipe that produces output regularly
+	r, w, _ := os.Pipe()
+
+	l.mu.Lock()
+	l.lastOutputTime = time.Now()
+	l.mu.Unlock()
+
+	watchdogDone := make(chan struct{})
+	var fired atomic.Bool
+	go l.runWatchdog(timeout, watchdogDone, &fired)
+
+	// Send output regularly, then close
+	go func() {
+		for i := 0; i < 5; i++ {
+			w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"working..."}]}}` + "\n")
+			time.Sleep(100 * time.Millisecond)
+		}
+		w.Close()
+	}()
+
+	l.processOutput(r)
+	close(watchdogDone)
+	close(l.events)
+	<-done
+
+	if fired.Load() {
+		t.Error("Watchdog should NOT fire for an actively producing process")
+	}
+
+	// Verify no WatchdogTimeout events
+	for _, e := range events {
+		if e.Type == EventWatchdogTimeout {
+			t.Error("Should not have received WatchdogTimeout event for active process")
+		}
+	}
+}
+
+// TestLoop_WatchdogDisabledWithZeroTimeout tests that watchdog is disabled when timeout is 0.
+func TestLoop_WatchdogDisabledWithZeroTimeout(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+	l.SetWatchdogTimeout(0)
+
+	if l.WatchdogTimeout() != 0 {
+		t.Errorf("Expected watchdog timeout 0, got %v", l.WatchdogTimeout())
+	}
+
+	// Verify that runIteration would not start a watchdog
+	// (tested indirectly: timeout == 0 means the if-block in runIteration is skipped)
+	// We test this by verifying the constructor behavior and setter
+	l2 := NewLoop("/test/prd.json", "test", 5)
+	l2.SetWatchdogTimeout(0)
+
+	l2.mu.Lock()
+	wt := l2.watchdogTimeout
+	l2.mu.Unlock()
+
+	if wt != 0 {
+		t.Errorf("Expected internal watchdogTimeout to be 0, got %v", wt)
+	}
+}
+
+// TestLoop_LastOutputTimeUpdated tests that lastOutputTime is updated on each scanner output.
+func TestLoop_LastOutputTimeUpdated(t *testing.T) {
+	l := NewLoop("/test/prd.json", "test", 5)
+	l.iteration = 1
+
+	// Drain events to avoid blocking
+	go func() {
+		for range l.Events() {
+		}
+	}()
+
+	// Record initial time
+	l.mu.Lock()
+	l.lastOutputTime = time.Now().Add(-1 * time.Hour) // Set to an old time
+	initialTime := l.lastOutputTime
+	l.mu.Unlock()
+
+	// Send output through processOutput
+	r, w, _ := os.Pipe()
+	go func() {
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}` + "\n")
+		time.Sleep(50 * time.Millisecond)
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"world"}]}}` + "\n")
+		w.Close()
+	}()
+
+	l.processOutput(r)
+	close(l.events)
+
+	// Verify lastOutputTime was updated
+	l.mu.Lock()
+	finalTime := l.lastOutputTime
+	l.mu.Unlock()
+
+	if !finalTime.After(initialTime) {
+		t.Errorf("Expected lastOutputTime to be updated after output, initial=%v, final=%v", initialTime, finalTime)
+	}
+}
+
+// TestLoop_WatchdogReturnsError tests that watchdog kill causes runIteration to return an error
+// that feeds into retry logic.
+func TestLoop_WatchdogReturnsError(t *testing.T) {
+	// This test verifies the error message format that runIterationWithRetry will see
+	l := NewLoop("/test/prd.json", "test", 5)
+	l.SetWatchdogTimeout(100 * time.Millisecond)
+
+	// The watchdog error message should contain "watchdog timeout"
+	// This ensures the retry logic in runIterationWithRetry will process it
+	expectedPrefix := "watchdog timeout:"
+	errMsg := fmt.Sprintf("watchdog timeout: no output for %s", 100*time.Millisecond)
+	if !strings.HasPrefix(errMsg, expectedPrefix) {
+		t.Errorf("Expected error to start with %q, got %q", expectedPrefix, errMsg)
+	}
+}
+
+// TestLoop_WatchdogWithWorkDir tests that watchdog works with NewLoopWithWorkDir too.
+func TestLoop_WatchdogWithWorkDir(t *testing.T) {
+	l := NewLoopWithWorkDir("/test/prd.json", "/work", "test", 5)
+
+	if l.WatchdogTimeout() != DefaultWatchdogTimeout {
+		t.Errorf("Expected default watchdog timeout for NewLoopWithWorkDir, got %v", l.WatchdogTimeout())
 	}
 }

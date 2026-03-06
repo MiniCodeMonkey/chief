@@ -20,6 +20,7 @@ func TestEventTypeString(t *testing.T) {
 		{EventMaxIterationsReached, "MaxIterationsReached"},
 		{EventError, "Error"},
 		{EventRetrying, "Retrying"},
+		{EventWatchdogTimeout, "WatchdogTimeout"},
 	}
 
 	for _, tt := range tests {

@@ -76,7 +76,8 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 	// Filter out events we don't want to display
 	switch event.Type {
 	case loop.EventAssistantText, loop.EventToolStart, loop.EventToolResult,
-		loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventRetrying:
+		loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventRetrying,
+		loop.EventWatchdogTimeout:
 		// Pre-render and cache lines
 		if l.width > 0 {
 			entry.cachedLines = l.renderEntry(entry)
@@ -361,6 +362,8 @@ func (l *LogViewer) renderEntry(entry LogEntry) []string {
 		return l.renderError(entry)
 	case loop.EventRetrying:
 		return l.renderRetrying(entry)
+	case loop.EventWatchdogTimeout:
+		return l.renderWatchdogTimeout(entry)
 	default:
 		return l.renderText(entry)
 	}
@@ -614,4 +617,18 @@ func (l *LogViewer) renderRetrying(entry LogEntry) []string {
 	}
 
 	return []string{retryStyle.Render("🔄 " + text)}
+}
+
+// renderWatchdogTimeout renders a watchdog timeout message.
+func (l *LogViewer) renderWatchdogTimeout(entry LogEntry) []string {
+	style := lipgloss.NewStyle().
+		Foreground(WarningColor).
+		Bold(true)
+
+	text := entry.Text
+	if text == "" {
+		text = "Watchdog timeout: process killed"
+	}
+
+	return []string{style.Render("⏱ " + text)}
 }

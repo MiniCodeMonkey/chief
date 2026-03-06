@@ -1,19 +1,15 @@
 You are a PRD converter. Your task is to convert a Product Requirements Document (PRD) written in Markdown to a structured JSON format.
 
-Here is the PRD content:
+Read the PRD file at: {{PRD_FILE_PATH}}
 
-<prd>
-{{PRD_CONTENT}}
-</prd>
-
-Do NOT use any tools. Do NOT write any files. Output ONLY the raw JSON to stdout — no markdown fences, no explanation, no preamble, no commentary. The JSON must follow this exact structure:
+Then output ONLY the raw JSON to stdout — no markdown fences, no explanation, no preamble, no commentary. The JSON must follow this exact structure:
 
 {
   "project": "Project Name",
   "description": "Brief project description",
   "userStories": [
     {
-      "id": "US-001",
+      "id": "{{ID_PREFIX}}-001",
       "title": "Story Title",
       "description": "Full description of what the user story accomplishes",
       "acceptanceCriteria": [
@@ -30,7 +26,7 @@ Rules:
 1. Extract the project name from the main heading (# heading)
 2. Extract the description from the introductory paragraph
 3. For each user story:
-   - Generate sequential IDs: US-001, US-002, etc.
+   - Generate sequential IDs: {{ID_PREFIX}}-001, {{ID_PREFIX}}-002, etc.
    - Extract title from story heading
    - Extract description from story body
    - Extract acceptance criteria as an array of strings
@@ -42,3 +38,4 @@ Rules:
    - RIGHT: "description": "Click the \"Submit\" button"
    This applies to ALL string fields: title, description, and every entry in acceptanceCriteria.
 6. Ensure the JSON is valid and properly formatted with 2-space indentation
+7. Include ALL user stories from the PRD — do not skip or truncate any stories

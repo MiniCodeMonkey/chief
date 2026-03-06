@@ -38,10 +38,19 @@ func (a *App) renderDashboard() string {
 	}
 
 	header := a.renderHeader()
-	footer := a.renderFooter()
+
+	// Hide footer when terminal height < 12
+	fh := footerHeight
+	var footer string
+	if a.height < 12 {
+		fh = 0
+		footer = ""
+	} else {
+		footer = a.renderFooter()
+	}
 
 	// Calculate content area height
-	contentHeight := a.height - a.effectiveHeaderHeight() - footerHeight - 2 // -2 for panel borders
+	contentHeight := a.height - a.effectiveHeaderHeight() - fh - 2 // -2 for panel borders
 
 	// Render panels
 	storiesWidth := (a.width * storiesPanelPct / 100) - 2
@@ -54,16 +63,28 @@ func (a *App) renderDashboard() string {
 	content := lipgloss.JoinHorizontal(lipgloss.Top, storiesPanel, detailsPanel)
 
 	// Stack header, content, and footer
+	if footer == "" {
+		return lipgloss.JoinVertical(lipgloss.Left, header, content)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
 }
 
 // renderStackedDashboard renders the dashboard with stacked layout for narrow terminals.
 func (a *App) renderStackedDashboard() string {
 	header := a.renderNarrowHeader()
-	footer := a.renderNarrowFooter()
+
+	// Hide footer when terminal height < 12
+	fh := footerHeight
+	var footer string
+	if a.height < 12 {
+		fh = 0
+		footer = ""
+	} else {
+		footer = a.renderNarrowFooter()
+	}
 
 	// Calculate content area height
-	contentHeight := a.height - a.effectiveHeaderHeight() - footerHeight - 2 // -2 for panel borders
+	contentHeight := a.height - a.effectiveHeaderHeight() - fh - 2 // -2 for panel borders
 
 	// Split height between stories (40%) and details (60%)
 	storiesHeight := max((contentHeight*40)/100, 5)
@@ -78,6 +99,9 @@ func (a *App) renderStackedDashboard() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, storiesPanel, detailsPanel)
 
 	// Stack header, content, and footer
+	if footer == "" {
+		return lipgloss.JoinVertical(lipgloss.Left, header, content)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
 }
 
@@ -345,29 +369,49 @@ func (a *App) renderActivityLine() string {
 func (a *App) renderStoriesPanel(width, height int) string {
 	var content strings.Builder
 
-	// Panel title using centralized style
-	title := PanelTitleStyle.Render("Stories")
+	// Panel title — append scroll percentage when list is scrollable
+	listHeight := height - 5 // Account for title, border, and progress bar
+	totalStories := len(a.prd.UserStories)
+	titleText := "Stories"
+	if totalStories > listHeight && listHeight > 0 {
+		maxOffset := totalStories - listHeight
+		pct := 0
+		if maxOffset > 0 {
+			pct = a.storiesScrollOffset * 100 / maxOffset
+		}
+		titleText = fmt.Sprintf("Stories (%d%%)", pct)
+	}
+	title := PanelTitleStyle.Render(titleText)
 	content.WriteString(title)
 	content.WriteString("\n")
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", width-2)))
 	content.WriteString("\n")
 
-	// Story list
-	listHeight := height - 5 // Account for title, border, and progress bar
-	for i, story := range a.prd.UserStories {
-		if i >= listHeight {
-			// Show indicator that there are more stories
-			moreStyle := lipgloss.NewStyle().Foreground(mutedColor)
-			content.WriteString(moreStyle.Render(fmt.Sprintf("... and %d more", len(a.prd.UserStories)-i)))
-			break
-		}
+	// Clamp scroll offset
+	if a.storiesScrollOffset < 0 {
+		a.storiesScrollOffset = 0
+	}
+	if listHeight > 0 && a.storiesScrollOffset > totalStories-listHeight {
+		a.storiesScrollOffset = totalStories - listHeight
+	}
+	if a.storiesScrollOffset < 0 {
+		a.storiesScrollOffset = 0
+	}
 
+	// Render visible slice of stories
+	endIdx := a.storiesScrollOffset + listHeight
+	if endIdx > totalStories {
+		endIdx = totalStories
+	}
+	visibleCount := 0
+	for i := a.storiesScrollOffset; i < endIdx; i++ {
+		story := a.prd.UserStories[i]
 		icon := GetStatusIcon(story.Passes, story.InProgress)
 
 		// Truncate title to fit
 		maxTitleLen := width - 12 // Account for icon, ID, and spacing
 		displayTitle := story.Title
-		if len(displayTitle) > maxTitleLen {
+		if len(displayTitle) > maxTitleLen && maxTitleLen > 3 {
 			displayTitle = displayTitle[:maxTitleLen-3] + "..."
 		}
 
@@ -385,10 +429,11 @@ func (a *App) renderStoriesPanel(width, height int) string {
 
 		content.WriteString(line)
 		content.WriteString("\n")
+		visibleCount++
 	}
 
 	// Pad remaining space
-	linesWritten := min(len(a.prd.UserStories), listHeight) + 2 // +2 for title and divider
+	linesWritten := visibleCount + 2 // +2 for title and divider
 	for i := linesWritten; i < height-3; i++ {
 		content.WriteString("\n")
 	}

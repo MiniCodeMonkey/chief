@@ -117,7 +117,15 @@ func (p *PRDPicker) Refresh() {
 		}
 
 		name := entry.Name()
-		prdPath := filepath.Join(prdsDir, name, "prd.json")
+		dirPath := filepath.Join(prdsDir, name)
+		prdPath := filepath.Join(dirPath, "prd.json")
+
+		// Skip directories without prd.md or prd.json (empty/incomplete)
+		_, jsonErr := os.Stat(prdPath)
+		_, mdErr := os.Stat(filepath.Join(dirPath, "prd.md"))
+		if os.IsNotExist(jsonErr) && os.IsNotExist(mdErr) {
+			continue
+		}
 
 		prdEntry := p.loadPRDEntry(name, prdPath)
 		p.entries = append(p.entries, prdEntry)
