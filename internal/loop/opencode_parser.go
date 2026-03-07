@@ -78,16 +78,21 @@ func ParseLineOpenCode(line string) *Event {
 		return &Event{Type: EventIterationStart}
 
 	case "tool_use":
-		if ev.Part == nil || ev.Part.State == nil {
+		if ev.Part == nil {
 			return nil
 		}
-		if ev.Part.State.Status == "completed" {
+		if ev.Part.State != nil && ev.Part.State.Status == "completed" {
 			return &Event{
-				Type: EventToolStart,
+				Type: EventToolResult,
 				Tool: ev.Part.Tool,
+				Text: ev.Part.State.Output,
 			}
 		}
-		return nil
+		// Tool starting or in-progress
+		return &Event{
+			Type: EventToolStart,
+			Tool: ev.Part.Tool,
+		}
 
 	case "text":
 		if ev.Part == nil {

@@ -39,13 +39,11 @@ func (p *OpenCodeProvider) InteractiveCommand(workDir, prompt string) *exec.Cmd 
 func (p *OpenCodeProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
 	cmd := exec.Command(p.cliPath, "run", "--format", "json", "--", prompt)
 	cmd.Dir = workDir
-	cmd.Stdin = strings.NewReader(prompt)
 	return cmd, loop.OutputStdout, "", nil
 }
 
 func (p *OpenCodeProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
 	cmd := exec.Command(p.cliPath, "run", "--format", "json", "--", prompt)
-	cmd.Stdin = strings.NewReader(prompt)
 	return cmd, loop.OutputStdout, "", nil
 }
 
@@ -56,30 +54,32 @@ func (p *OpenCodeProvider) ParseLine(line string) *loop.Event {
 func (p *OpenCodeProvider) LogFileName() string { return "opencode.log" }
 
 // CleanOutput extracts JSON from opencode's NDJSON output format.
+// It looks for the last "text" event line and returns its part.text content.
 func (p *OpenCodeProvider) CleanOutput(output string) string {
 	output = strings.TrimSpace(output)
-
-	if !strings.Contains(output, "\n") || !strings.Contains(output, `"type":"step_start"`) || !strings.Contains(output, `"type":"text"`) {
+	if !strings.Contains(output, "\n") {
 		return output
 	}
 
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
+	// Parse each line as JSON to find text events (last one wins).
+	var lastText string
+	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		if strings.Contains(line, `"type":"text"`) {
-			var ev struct {
-				Type string `json:"type"`
-				Part struct {
-					Text string `json:"text"`
-				} `json:"part"`
-			}
-			if json.Unmarshal([]byte(line), &ev) == nil && ev.Part.Text != "" {
-				return ev.Part.Text
-			}
+		var ev struct {
+			Type string `json:"type"`
+			Part struct {
+				Text string `json:"text"`
+			} `json:"part"`
 		}
+		if json.Unmarshal([]byte(line), &ev) == nil && ev.Type == "text" && ev.Part.Text != "" {
+			lastText = ev.Part.Text
+		}
+	}
+	if lastText != "" {
+		return lastText
 	}
 	return output
 }

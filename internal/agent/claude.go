@@ -49,7 +49,7 @@ func (p *ClaudeProvider) InteractiveCommand(workDir, prompt string) *exec.Cmd {
 
 // ConvertCommand implements loop.Provider.
 func (p *ClaudeProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
-	cmd := exec.Command(p.cliPath, "-p", "--tools", "")
+	cmd := exec.Command(p.cliPath, "-p")
 	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(prompt)
 	return cmd, loop.OutputStdout, "", nil
