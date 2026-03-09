@@ -1383,7 +1383,7 @@ func (a App) handleCreationChatKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return a.tryQuit()
 	case "esc":
-		// Only allow canceling if not in the middle of a request
+		// Only allow navigating away if not in the middle of a request
 		if !a.creationChat.loading {
 			a.viewMode = ViewDashboard
 			return a, nil
