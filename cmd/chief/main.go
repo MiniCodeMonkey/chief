@@ -35,6 +35,28 @@ type TUIOptions struct {
 func main() {
 	// Handle subcommands first
 	if len(os.Args) > 1 {
+		// Check for uplink commands (stealth: only available when enabled)
+		switch os.Args[1] {
+		case "login", "logout", "serve":
+			cwd, err := os.Getwd()
+			if err == nil {
+				cfg, _ := config.Load(cwd)
+				if cfg.Uplink.Enabled {
+					switch os.Args[1] {
+					case "login":
+						runLogin(cfg)
+						return
+					case "logout":
+						runLogout(cfg)
+						return
+					case "serve":
+						runServe(cfg)
+						return
+					}
+				}
+			}
+		}
+
 		switch os.Args[1] {
 		case "new":
 			runNew()
@@ -515,6 +537,11 @@ func runTUIWithOptions(opts *TUIOptions) {
 }
 
 func printHelp() {
+	// Check if uplink is enabled
+	cwd, _ := os.Getwd()
+	cfg, _ := config.Load(cwd)
+	uplinkEnabled := cfg != nil && cfg.Uplink.Enabled
+
 	fmt.Println(`Chief - Autonomous PRD Agent
 
 Usage:
@@ -527,7 +554,21 @@ Commands:
   status [name]             Show progress for a PRD (default: main)
   list                      List all PRDs with progress
   update                    Update Chief to the latest version
-  help                      Show this help message
+  help                      Show this help message`)
+
+	if uplinkEnabled {
+		fmt.Println(`
+Uplink Commands:
+  login                     Authenticate with chiefloop.com
+  logout                    Deauthorize this device
+  serve [options]           Start headless serve daemon
+
+Serve Options:
+  --workspace <dir>         Workspace directory (default: .)
+  --log-file <path>         Log file path (default: stdout)`)
+	}
+
+	fmt.Print(`
 
 Global Options:
   --agent <provider>        Agent CLI to use: claude (default), codex, or opencode
@@ -644,4 +685,75 @@ func printWiggum() {
                                - Chief Wiggum
 `
 	fmt.Print(art)
+}
+
+// --- Uplink commands (stealth: only available when uplink.enabled is true) ---
+
+func runLogin(cfg *config.Config) {
+	opts := cmd.LoginOptions{
+		BaseURL: cfg.Uplink.EffectiveServerURL(),
+	}
+
+	// Parse arguments: chief login [--setup-token TOKEN]
+	for i := 2; i < len(os.Args); i++ {
+		switch {
+		case os.Args[i] == "--setup-token" && i+1 < len(os.Args):
+			i++
+			opts.SetupToken = os.Args[i]
+		case strings.HasPrefix(os.Args[i], "--setup-token="):
+			opts.SetupToken = strings.TrimPrefix(os.Args[i], "--setup-token=")
+		}
+	}
+
+	if err := cmd.RunLogin(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runLogout(cfg *config.Config) {
+	opts := cmd.LogoutOptions{
+		BaseURL: cfg.Uplink.EffectiveServerURL(),
+	}
+	if err := cmd.RunLogout(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runServe(cfg *config.Config) {
+	opts := cmd.ServeOptions{
+		Version:   Version,
+		ServerURL: cfg.Uplink.EffectiveServerURL(),
+		BaseURL:   cfg.Uplink.EffectiveServerURL(),
+	}
+
+	// Parse serve flags: chief serve [--workspace DIR] [--log-file PATH]
+	for i := 2; i < len(os.Args); i++ {
+		switch {
+		case os.Args[i] == "--workspace" && i+1 < len(os.Args):
+			i++
+			opts.Workspace = os.Args[i]
+		case strings.HasPrefix(os.Args[i], "--workspace="):
+			opts.Workspace = strings.TrimPrefix(os.Args[i], "--workspace=")
+		case os.Args[i] == "--log-file" && i+1 < len(os.Args):
+			i++
+			opts.LogFile = os.Args[i]
+		case strings.HasPrefix(os.Args[i], "--log-file="):
+			opts.LogFile = strings.TrimPrefix(os.Args[i], "--log-file=")
+		}
+	}
+
+	// Resolve provider (default Claude for headless serve)
+	provider, err := agent.Resolve("", "", cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	opts.Provider = provider
+
+	if err := cmd.RunServe(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }
