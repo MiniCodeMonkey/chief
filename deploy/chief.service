@@ -1,0 +1,25 @@
+[Unit]
+Description=Chief - Autonomous PRD Agent
+Documentation=https://github.com/MiniCodeMonkey/chief
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/home/chief/.chief/credentials.yaml
+
+[Service]
+Type=simple
+User=chief
+Group=chief
+WorkingDirectory=/home/chief
+ExecStart=/usr/local/bin/chief serve --workspace /home/chief/projects --log-file /home/chief/.chief/serve.log
+Restart=always
+RestartSec=5
+Environment=HOME=/home/chief
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/chief
+
+[Install]
+WantedBy=multi-user.target
