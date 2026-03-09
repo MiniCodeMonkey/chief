@@ -14,6 +14,47 @@ type Config struct {
 	Worktree   WorktreeConfig   `yaml:"worktree"`
 	OnComplete OnCompleteConfig `yaml:"onComplete"`
 	Agent      AgentConfig      `yaml:"agent"`
+	Uplink     UplinkConfig     `yaml:"uplink"`
+
+	// Remote-configurable fields (used by serve settings handler).
+	MaxIterations int    `yaml:"maxIterations,omitempty"`
+	AutoCommit    *bool  `yaml:"autoCommit,omitempty"`
+	CommitPrefix  string `yaml:"commitPrefix,omitempty"`
+	ClaudeModel   string `yaml:"claudeModel,omitempty"`
+	TestCommand   string `yaml:"testCommand,omitempty"`
+}
+
+// EffectiveMaxIterations returns the configured max iterations or a default of 5.
+func (c *Config) EffectiveMaxIterations() int {
+	if c.MaxIterations > 0 {
+		return c.MaxIterations
+	}
+	return 5
+}
+
+// EffectiveAutoCommit returns the auto-commit setting, defaulting to true.
+func (c *Config) EffectiveAutoCommit() bool {
+	if c.AutoCommit != nil {
+		return *c.AutoCommit
+	}
+	return true
+}
+
+// DefaultServerURL is the default uplink server URL.
+const DefaultServerURL = "https://uplink.chiefloop.com"
+
+// UplinkConfig holds uplink connection settings.
+type UplinkConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	ServerURL string `yaml:"serverURL,omitempty"`
+}
+
+// EffectiveServerURL returns the server URL, falling back to DefaultServerURL.
+func (u UplinkConfig) EffectiveServerURL() string {
+	if u.ServerURL != "" {
+		return u.ServerURL
+	}
+	return DefaultServerURL
 }
 
 // AgentConfig holds agent CLI settings (Claude, Codex, or OpenCode).
