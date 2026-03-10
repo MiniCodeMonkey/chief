@@ -991,24 +991,35 @@ func (a *App) stopAllLoops() {
 	}
 }
 
+// showQuitConfirm shows the quit confirmation dialog with a context-specific message.
+func (a *App) showQuitConfirm(message, label string, leaveOnly bool) {
+	a.previousViewMode = a.viewMode
+	a.viewMode = ViewQuitConfirm
+	a.quitConfirm.Reset()
+	a.quitConfirm.SetContext(message, label, leaveOnly)
+	a.quitConfirm.SetSize(a.width, a.height)
+}
+
 // tryQuit attempts to quit the app. If any loop is running or a PRD creation
 // chat is in progress, it shows the quit confirmation dialog instead of
 // quitting immediately.
 func (a App) tryQuit() (tea.Model, tea.Cmd) {
 	inChat := a.viewMode == ViewPRDCreationChat && a.creationChat != nil
 	loopRunning := a.manager != nil && a.manager.IsAnyRunning()
-	if inChat || loopRunning {
-		a.previousViewMode = a.viewMode
-		a.viewMode = ViewQuitConfirm
-		a.quitConfirm.Reset()
-		if inChat {
-			a.quitConfirm.SetContext(
-				"PRD creation is in progress.\nUnsaved work will be lost.",
-				"Quit and discard",
-				false,
-			)
-		}
-		a.quitConfirm.SetSize(a.width, a.height)
+	if inChat {
+		a.showQuitConfirm(
+			"PRD creation is in progress.\nUnsaved work will be lost.",
+			"Quit and discard",
+			false,
+		)
+		return a, nil
+	}
+	if loopRunning {
+		a.showQuitConfirm(
+			"A loop is currently running.\nExiting will stop the loop.",
+			"Quit and stop loop",
+			false,
+		)
 		return a, nil
 	}
 	a.stopAllLoops()
@@ -1033,7 +1044,7 @@ func (a App) handleQuitConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if a.quitConfirm.IsLeaveOnly() {
 				// Leave the view (e.g., discard creation chat), don't quit the app
 				a.creationChat = nil
-				a.viewMode = ViewDashboard
+				a.viewMode = ViewDashboard // Creation chat always returns to dashboard
 				return a, nil
 			}
 			a.stopAllLoops()
@@ -1403,15 +1414,11 @@ func (a App) handleCreationChatKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !a.creationChat.loading {
 			// Show confirmation if the chat has any messages
 			if len(a.creationChat.messages) > 0 {
-				a.previousViewMode = a.viewMode
-				a.viewMode = ViewQuitConfirm
-				a.quitConfirm.Reset()
-				a.quitConfirm.SetContext(
+				a.showQuitConfirm(
 					"PRD creation is in progress.\nUnsaved work will be lost.",
 					"Leave and discard",
 					true,
 				)
-				a.quitConfirm.SetSize(a.width, a.height)
 				return a, nil
 			}
 			a.viewMode = ViewDashboard

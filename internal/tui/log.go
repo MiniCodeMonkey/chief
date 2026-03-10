@@ -34,6 +34,7 @@ type LogViewer struct {
 	vp               viewport.Model
 	entries          []LogEntry
 	contentBuf       strings.Builder // Running content buffer for viewport (avoids full rebuild on each AddEvent)
+	contentDirty     bool            // True when contentBuf has changed since last viewport sync
 	width            int             // Viewport width (used for line wrapping in renderEntry)
 	autoScroll       bool            // Auto-scroll to bottom when new content arrives
 	lastReadFilePath string          // Track the last Read tool's file path for syntax highlighting
@@ -116,11 +117,8 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 	}
 	l.entries = append(l.entries, entry)
 
-	// Append new entry to viewport content and auto-scroll if enabled
+	// Append new entry to viewport content (flushed lazily at render time)
 	l.appendEntryToViewport(entry)
-	if l.autoScroll {
-		l.vp.GotoBottom()
-	}
 }
 
 // SetSize sets the viewport dimensions. Rebuilds the line cache if width changed.
@@ -166,7 +164,8 @@ func (l *LogViewer) syncViewportContent() {
 }
 
 // appendEntryToViewport incrementally appends a single entry's cached lines
-// to the content buffer, avoiding a full rebuild on every AddEvent.
+// to the content buffer. The viewport is updated lazily at render time to
+// avoid O(n) string copies on every AddEvent.
 func (l *LogViewer) appendEntryToViewport(entry LogEntry) {
 	for _, line := range entry.cachedLines {
 		if l.contentBuf.Len() > 0 {
@@ -174,11 +173,12 @@ func (l *LogViewer) appendEntryToViewport(entry LogEntry) {
 		}
 		l.contentBuf.WriteString(line)
 	}
-	l.vp.SetContent(l.contentBuf.String())
+	l.contentDirty = true
 }
 
 // ScrollUp scrolls up by one line.
 func (l *LogViewer) ScrollUp() {
+	l.flushContent()
 	l.vp.ScrollUp(1)
 	if !l.vp.AtBottom() {
 		l.autoScroll = false
@@ -187,6 +187,7 @@ func (l *LogViewer) ScrollUp() {
 
 // ScrollDown scrolls down by one line.
 func (l *LogViewer) ScrollDown() {
+	l.flushContent()
 	l.vp.ScrollDown(1)
 	if l.vp.AtBottom() {
 		l.autoScroll = true
@@ -195,12 +196,14 @@ func (l *LogViewer) ScrollDown() {
 
 // PageUp scrolls up by half a page.
 func (l *LogViewer) PageUp() {
+	l.flushContent()
 	l.vp.HalfPageUp()
 	l.autoScroll = false
 }
 
 // PageDown scrolls down by half a page.
 func (l *LogViewer) PageDown() {
+	l.flushContent()
 	l.vp.HalfPageDown()
 	if l.vp.AtBottom() {
 		l.autoScroll = true
@@ -209,12 +212,14 @@ func (l *LogViewer) PageDown() {
 
 // ScrollToTop scrolls to the top.
 func (l *LogViewer) ScrollToTop() {
+	l.flushContent()
 	l.vp.GotoTop()
 	l.autoScroll = false
 }
 
 // ScrollToBottom (exported) scrolls to the bottom.
 func (l *LogViewer) ScrollToBottom() {
+	l.flushContent()
 	l.vp.GotoBottom()
 	l.autoScroll = true
 }
@@ -304,8 +309,21 @@ func (l *LogViewer) Clear() {
 	l.autoScroll = true
 	l.totalLineCount = 0
 	l.contentBuf.Reset()
+	l.contentDirty = false
 	l.vp.SetContent("")
 	l.vp.GotoTop()
+}
+
+// flushContent syncs the content buffer to the viewport if dirty.
+func (l *LogViewer) flushContent() {
+	if !l.contentDirty {
+		return
+	}
+	l.vp.SetContent(l.contentBuf.String())
+	if l.autoScroll {
+		l.vp.GotoBottom()
+	}
+	l.contentDirty = false
 }
 
 // Render renders the log viewer.
@@ -317,6 +335,7 @@ func (l *LogViewer) Render() string {
 		return emptyStyle.Render("No log entries yet. Start the loop to see Gemini's activity.")
 	}
 
+	l.flushContent()
 	content := l.vp.View()
 
 	// Add cursor indicator at bottom if streaming

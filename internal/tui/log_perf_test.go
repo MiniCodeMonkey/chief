@@ -245,6 +245,8 @@ func TestRender_ScrollPosition(t *testing.T) {
 		}))
 	}
 
+	// Flush content to viewport before manipulating scroll position
+	lv.Render()
 	// Scroll to position 5 (should show entries around that position)
 	lv.vp.SetYOffset(5)
 	output := lv.Render()
