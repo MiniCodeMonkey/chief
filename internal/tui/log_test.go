@@ -131,16 +131,12 @@ func TestNewLogViewer(t *testing.T) {
 func TestLogViewer_Clear(t *testing.T) {
 	lv := NewLogViewer()
 	lv.entries = []LogEntry{{Text: "test"}}
-	lv.scrollPos = 5
 	lv.autoScroll = false
 
 	lv.Clear()
 
 	if len(lv.entries) != 0 {
 		t.Error("Expected entries to be empty after Clear")
-	}
-	if lv.scrollPos != 0 {
-		t.Error("Expected scrollPos to be 0 after Clear")
 	}
 	if !lv.autoScroll {
 		t.Error("Expected autoScroll to be true after Clear")
@@ -166,7 +162,7 @@ func TestLogViewer_IsAutoScrolling(t *testing.T) {
 	}
 
 	lv.ScrollUp()
-	// autoScroll should still be true if scrollPos is at 0
+	// autoScroll should still be true if at top (nothing to scroll up from)
 	if !lv.IsAutoScrolling() {
 		t.Error("Expected IsAutoScrolling to remain true when at top")
 	}

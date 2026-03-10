@@ -19,6 +19,9 @@ type QuitConfirmation struct {
 	width       int
 	height      int
 	selectedIdx int
+	message     string // Context-specific message
+	quitLabel   string // Label for the quit option
+	leaveOnly   bool   // If true, confirm leaves the view instead of quitting the app
 }
 
 // NewQuitConfirmation creates a new quit confirmation dialog.
@@ -59,6 +62,22 @@ func (q *QuitConfirmation) GetSelected() QuitConfirmOption {
 // Reset resets the dialog state to defaults.
 func (q *QuitConfirmation) Reset() {
 	q.selectedIdx = 1 // Default to Cancel
+	q.message = "A loop is currently running.\nExiting will stop the loop."
+	q.quitLabel = "Quit and stop loop"
+	q.leaveOnly = false
+}
+
+// SetContext sets context-specific message and quit label.
+// If leaveOnly is true, confirming returns to the previous view instead of quitting.
+func (q *QuitConfirmation) SetContext(message, quitLabel string, leaveOnly bool) {
+	q.message = message
+	q.quitLabel = quitLabel
+	q.leaveOnly = leaveOnly
+}
+
+// IsLeaveOnly returns whether this dialog is for leaving a view (not quitting).
+func (q *QuitConfirmation) IsLeaveOnly() bool {
+	return q.leaveOnly
 }
 
 // Render renders the quit confirmation dialog.
@@ -72,23 +91,28 @@ func (q *QuitConfirmation) Render() string {
 
 	// Title
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(WarningColor)
-	content.WriteString(titleStyle.Render("Quit Melliza?"))
+	title := "Quit Melliza?"
+	if q.leaveOnly {
+		title = "Leave PRD creation?"
+	}
+	content.WriteString(titleStyle.Render(title))
 	content.WriteString("\n")
 	content.WriteString(DividerStyle.Render(strings.Repeat("─", modalWidth-4)))
 	content.WriteString("\n\n")
 
 	// Message
 	messageStyle := lipgloss.NewStyle().Foreground(TextColor)
-	content.WriteString(messageStyle.Render("A Ralph loop is currently running."))
+	for _, line := range strings.Split(q.message, "\n") {
+		content.WriteString(messageStyle.Render(line))
+		content.WriteString("\n")
+	}
 	content.WriteString("\n")
-	content.WriteString(messageStyle.Render("Exiting will stop the loop."))
-	content.WriteString("\n\n")
 
 	// Options
 	optionStyle := lipgloss.NewStyle().Foreground(TextColor)
 	selectedStyle := lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
 
-	options := []string{"Quit and stop loop", "Cancel"}
+	options := []string{q.quitLabel, "Cancel"}
 	for i, opt := range options {
 		if i == q.selectedIdx {
 			content.WriteString(selectedStyle.Render("▶ " + opt))

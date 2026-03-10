@@ -449,7 +449,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case ViewSettings:
 				a.settingsOverlay.MoveUp()
 			default:
-				if a.selectedIndex > 0 {
+				if a.prd != nil && a.selectedIndex > 0 {
 					a.selectedIndex--
 					if a.selectedIndex < a.storiesScrollOffset {
 						a.storiesScrollOffset = a.selectedIndex
@@ -468,7 +468,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case ViewSettings:
 				a.settingsOverlay.MoveDown()
 			default:
-				if a.selectedIndex < len(a.prd.UserStories)-1 {
+				if a.prd != nil && a.selectedIndex < len(a.prd.UserStories)-1 {
 					a.selectedIndex++
 					a.adjustStoriesScroll()
 				}
@@ -779,7 +779,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if a.viewMode == ViewDiff {
 				a.diffViewer.ScrollUp()
 			} else {
-				if a.selectedIndex > 0 {
+				if a.prd != nil && a.selectedIndex > 0 {
 					a.selectedIndex--
 					a.detailsScrollOffset = 0
 					if a.selectedIndex < a.storiesScrollOffset {
@@ -793,7 +793,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if a.viewMode == ViewDiff {
 				a.diffViewer.ScrollDown()
 			} else {
-				if a.selectedIndex < len(a.prd.UserStories)-1 {
+				if a.prd != nil && a.selectedIndex < len(a.prd.UserStories)-1 {
 					a.selectedIndex++
 					a.detailsScrollOffset = 0
 					a.adjustStoriesScroll()
@@ -991,13 +991,23 @@ func (a *App) stopAllLoops() {
 	}
 }
 
-// tryQuit attempts to quit the app. If any loop is running, it shows the quit
-// confirmation dialog instead of quitting immediately.
+// tryQuit attempts to quit the app. If any loop is running or a PRD creation
+// chat is in progress, it shows the quit confirmation dialog instead of
+// quitting immediately.
 func (a App) tryQuit() (tea.Model, tea.Cmd) {
-	if a.manager != nil && a.manager.IsAnyRunning() {
+	inChat := a.viewMode == ViewPRDCreationChat && a.creationChat != nil
+	loopRunning := a.manager != nil && a.manager.IsAnyRunning()
+	if inChat || loopRunning {
 		a.previousViewMode = a.viewMode
 		a.viewMode = ViewQuitConfirm
 		a.quitConfirm.Reset()
+		if inChat {
+			a.quitConfirm.SetContext(
+				"PRD creation is in progress.\nUnsaved work will be lost.",
+				"Quit and discard",
+				false,
+			)
+		}
 		a.quitConfirm.SetSize(a.width, a.height)
 		return a, nil
 	}
@@ -1020,6 +1030,12 @@ func (a App) handleQuitConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "enter":
 		if a.quitConfirm.GetSelected() == QuitOptionQuit {
+			if a.quitConfirm.IsLeaveOnly() {
+				// Leave the view (e.g., discard creation chat), don't quit the app
+				a.creationChat = nil
+				a.viewMode = ViewDashboard
+				return a, nil
+			}
 			a.stopAllLoops()
 			a.stopWatcher()
 			return a, tea.Quit
@@ -1380,11 +1396,24 @@ func (a App) handleCreationChatKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "ctrl+c":
 		return a.tryQuit()
 	case "esc":
 		// Only allow navigating away if not in the middle of a request
 		if !a.creationChat.loading {
+			// Show confirmation if the chat has any messages
+			if len(a.creationChat.messages) > 0 {
+				a.previousViewMode = a.viewMode
+				a.viewMode = ViewQuitConfirm
+				a.quitConfirm.Reset()
+				a.quitConfirm.SetContext(
+					"PRD creation is in progress.\nUnsaved work will be lost.",
+					"Leave and discard",
+					true,
+				)
+				a.quitConfirm.SetSize(a.width, a.height)
+				return a, nil
+			}
 			a.viewMode = ViewDashboard
 			return a, nil
 		}
@@ -1446,7 +1475,7 @@ func (a *App) cleanupWorktreeSetup() {
 
 // finalizeStoryTiming records the duration of the currently tracked story.
 func (a *App) finalizeStoryTiming() {
-	if a.currentStoryID == "" {
+	if a.currentStoryID == "" || a.prd == nil {
 		return
 	}
 	duration := time.Since(a.currentStoryStart)
@@ -1470,6 +1499,9 @@ func (a *App) finalizeStoryTiming() {
 // showCompletionScreen configures and shows the completion screen for a PRD.
 // Returns a tea.Cmd if auto-actions need to be started, nil otherwise.
 func (a *App) showCompletionScreen(prdName string) tea.Cmd {
+	if a.prd == nil {
+		return nil
+	}
 	// Count completed stories
 	completed := 0
 	total := len(a.prd.UserStories)
@@ -2328,7 +2360,8 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	newPRD, err := prd.LoadPRD(prdPath)
 	if err != nil {
 		a.lastActivity = "Error loading PRD: " + err.Error()
-		a.viewMode = ViewDashboard
+		// Stay in picker — switching to dashboard with a nil prd would panic.
+		a.viewMode = ViewPicker
 		return a, nil
 	}
 
@@ -2445,7 +2478,7 @@ func (a *App) GetPRD() *prd.PRD {
 
 // GetSelectedStory returns the currently selected story.
 func (a *App) GetSelectedStory() *prd.UserStory {
-	if a.selectedIndex >= 0 && a.selectedIndex < len(a.prd.UserStories) {
+	if a.prd != nil && a.selectedIndex >= 0 && a.selectedIndex < len(a.prd.UserStories) {
 		return &a.prd.UserStories[a.selectedIndex]
 	}
 	return nil
@@ -2468,6 +2501,9 @@ func (a *App) storiesListHeight() int {
 
 // adjustStoriesScroll ensures the selected index is visible in the scroll window.
 func (a *App) adjustStoriesScroll() {
+	if a.prd == nil {
+		return
+	}
 	listHeight := a.storiesListHeight()
 	if listHeight <= 0 {
 		return
@@ -2494,6 +2530,9 @@ func (a *App) adjustStoriesScroll() {
 // markStoryInProgress clears any existing in-progress flags and marks the
 // given story as in-progress, then saves the PRD to disk.
 func (a *App) markStoryInProgress(storyID string) {
+	if a.prd == nil {
+		return
+	}
 	for i := range a.prd.UserStories {
 		a.prd.UserStories[i].InProgress = a.prd.UserStories[i].ID == storyID
 	}
@@ -2502,6 +2541,9 @@ func (a *App) markStoryInProgress(storyID string) {
 
 // clearInProgress clears all in-progress flags and saves the PRD to disk.
 func (a *App) clearInProgress() {
+	if a.prd == nil {
+		return
+	}
 	dirty := false
 	for i := range a.prd.UserStories {
 		if a.prd.UserStories[i].InProgress {
@@ -2516,6 +2558,9 @@ func (a *App) clearInProgress() {
 
 // selectStoryByID sets the selected index to the story with the given ID.
 func (a *App) selectStoryByID(storyID string) {
+	if a.prd == nil {
+		return
+	}
 	for i, story := range a.prd.UserStories {
 		if story.ID == storyID {
 			a.selectedIndex = i
@@ -2527,6 +2572,9 @@ func (a *App) selectStoryByID(storyID string) {
 
 // selectInProgressStory sets the selected index to the first in-progress story.
 func (a *App) selectInProgressStory() {
+	if a.prd == nil {
+		return
+	}
 	for i, story := range a.prd.UserStories {
 		if story.InProgress {
 			a.selectedIndex = i
@@ -2556,7 +2604,7 @@ func (a *App) GetElapsedTime() time.Duration {
 
 // GetCompletionPercentage returns the percentage of completed stories.
 func (a *App) GetCompletionPercentage() float64 {
-	if len(a.prd.UserStories) == 0 {
+	if a.prd == nil || len(a.prd.UserStories) == 0 {
 		return 100.0
 	}
 	var completed int

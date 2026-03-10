@@ -885,10 +885,7 @@ func (a *App) renderDiffHeader() string {
 	// Scroll position
 	var scrollInfo string
 	if len(a.diffViewer.lines) > 0 {
-		pct := 0
-		if a.diffViewer.maxOffset() > 0 {
-			pct = a.diffViewer.offset * 100 / a.diffViewer.maxOffset()
-		}
+		pct := int(a.diffViewer.ScrollPercent() * 100)
 		scrollInfo = SubtitleStyle.Render(fmt.Sprintf("%d lines  %d%%", len(a.diffViewer.lines), pct))
 	}
 
