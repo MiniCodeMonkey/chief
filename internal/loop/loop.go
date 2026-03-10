@@ -426,7 +426,7 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		}
 		// Build error with stderr context
 		stderrMu.Lock()
-		stderrContext := filterStderrForError(stderrLines)
+		stderrContext := FilterStderrForError(stderrLines)
 		stderrMu.Unlock()
 		if stderrContext != "" {
 			return fmt.Errorf("Gemini failed: %s", stderrContext)
@@ -437,31 +437,37 @@ func (l *Loop) runIteration(ctx context.Context) error {
 	return nil
 }
 
-// filterStderrForError extracts the most useful error info from stderr lines.
-func filterStderrForError(lines []string) string {
-	// Look for API errors, stack traces, or meaningful messages
-	// Skip noise like "YOLO mode" and "Server ... supports"
+// IsErrorLine returns true if a stderr line contains error-relevant content.
+func IsErrorLine(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "error") ||
+		strings.Contains(lower, "apikey") ||
+		strings.Contains(lower, "api_key") ||
+		strings.Contains(lower, "unavailable") ||
+		strings.Contains(lower, "forbidden") ||
+		strings.Contains(lower, "unauthorized") ||
+		strings.Contains(lower, "quota") ||
+		strings.Contains(lower, "rate limit") ||
+		strings.Contains(lower, "timeout") ||
+		strings.Contains(lower, "not found") ||
+		strings.Contains(lower, "permission") ||
+		strings.Contains(lower, "status:")
+}
+
+// FilterStderrForError extracts the most useful error info from stderr lines.
+func FilterStderrForError(lines []string) string {
 	var useful []string
 	for _, line := range lines {
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "error") ||
-			strings.Contains(lower, "apikey") ||
-			strings.Contains(lower, "unavailable") ||
-			strings.Contains(lower, "forbidden") ||
-			strings.Contains(lower, "unauthorized") ||
-			strings.Contains(lower, "quota") ||
-			strings.Contains(lower, "rate limit") ||
-			strings.Contains(lower, "timeout") ||
-			strings.Contains(lower, "status:") {
+		if IsErrorLine(line) {
 			useful = append(useful, line)
 		}
 	}
 	if len(useful) > 0 {
 		return strings.Join(useful, "\n")
 	}
-	// If no specific error found, return last few lines
-	if len(lines) > 3 {
-		lines = lines[len(lines)-3:]
+	// If no specific error found, return last few lines for context
+	if len(lines) > 5 {
+		lines = lines[len(lines)-5:]
 	}
 	return strings.Join(lines, "\n")
 }

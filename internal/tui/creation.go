@@ -17,6 +17,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/lvcoi/melliza/internal/loop"
 )
 
 // ChatMode distinguishes between creating a new PRD and editing an existing one.
@@ -332,7 +333,7 @@ func (c *PRDCreationChat) runGemini(prompt string, sessionID string) tea.Cmd {
 		if waitErr != nil {
 			// Fall back to stderr for error context
 			stderrMu.Lock()
-			errContext := filterChatStderrForError(stderrLines)
+			errContext := loop.FilterStderrForError(stderrLines)
 			stderrMu.Unlock()
 			if errContext != "" {
 				return ChatEventMsg{Type: "error", Content: fmt.Sprintf("Gemini failed: %s", errContext)}
@@ -526,34 +527,4 @@ func (c *PRDCreationChat) View() tea.View {
 	b.WriteString(lipgloss.NewStyle().Foreground(MutedColor).Padding(0, 1).Render(shortcuts))
 
 	return tea.NewView(lipgloss.NewStyle().Padding(1, 2).Render(b.String()))
-}
-
-// filterChatStderrForError extracts the most useful error info from stderr lines.
-func filterChatStderrForError(lines []string) string {
-	var useful []string
-	for _, line := range lines {
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "error") ||
-			strings.Contains(lower, "apikey") ||
-			strings.Contains(lower, "api_key") ||
-			strings.Contains(lower, "unavailable") ||
-			strings.Contains(lower, "forbidden") ||
-			strings.Contains(lower, "unauthorized") ||
-			strings.Contains(lower, "quota") ||
-			strings.Contains(lower, "rate limit") ||
-			strings.Contains(lower, "timeout") ||
-			strings.Contains(lower, "not found") ||
-			strings.Contains(lower, "permission") ||
-			strings.Contains(lower, "status:") {
-			useful = append(useful, line)
-		}
-	}
-	if len(useful) > 0 {
-		return strings.Join(useful, "\n")
-	}
-	// If no specific error found, return last few lines for context
-	if len(lines) > 5 {
-		lines = lines[len(lines)-5:]
-	}
-	return strings.Join(lines, "\n")
 }

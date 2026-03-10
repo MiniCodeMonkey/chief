@@ -150,9 +150,6 @@ func TestLogViewer_SetSize(t *testing.T) {
 	if lv.width != 100 {
 		t.Errorf("Expected width 100, got %d", lv.width)
 	}
-	if lv.height != 50 {
-		t.Errorf("Expected height 50, got %d", lv.height)
-	}
 }
 
 func TestLogViewer_IsAutoScrolling(t *testing.T) {

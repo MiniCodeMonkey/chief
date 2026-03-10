@@ -33,12 +33,12 @@ type LogEntry struct {
 type LogViewer struct {
 	vp               viewport.Model
 	entries          []LogEntry
-	height           int    // Viewport height (lines)
-	width            int    // Viewport width
-	autoScroll       bool   // Auto-scroll to bottom when new content arrives
-	lastReadFilePath string // Track the last Read tool's file path for syntax highlighting
-	totalLineCount   int    // Running total of all rendered lines (O(1) lookup)
-	verbose          bool   // Whether to show raw stdout/stderr events
+	contentBuf       strings.Builder // Running content buffer for viewport (avoids full rebuild on each AddEvent)
+	width            int             // Viewport width (used for line wrapping in renderEntry)
+	autoScroll       bool            // Auto-scroll to bottom when new content arrives
+	lastReadFilePath string          // Track the last Read tool's file path for syntax highlighting
+	totalLineCount   int             // Running total of all rendered lines (O(1) lookup)
+	verbose          bool            // Whether to show raw stdout/stderr events
 }
 
 // NewLogViewer creates a new log viewer.
@@ -97,7 +97,7 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 		// Always show these semantic events
 	case loop.EventStderr:
 		// Show error-bearing stderr lines even in non-verbose mode
-		if !l.verbose && !isErrorLine(event.Text) {
+		if !l.verbose && !loop.IsErrorLine(event.Text) {
 			return
 		}
 	case loop.EventStdout:
@@ -116,9 +116,9 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 	}
 	l.entries = append(l.entries, entry)
 
-	// Sync content to viewport and auto-scroll if enabled
-	l.syncViewportContent()
-	if l.autoScroll && l.height > 0 {
+	// Append new entry to viewport content and auto-scroll if enabled
+	l.appendEntryToViewport(entry)
+	if l.autoScroll {
 		l.vp.GotoBottom()
 	}
 }
@@ -127,7 +127,6 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 func (l *LogViewer) SetSize(width, height int) {
 	widthChanged := l.width != width
 	l.width = width
-	l.height = height
 	l.vp.SetWidth(width)
 	l.vp.SetHeight(height)
 
@@ -151,20 +150,31 @@ func (l *LogViewer) rebuildCache() {
 	}
 }
 
-// syncViewportContent flattens all cached lines into the viewport.
+// syncViewportContent rebuilds the entire content buffer from all entries.
+// Used after width changes that invalidate cached line wrapping.
 func (l *LogViewer) syncViewportContent() {
-	var b strings.Builder
-	first := true
+	l.contentBuf.Reset()
 	for _, entry := range l.entries {
 		for _, line := range entry.cachedLines {
-			if !first {
-				b.WriteByte('\n')
+			if l.contentBuf.Len() > 0 {
+				l.contentBuf.WriteByte('\n')
 			}
-			b.WriteString(line)
-			first = false
+			l.contentBuf.WriteString(line)
 		}
 	}
-	l.vp.SetContent(b.String())
+	l.vp.SetContent(l.contentBuf.String())
+}
+
+// appendEntryToViewport incrementally appends a single entry's cached lines
+// to the content buffer, avoiding a full rebuild on every AddEvent.
+func (l *LogViewer) appendEntryToViewport(entry LogEntry) {
+	for _, line := range entry.cachedLines {
+		if l.contentBuf.Len() > 0 {
+			l.contentBuf.WriteByte('\n')
+		}
+		l.contentBuf.WriteString(line)
+	}
+	l.vp.SetContent(l.contentBuf.String())
 }
 
 // ScrollUp scrolls up by one line.
@@ -293,6 +303,7 @@ func (l *LogViewer) Clear() {
 	l.entries = make([]LogEntry, 0)
 	l.autoScroll = true
 	l.totalLineCount = 0
+	l.contentBuf.Reset()
 	l.vp.SetContent("")
 	l.vp.GotoTop()
 }
@@ -318,20 +329,6 @@ func (l *LogViewer) Render() string {
 	}
 
 	return content
-}
-
-// isErrorLine returns true if a stderr line contains error-relevant content.
-func isErrorLine(text string) bool {
-	lower := strings.ToLower(text)
-	return strings.Contains(lower, "error") ||
-		strings.Contains(lower, "unavailable") ||
-		strings.Contains(lower, "forbidden") ||
-		strings.Contains(lower, "unauthorized") ||
-		strings.Contains(lower, "quota") ||
-		strings.Contains(lower, "rate limit") ||
-		strings.Contains(lower, "timeout") ||
-		strings.Contains(lower, "apikey") ||
-		strings.Contains(lower, "status:")
 }
 
 // renderEntry renders a single log entry as lines.
