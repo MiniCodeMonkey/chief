@@ -180,7 +180,7 @@ func (l *LogViewer) appendEntryToViewport(entry LogEntry) {
 // ScrollUp scrolls up by one line.
 func (l *LogViewer) ScrollUp() {
 	l.vp.ScrollUp(1)
-	if !l.vp.AtTop() {
+	if !l.vp.AtBottom() {
 		l.autoScroll = false
 	}
 }

@@ -34,12 +34,17 @@ func NewDiffViewer(baseDir string) *DiffViewer {
 	}
 }
 
-// SetSize sets the viewport dimensions.
+// SetSize sets the viewport dimensions. Re-renders content if width changed.
 func (d *DiffViewer) SetSize(width, height int) {
+	oldWidth := d.width
 	d.width = width
 	d.height = height
 	d.vp.SetWidth(width)
 	d.vp.SetHeight(height)
+
+	if width != oldWidth && d.loaded && len(d.lines) > 0 {
+		d.vp.SetContent(d.renderStyledContent())
+	}
 }
 
 // SetBaseDir updates the base directory used for loading diffs.
@@ -129,8 +134,11 @@ func (d *DiffViewer) renderStyledContent() string {
 		styled := d.styleLine(line)
 		// Truncate to width
 		if d.width > 0 && lipgloss.Width(styled) > d.width {
-			if len(line) > d.width-3 {
-				line = line[:d.width-3] + "..."
+			cutoff := d.width - 3
+			if cutoff > 0 && len(line) > cutoff {
+				line = line[:cutoff] + "..."
+			} else if d.width > 0 && len(line) > d.width {
+				line = line[:d.width]
 			}
 			styled = d.styleLine(line)
 		}
