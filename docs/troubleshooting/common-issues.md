@@ -44,6 +44,13 @@ Error: OpenCode CLI not found in PATH. Install it or set agent.cliPath in .chief
     cliPath: /usr/local/bin/opencode
   ```
   Verify with `opencode --version` (or your `cliPath`).
+- **Cursor:** Install [Cursor CLI](https://cursor.com/docs/cli/overview) (`curl https://cursor.com/install -fsS | bash`) and ensure `agent` is in PATH, or set the path in config:
+  ```yaml
+  agent:
+    provider: cursor
+    cliPath: /path/to/agent
+  ```
+  Run `agent login`. Verify with `agent --version` (or your `cliPath`).
 
 ## Permission Denied
 
@@ -63,9 +70,9 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 **Solution:**
 
-1. Check the agent log for errors (the log file matches your agent: `claude.log`, `codex.log`, or `opencode.log`):
+1. Check the agent log for errors (the log file matches your agent: `claude.log`, `codex.log`, `opencode.log`, or `cursor.log`):
    ```bash
-   tail -100 .chief/prds/your-prd/claude.log  # or codex.log / opencode.log
+   tail -100 .chief/prds/your-prd/claude.log  # or codex.log / opencode.log / cursor.log
    ```
 
 2. Manually mark story complete if appropriate:
@@ -89,7 +96,7 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 1. Check the agent log for what the agent is doing:
    ```bash
-   tail -f .chief/prds/your-prd/claude.log  # or codex.log / opencode.log
+   tail -f .chief/prds/your-prd/claude.log  # or codex.log / opencode.log / cursor.log
    ```
 
 2. Simplify the current story's acceptance criteria
@@ -118,7 +125,7 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 2. Or investigate why it's taking so many iterations:
    - Story too complex? Split it
-   - Stuck in a loop? Check the agent log (`claude.log`, `codex.log`, or `opencode.log`)
+   - Stuck in a loop? Check the agent log (`claude.log`, `codex.log`, `opencode.log`, or `cursor.log`)
    - Unclear acceptance criteria? Clarify them
 
 ## "No PRD Found"
@@ -260,4 +267,4 @@ If none of these solutions help:
 3. Open a new issue with:
    - Chief version (`chief --version`)
    - Your `prd.json` (sanitized)
-   - Relevant agent log excerpts (e.g. `claude.log`, `codex.log`, or `opencode.log`)
+   - Relevant agent log excerpts (e.g. `claude.log`, `codex.log`, `opencode.log`, or `cursor.log`)

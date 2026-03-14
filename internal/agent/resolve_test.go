@@ -136,6 +136,20 @@ func TestResolve_opencode(t *testing.T) {
 	}
 }
 
+func TestResolve_cursor(t *testing.T) {
+	got := mustResolve(t, "cursor", "", nil)
+	if got.Name() != "Cursor" {
+		t.Errorf("Resolve(cursor) name = %q, want Cursor", got.Name())
+	}
+	if got.CLIPath() != "agent" {
+		t.Errorf("Resolve(cursor) CLIPath = %q, want agent", got.CLIPath())
+	}
+	got = mustResolve(t, "cursor", "/usr/local/bin/agent", nil)
+	if got.CLIPath() != "/usr/local/bin/agent" {
+		t.Errorf("Resolve(cursor, path) CLIPath = %q, want /usr/local/bin/agent", got.CLIPath())
+	}
+}
+
 func TestResolve_unknownProvider(t *testing.T) {
 	_, err := Resolve("typo", "", nil)
 	if err == nil {

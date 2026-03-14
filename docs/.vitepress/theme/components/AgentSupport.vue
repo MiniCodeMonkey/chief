@@ -3,6 +3,7 @@ const agents = [
   { name: 'Claude Code', description: 'By Anthropic' },
   { name: 'Codex CLI', description: 'By OpenAI' },
   { name: 'OpenCode', description: 'Open source' },
+  { name: 'Cursor CLI', description: 'By Cursor' },
 ]
 </script>
 

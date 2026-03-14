@@ -14,7 +14,7 @@ Chief stores project-level settings in `.chief/config.yaml`. This file is create
 
 ```yaml
 agent:
-  provider: claude   # or "codex" or "opencode"
+  provider: claude   # or "codex", "opencode", or "cursor"
   cliPath: ""        # optional path to CLI binary
 worktree:
   setup: "npm install"
@@ -27,7 +27,7 @@ onComplete:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, or `opencode` |
+| `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, `opencode`, or `cursor` |
 | `agent.cliPath` | string | `""` | Optional path to the agent binary (e.g. `/usr/local/bin/opencode`). If empty, Chief uses the provider name from PATH. |
 | `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
 | `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
@@ -88,7 +88,7 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--agent <provider>` | Agent CLI to use: `claude`, `codex`, or `opencode` | From config / env / `claude` |
+| `--agent <provider>` | Agent CLI to use: `claude`, `codex`, `opencode`, or `cursor` | From config / env / `claude` |
 | `--agent-path <path>` | Custom path to the agent CLI binary | From config / env |
 | `--max-iterations <n>`, `-n` | Loop iteration limit | Dynamic |
 | `--no-retry` | Disable auto-retry on agent crashes | `false` |
@@ -102,7 +102,7 @@ When `--max-iterations` is not specified, Chief calculates a dynamic limit based
 
 ## Agent
 
-Chief can use **Claude Code** (default), **Codex CLI**, or **OpenCode CLI** as the agent. Choose via:
+Chief can use **Claude Code** (default), **Codex CLI**, **OpenCode CLI**, or **Cursor CLI** as the agent. Choose via:
 
 - **Config:** `agent.provider: opencode` and optionally `agent.cliPath: /path/to/opencode` in `.chief/config.yaml`
 - **Environment:** `CHIEF_AGENT=opencode`, `CHIEF_AGENT_PATH=/path/to/opencode`
@@ -121,6 +121,15 @@ claude config set model claude-3-opus-20240229
 ```
 
 See [Claude Code documentation](https://github.com/anthropics/claude-code) for details.
+
+When using Cursor CLI:
+
+```bash
+# Authentication (or set CURSOR_API_KEY for headless)
+agent login
+```
+
+Chief runs Cursor in headless mode with `--trust` and `--force` so it can modify files without prompts. See [Cursor CLI documentation](https://cursor.com/docs/cli/overview) for details.
 
 ## Permission Handling
 

@@ -18,6 +18,7 @@ Before you begin, make sure you have:
   - [Claude Code](https://github.com/anthropics/claude-code) (default)
   - [Codex CLI](https://developers.openai.com/codex/cli/reference)
   - [OpenCode CLI](https://opencode.ai/docs/)
+  - [Cursor CLI](https://cursor.com/docs/cli/overview)
 - A project you want to work on (or create a new one)
 
 ::: tip Verify your agent CLI is working
@@ -25,6 +26,7 @@ Run the version command for your agent to confirm it's installed:
 - `claude --version` (Claude Code)
 - `codex --version` (Codex)
 - `opencode --version` (OpenCode)
+- `agent --version` (Cursor CLI)
 :::
 
 ## Step 1: Install Chief

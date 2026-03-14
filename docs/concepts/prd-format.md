@@ -25,7 +25,7 @@ Each PRD lives in its own subdirectory inside `.chief/prds/`:
 - **`prd.md`** — Written by you. Provides context, background, and guidance.
 - **`prd.json`** — The source of truth. Chief reads, updates, and drives execution from this file.
 - **`progress.md`** — Written by the agent. Tracks what was done, what changed, and what was learned.
-- **`claude.log`** (or `codex.log` / `opencode.log`) — Written by Chief. Raw output from the agent for debugging.
+- **`claude.log`** (or `codex.log` / `opencode.log` / `cursor.log`) — Written by Chief. Raw output from the agent for debugging.
 
 ## prd.md — The Human-Readable File
 
