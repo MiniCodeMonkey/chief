@@ -16,9 +16,9 @@ type Config struct {
 	Agent      AgentConfig      `yaml:"agent"`
 }
 
-// AgentConfig holds agent CLI settings (Claude, Codex, or OpenCode).
+// AgentConfig holds agent CLI settings (Claude, Codex, OpenCode, or Cursor).
 type AgentConfig struct {
-	Provider string `yaml:"provider"` // "claude" (default) | "codex" | "opencode"
+	Provider string `yaml:"provider"` // "claude" (default) | "codex" | "opencode" | "cursor"
 	CLIPath  string `yaml:"cliPath"`  // optional custom path to CLI binary
 }
 

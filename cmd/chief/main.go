@@ -28,7 +28,7 @@ type TUIOptions struct {
 	Merge         bool
 	Force         bool
 	NoRetry       bool
-	Agent         string // --agent claude|codex
+	Agent         string // --agent claude|codex|opencode|cursor
 	AgentPath     string // --agent-path
 }
 
@@ -134,7 +134,7 @@ func parseAgentFlags(args []string, startIdx int) (agentName, agentPath string, 
 				i++
 				agentName = args[i]
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, or opencode)\n")
+				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, opencode, or cursor)\n")
 				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent="):
@@ -530,7 +530,7 @@ Commands:
   help                      Show this help message
 
 Global Options:
-  --agent <provider>        Agent CLI to use: claude (default), codex, or opencode
+  --agent <provider>        Agent CLI to use: claude (default), codex, opencode, or cursor
   --agent-path <path>       Custom path to agent CLI binary
   --max-iterations N, -n N  Set maximum iterations (default: dynamic)
   --no-retry                Disable auto-retry on agent crashes
@@ -557,6 +557,7 @@ Examples:
                             Launch auth PRD with 5 max iterations
   chief --verbose           Launch with raw agent output visible
   chief --agent codex       Use Codex CLI instead of Claude
+  chief --agent cursor      Use Cursor CLI as agent
   chief new                 Create PRD in .chief/prds/main/
   chief new auth            Create PRD in .chief/prds/auth/
   chief new auth "JWT authentication for REST API"
