@@ -68,13 +68,9 @@ Chief automatically configures the agent for autonomous operation by disabling p
    tail -100 .chief/prds/your-prd/claude.log  # or codex.log / opencode.log
    ```
 
-2. Manually mark story complete if appropriate:
-   ```json
-   {
-     "id": "US-001",
-     "passes": true,
-     "inProgress": false
-   }
+2. Manually mark story complete if appropriate by editing `prd.md`:
+   ```markdown
+   **Status:** done
    ```
 
 3. Restart Chief to pick up where it left off
@@ -144,27 +140,26 @@ Chief automatically configures the agent for autonomous operation by disabling p
    .chief/
    └── prds/
        └── my-feature/
-           ├── prd.md
-           └── prd.json
+           └── prd.md
    ```
 
-## Invalid JSON
+## Invalid PRD Format
 
-**Symptom:** Error parsing `prd.json`.
+**Symptom:** Error parsing `prd.md`.
 
-**Cause:** Syntax error in the JSON file.
+**Cause:** The markdown structure doesn't match what Chief expects.
 
 **Solution:**
 
-1. Validate your JSON:
-   ```bash
-   cat .chief/prds/your-prd/prd.json | jq .
+1. Verify your story headings use the correct format:
+   ```markdown
+   ### US-001: Story Title
    ```
 
 2. Common issues:
-   - Trailing commas (not allowed in JSON)
-   - Missing quotes around keys
-   - Unescaped characters in strings
+   - Missing colon between ID and title in heading
+   - Invalid `**Status:**` value (must be `done`, `in-progress`, or `todo`)
+   - Non-numeric `**Priority:**` value
 
 ## Worktree Setup Failures
 
@@ -259,5 +254,5 @@ If none of these solutions help:
 2. Search [GitHub Issues](https://github.com/minicodemonkey/chief/issues)
 3. Open a new issue with:
    - Chief version (`chief --version`)
-   - Your `prd.json` (sanitized)
+   - Your `prd.md` (sanitized)
    - Relevant agent log excerpts (e.g. `claude.log`, `codex.log`, or `opencode.log`)

@@ -43,11 +43,11 @@ chief
 
 ### How do I resume after stopping?
 
-Run `chief` again and press `s` to start. It reads state from `prd.json` and continues where it left off.
+Run `chief` again and press `s` to start. It reads state from `prd.md` and continues where it left off.
 
 ### Can I edit the PRD while Chief is running?
 
-Yes, but be careful. Chief re-reads `prd.json` between iterations. Edits to the current story might cause confusion.
+Yes, but be careful. Chief re-reads `prd.md` between iterations. Edits to the current story might cause confusion.
 
 Best practice: pause Chief with `p` (or stop with `x`), edit, then press `s` to resume.
 
@@ -65,14 +65,12 @@ Run with `chief feature-a` or use the TUI: press `n` to open the PRD picker, or 
 
 ### How do I skip a story?
 
-Mark it as passed manually:
+Mark it as done manually in `prd.md`:
 
-```json
-{
-  "id": "US-003",
-  "passes": true,
-  "inProgress": false
-}
+```markdown
+### US-003: Story Title
+
+**Status:** done
 ```
 
 Or remove it from the PRD entirely.

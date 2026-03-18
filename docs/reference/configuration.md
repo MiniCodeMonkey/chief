@@ -93,8 +93,6 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 | `--max-iterations <n>`, `-n` | Loop iteration limit | Dynamic |
 | `--no-retry` | Disable auto-retry on agent crashes | `false` |
 | `--verbose` | Show raw agent output in log | `false` |
-| `--merge` | Auto-merge progress on conversion conflicts | `false` |
-| `--force` | Auto-overwrite on conversion conflicts | `false` |
 
 Agent resolution order: `--agent` / `--agent-path` → `CHIEF_AGENT` / `CHIEF_AGENT_PATH` env vars → `agent.provider` / `agent.cliPath` in `.chief/config.yaml` → default `claude`.
 

@@ -18,8 +18,7 @@ your-project/
     ├── config.yaml             # Project settings (worktree, auto-push, PR)
     ├── prds/
     │   └── my-feature/
-    │       ├── prd.md          # Human-readable PRD (you write this)
-    │       ├── prd.json        # Machine-readable PRD (Chief reads/writes)
+    │       ├── prd.md          # Structured PRD (you write, Chief reads/updates)
     │       ├── progress.md     # Progress log (Chief appends after each story)
     │       └── claude.log      # Raw agent output (for debugging)
     └── worktrees/              # Isolated checkouts for parallel PRDs
@@ -45,42 +44,21 @@ Chief uses this folder as the working context for the entire run. All reads and 
 
 ### `prd.md`
 
-The human-readable product requirements document. You write this file (or generate it with `chief new`). It contains context, background, technical notes, and anything else that helps the agent understand what to build.
+The structured product requirements document. You write this file (or generate it with `chief new`). It contains freeform context at the top (background, technical notes, design guidance) and structured user stories that Chief parses and updates.
 
-This file is included in the prompt sent to the agent at the start of each iteration. Write it as if you're briefing a senior developer who's new to the project — the more context you provide, the better the output.
+Chief reads this file at the start of each iteration to determine which story to work on, and updates status fields after completing a story. The agent also reads the freeform context to understand what you're building and how.
 
-```markdown
-# My Feature
+Key story fields (parsed from markdown):
 
-## Background
-We need to add user authentication to our API...
+| Field | Format | Description |
+|-------|--------|-------------|
+| ID + Title | `### US-001: Story Title` | Story heading parsed by Chief |
+| Status | `**Status:** done\|in-progress\|todo` | Completion state, updated by Chief |
+| Priority | `**Priority:** N` | Execution order (lower = higher priority) |
+| Description | `**Description:** ...` | Story description |
+| Acceptance Criteria | `- [ ]` / `- [x]` | Checkbox items tracked by Chief |
 
-## Technical Notes
-- We use Express.js with TypeScript
-- Database is PostgreSQL with Prisma ORM
-- Follow existing middleware patterns in `src/middleware/`
-```
-
-### `prd.json`
-
-The structured, machine-readable PRD. This is where user stories, their priorities, and their completion status live. Chief reads this file at the start of each iteration to determine which story to work on, and writes to it after completing a story.
-
-Key fields:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `project` | string | Project name |
-| `description` | string | Brief project description |
-| `userStories` | array | List of user stories |
-| `userStories[].id` | string | Story identifier (e.g., `US-001`) |
-| `userStories[].title` | string | Short story title |
-| `userStories[].description` | string | User story in "As a... I want... so that..." format |
-| `userStories[].acceptanceCriteria` | array | List of criteria that must be met |
-| `userStories[].priority` | number | Execution order (lower = higher priority) |
-| `userStories[].passes` | boolean | Whether the story is complete |
-| `userStories[].inProgress` | boolean | Whether Chief is currently working on this story |
-
-Chief selects the next story by finding the highest-priority story (lowest `priority` number) where `passes` is `false`. See the [PRD Format](/concepts/prd-format) reference for full details.
+Chief selects the next story by finding the highest-priority story (lowest `**Priority:**` number) without `**Status:** done`. See the [PRD Format](/concepts/prd-format) reference for full details.
 
 ### `progress.md`
 
@@ -184,15 +162,12 @@ A single project can have multiple PRDs, each tracking a separate feature or ini
 ├── prds/
 │   ├── auth-system/
 │   │   ├── prd.md
-│   │   ├── prd.json
 │   │   └── progress.md
 │   ├── payment-integration/
 │   │   ├── prd.md
-│   │   ├── prd.json
 │   │   └── progress.md
 │   └── admin-dashboard/
 │       ├── prd.md
-│       ├── prd.json
 │       └── progress.md
 └── worktrees/
     ├── auth-system/
@@ -244,8 +219,7 @@ If you want collaborators to see progress and continue where you left off, commi
 ```
 
 This shares:
-- `prd.md`: Your requirements, the source of truth for what to build
-- `prd.json`: Story state and progress, so collaborators see what's done
+- `prd.md`: Your requirements and story state — the source of truth for what to build and what's done
 - `progress.md`: Implementation history and learnings, valuable project context
 
 The `claude.log` files are large, regenerated each run, and only useful for debugging.
