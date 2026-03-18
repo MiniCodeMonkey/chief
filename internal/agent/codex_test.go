@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/minicodemonkey/chief/internal/loop"
@@ -58,60 +57,6 @@ func TestCodexProvider_LoopCommand(t *testing.T) {
 	}
 	// Stdin should contain the prompt
 	// We can't easily read cmd.Stdin without running; just check it's non-nil (done above)
-}
-
-func TestCodexProvider_ConvertCommand(t *testing.T) {
-	p := NewCodexProvider("codex")
-	cmd, mode, outPath, err := p.ConvertCommand("/prd/dir", "convert prompt")
-	if err != nil {
-		t.Fatalf("ConvertCommand unexpected error: %v", err)
-	}
-	if mode != loop.OutputFromFile {
-		t.Errorf("ConvertCommand mode = %v, want OutputFromFile", mode)
-	}
-	if outPath == "" {
-		t.Error("ConvertCommand outPath should be non-empty temp file")
-	}
-	if !strings.Contains(cmd.Path, "codex") {
-		t.Errorf("ConvertCommand Path = %q", cmd.Path)
-	}
-	foundO := false
-	for i, a := range cmd.Args {
-		if a == "-o" && i+1 < len(cmd.Args) && cmd.Args[i+1] == outPath {
-			foundO = true
-			break
-		}
-	}
-	if !foundO {
-		t.Errorf("ConvertCommand should have -o %q in args: %v", outPath, cmd.Args)
-	}
-	if cmd.Dir != "/prd/dir" {
-		t.Errorf("ConvertCommand Dir = %q, want /prd/dir", cmd.Dir)
-	}
-}
-
-func TestCodexProvider_FixJSONCommand(t *testing.T) {
-	p := NewCodexProvider("codex")
-	cmd, mode, outPath, err := p.FixJSONCommand("fix prompt")
-	if err != nil {
-		t.Fatalf("FixJSONCommand unexpected error: %v", err)
-	}
-	if mode != loop.OutputFromFile {
-		t.Errorf("FixJSONCommand mode = %v, want OutputFromFile", mode)
-	}
-	if outPath == "" {
-		t.Error("FixJSONCommand outPath should be non-empty temp file")
-	}
-	foundO := false
-	for i, a := range cmd.Args {
-		if a == "-o" && i+1 < len(cmd.Args) && cmd.Args[i+1] == outPath {
-			foundO = true
-			break
-		}
-	}
-	if !foundO {
-		t.Errorf("FixJSONCommand should have -o %q in args: %v", outPath, cmd.Args)
-	}
 }
 
 func TestCodexProvider_InteractiveCommand(t *testing.T) {

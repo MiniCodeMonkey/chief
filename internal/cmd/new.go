@@ -75,11 +75,12 @@ func RunNew(opts NewOptions) error {
 		return nil
 	}
 
-	fmt.Println("\nPRD created successfully!")
-
-	// Run conversion from prd.md to prd.json
-	if err := RunConvertWithOptions(ConvertOptions{PRDDir: prdDir, Provider: opts.Provider}); err != nil {
-		return fmt.Errorf("conversion failed: %w", err)
+	// Validate the created prd.md can be parsed
+	if _, err := prd.ParseMarkdownPRD(prdMdPath); err != nil {
+		fmt.Printf("\nWarning: prd.md was created but could not be parsed: %v\n", err)
+		fmt.Println("You may need to edit it to match the expected format.")
+	} else {
+		fmt.Println("\nPRD created successfully!")
 	}
 
 	fmt.Printf("\nYour PRD is ready! Run 'chief' or 'chief %s' to start working on it.\n", opts.Name)
@@ -96,46 +97,6 @@ func runInteractiveAgent(provider loop.Provider, workDir, prompt string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
-}
-
-// ConvertOptions contains configuration for the conversion command.
-type ConvertOptions struct {
-	PRDDir   string        // PRD directory containing prd.md
-	Merge    bool          // Auto-merge without prompting on conversion conflicts
-	Force    bool          // Auto-overwrite without prompting on conversion conflicts
-	Provider loop.Provider // Agent CLI provider for conversion
-}
-
-// RunConvert converts prd.md to prd.json using the given agent provider.
-func RunConvert(prdDir string, provider loop.Provider) error {
-	return RunConvertWithOptions(ConvertOptions{PRDDir: prdDir, Provider: provider})
-}
-
-// RunConvertWithOptions converts prd.md to prd.json using the configured agent with options.
-func RunConvertWithOptions(opts ConvertOptions) error {
-	if opts.Provider == nil {
-		return fmt.Errorf("conversion requires Provider to be set")
-	}
-	provider := opts.Provider
-	return prd.Convert(prd.ConvertOptions{
-		PRDDir: opts.PRDDir,
-		Merge:  opts.Merge,
-		Force:  opts.Force,
-		RunConversion: func(absPRDDir, idPrefix string) (string, error) {
-			raw, err := runConversionWithProvider(provider, absPRDDir)
-			if err != nil {
-				return "", err
-			}
-			return provider.CleanOutput(raw), nil
-		},
-		RunFixJSON: func(prompt string) (string, error) {
-			raw, err := runFixJSONWithProvider(provider, prompt)
-			if err != nil {
-				return "", err
-			}
-			return provider.CleanOutput(raw), nil
-		},
-	})
 }
 
 // isValidPRDName checks if the name contains only valid characters.

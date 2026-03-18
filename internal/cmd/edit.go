@@ -7,14 +7,13 @@ import (
 
 	"github.com/minicodemonkey/chief/embed"
 	"github.com/minicodemonkey/chief/internal/loop"
+	"github.com/minicodemonkey/chief/internal/prd"
 )
 
 // EditOptions contains configuration for the edit command.
 type EditOptions struct {
 	Name     string        // PRD name (default: "main")
 	BaseDir  string        // Base directory for .chief/prds/ (default: current directory)
-	Merge    bool          // Auto-merge without prompting on conversion conflicts
-	Force    bool          // Auto-overwrite without prompting on conversion conflicts
 	Provider loop.Provider // Agent CLI provider (Claude or Codex)
 }
 
@@ -63,15 +62,9 @@ func RunEdit(opts EditOptions) error {
 
 	fmt.Println("\nPRD editing complete!")
 
-	// Run conversion from prd.md to prd.json with progress protection
-	convertOpts := ConvertOptions{
-		PRDDir:   prdDir,
-		Merge:    opts.Merge,
-		Force:    opts.Force,
-		Provider: opts.Provider,
-	}
-	if err := RunConvertWithOptions(convertOpts); err != nil {
-		return fmt.Errorf("conversion failed: %w", err)
+	// Validate the edited prd.md can be parsed
+	if _, err := prd.ParseMarkdownPRD(prdMdPath); err != nil {
+		fmt.Printf("Warning: prd.md could not be parsed: %v\n", err)
 	}
 
 	fmt.Printf("\nYour PRD is updated! Run 'chief' or 'chief %s' to continue working on it.\n", opts.Name)

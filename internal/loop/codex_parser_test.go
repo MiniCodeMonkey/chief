@@ -54,31 +54,25 @@ func TestParseLineCodex_commandExecutionCompleted(t *testing.T) {
 	}
 }
 
-func TestParseLineCodex_agentMessageWithComplete(t *testing.T) {
-	line := `{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Done. <chief-complete/>"}}`
+func TestParseLineCodex_agentMessageWithChiefDoneTag(t *testing.T) {
+	line := `{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Done. <chief-done/>"}}`
 	ev := ParseLineCodex(line)
 	if ev == nil {
 		t.Fatal("expected event, got nil")
 	}
-	if ev.Type != EventComplete {
-		t.Errorf("expected EventComplete, got %v", ev.Type)
-	}
-	if ev.Text != "Done. <chief-complete/>" {
-		t.Errorf("unexpected Text: %q", ev.Text)
+	if ev.Type != EventStoryDone {
+		t.Errorf("expected EventStoryDone, got %v", ev.Type)
 	}
 }
 
-func TestParseLineCodex_agentMessageWithRalphStatus(t *testing.T) {
-	line := `{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"Working on <ralph-status>US-056</ralph-status> now."}}`
+func TestParseLineCodex_agentMessageWithChiefDone(t *testing.T) {
+	line := `{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"All criteria pass. <chief-done/>"}}`
 	ev := ParseLineCodex(line)
 	if ev == nil {
 		t.Fatal("expected event, got nil")
 	}
-	if ev.Type != EventStoryStarted {
-		t.Errorf("expected EventStoryStarted, got %v", ev.Type)
-	}
-	if ev.StoryID != "US-056" {
-		t.Errorf("expected StoryID US-056, got %q", ev.StoryID)
+	if ev.Type != EventStoryDone {
+		t.Errorf("expected EventStoryDone, got %v", ev.Type)
 	}
 }
 

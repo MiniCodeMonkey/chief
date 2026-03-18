@@ -9,26 +9,22 @@ import (
 )
 
 func TestLoadPRD(t *testing.T) {
-	// Create a temp file with valid PRD JSON
+	// Create a temp file with valid PRD markdown
 	tmpDir := t.TempDir()
-	prdPath := filepath.Join(tmpDir, "prd.json")
+	prdPath := filepath.Join(tmpDir, "prd.md")
 
-	validJSON := `{
-		"project": "Test Project",
-		"description": "A test PRD",
-		"userStories": [
-			{
-				"id": "US-001",
-				"title": "First Story",
-				"description": "Test description",
-				"acceptanceCriteria": ["AC1", "AC2"],
-				"priority": 1,
-				"passes": false
-			}
-		]
-	}`
+	validMd := `# Test Project
 
-	if err := os.WriteFile(prdPath, []byte(validJSON), 0644); err != nil {
+A test PRD
+
+### US-001: First Story
+**Description:** Test description
+
+- [ ] AC1
+- [ ] AC2
+`
+
+	if err := os.WriteFile(prdPath, []byte(validMd), 0644); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
@@ -52,63 +48,9 @@ func TestLoadPRD(t *testing.T) {
 }
 
 func TestLoadPRD_FileNotFound(t *testing.T) {
-	_, err := LoadPRD("/nonexistent/path/prd.json")
+	_, err := LoadPRD("/nonexistent/path/prd.md")
 	if err == nil {
 		t.Error("expected error for nonexistent file, got nil")
-	}
-}
-
-func TestLoadPRD_InvalidJSON(t *testing.T) {
-	tmpDir := t.TempDir()
-	prdPath := filepath.Join(tmpDir, "prd.json")
-
-	if err := os.WriteFile(prdPath, []byte("not valid json"), 0644); err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
-
-	_, err := LoadPRD(prdPath)
-	if err == nil {
-		t.Error("expected error for invalid JSON, got nil")
-	}
-}
-
-func TestPRD_Save(t *testing.T) {
-	tmpDir := t.TempDir()
-	prdPath := filepath.Join(tmpDir, "prd.json")
-
-	p := &PRD{
-		Project:     "Saved Project",
-		Description: "A saved PRD",
-		UserStories: []UserStory{
-			{
-				ID:                 "US-001",
-				Title:              "Test Story",
-				Description:        "Test",
-				AcceptanceCriteria: []string{"AC1"},
-				Priority:           1,
-				Passes:             true,
-			},
-		},
-	}
-
-	if err := p.Save(prdPath); err != nil {
-		t.Fatalf("Save failed: %v", err)
-	}
-
-	// Verify by loading it back
-	loaded, err := LoadPRD(prdPath)
-	if err != nil {
-		t.Fatalf("LoadPRD after Save failed: %v", err)
-	}
-
-	if loaded.Project != p.Project {
-		t.Errorf("expected project '%s', got '%s'", p.Project, loaded.Project)
-	}
-	if len(loaded.UserStories) != 1 {
-		t.Errorf("expected 1 user story, got %d", len(loaded.UserStories))
-	}
-	if !loaded.UserStories[0].Passes {
-		t.Error("expected story to have passes: true")
 	}
 }
 
@@ -238,7 +180,6 @@ func TestPRD_NextStory_SkipsCompleted(t *testing.T) {
 }
 
 func TestPRD_NextStory_InterruptedTakesPrecedence(t *testing.T) {
-	// Even if there's a lower priority story, in-progress takes precedence
 	p := &PRD{
 		Project: "Test",
 		UserStories: []UserStory{
@@ -275,37 +216,6 @@ func TestUserStory_Fields(t *testing.T) {
 	}
 }
 
-func TestPRD_Save_PreservesInProgress(t *testing.T) {
-	tmpDir := t.TempDir()
-	prdPath := filepath.Join(tmpDir, "prd.json")
-
-	p := &PRD{
-		Project: "Test",
-		UserStories: []UserStory{
-			{
-				ID:         "US-001",
-				Title:      "Story",
-				Priority:   1,
-				Passes:     false,
-				InProgress: true,
-			},
-		},
-	}
-
-	if err := p.Save(prdPath); err != nil {
-		t.Fatalf("Save failed: %v", err)
-	}
-
-	loaded, err := LoadPRD(prdPath)
-	if err != nil {
-		t.Fatalf("LoadPRD failed: %v", err)
-	}
-
-	if !loaded.UserStories[0].InProgress {
-		t.Error("expected InProgress to be preserved as true")
-	}
-}
-
 func TestPRD_NextStoryContext_ReturnsHighestPriority(t *testing.T) {
 	p := &PRD{
 		Project: "Test",
@@ -321,7 +231,6 @@ func TestPRD_NextStoryContext_ReturnsHighestPriority(t *testing.T) {
 		t.Fatal("expected non-nil context")
 	}
 
-	// Parse the JSON to verify it's the highest-priority story
 	var story UserStory
 	if err := json.Unmarshal([]byte(*ctx), &story); err != nil {
 		t.Fatalf("failed to parse story context JSON: %v", err)
@@ -417,7 +326,6 @@ func TestPRD_NextStoryContext_ValidJSON(t *testing.T) {
 }
 
 func TestPRD_NextStoryContext_PromptSizeUnder10KB(t *testing.T) {
-	// Create a 300-story PRD to verify the context stays small
 	stories := make([]UserStory, 300)
 	for i := range stories {
 		stories[i] = UserStory{
@@ -426,7 +334,7 @@ func TestPRD_NextStoryContext_PromptSizeUnder10KB(t *testing.T) {
 			Description:        "This is a description that is moderately long to simulate realistic PRD content for testing purposes.",
 			AcceptanceCriteria: []string{"Criterion A", "Criterion B", "Criterion C"},
 			Priority:           i + 1,
-			Passes:             i > 0, // Only first story is pending
+			Passes:             i > 0,
 		}
 	}
 	p := &PRD{
@@ -489,61 +397,5 @@ func TestPRD_ExtractIDPrefix_SingleChar(t *testing.T) {
 	}
 	if got := p.ExtractIDPrefix(); got != "T" {
 		t.Errorf("ExtractIDPrefix() = %q, want %q", got, "T")
-	}
-}
-
-func TestCountMarkdownStories(t *testing.T) {
-	tests := []struct {
-		name     string
-		content  string
-		expected int
-	}{
-		{
-			name:     "typical PRD with stories",
-			content:  "# My Project\n\nOverview text.\n\n## Story One\n\nDetails.\n\n## Story Two\n\nMore details.\n\n## Story Three\n\nEven more.",
-			expected: 3,
-		},
-		{
-			name:     "no stories",
-			content:  "# My Project\n\nJust an overview with no stories.",
-			expected: 0,
-		},
-		{
-			name:     "empty content",
-			content:  "",
-			expected: 0,
-		},
-		{
-			name:     "nested headings not counted",
-			content:  "# Project\n\n## Story One\n\n### Sub-section\n\n## Story Two\n\n### Another sub-section",
-			expected: 2,
-		},
-		{
-			name:     "heading without space not counted",
-			content:  "# Project\n\n##NotAStory\n\n## Real Story",
-			expected: 1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := CountMarkdownStories(tt.content)
-			if got != tt.expected {
-				t.Errorf("CountMarkdownStories() = %d, want %d", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestCountMarkdownStories_LargePRD(t *testing.T) {
-	// Simulate a large PRD with 100 stories
-	var content string
-	content = "# Large Project\n\nA big project.\n\n"
-	for i := 1; i <= 100; i++ {
-		content += fmt.Sprintf("## Story %d\n\nDescription for story %d.\n\n", i, i)
-	}
-	got := CountMarkdownStories(content)
-	if got != 100 {
-		t.Errorf("CountMarkdownStories() = %d, want 100", got)
 	}
 }

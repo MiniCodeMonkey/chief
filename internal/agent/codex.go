@@ -2,8 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -43,33 +41,6 @@ func (p *CodexProvider) InteractiveCommand(workDir, prompt string) *exec.Cmd {
 	cmd := exec.Command(p.cliPath, prompt)
 	cmd.Dir = workDir
 	return cmd
-}
-
-// ConvertCommand implements loop.Provider.
-func (p *CodexProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
-	f, err := os.CreateTemp("", "chief-codex-convert-*.txt")
-	if err != nil {
-		return nil, 0, "", fmt.Errorf("failed to create temp file for conversion output: %w", err)
-	}
-	outPath := f.Name()
-	f.Close()
-	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "-o", outPath, "-")
-	cmd.Dir = workDir
-	cmd.Stdin = strings.NewReader(prompt)
-	return cmd, loop.OutputFromFile, outPath, nil
-}
-
-// FixJSONCommand implements loop.Provider.
-func (p *CodexProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
-	f, err := os.CreateTemp("", "chief-codex-fixjson-*.txt")
-	if err != nil {
-		return nil, 0, "", fmt.Errorf("failed to create temp file for fix output: %w", err)
-	}
-	outPath := f.Name()
-	f.Close()
-	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "-o", outPath, "-")
-	cmd.Stdin = strings.NewReader(prompt)
-	return cmd, loop.OutputFromFile, outPath, nil
 }
 
 // ParseLine implements loop.Provider.

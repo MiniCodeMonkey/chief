@@ -2,7 +2,6 @@ package loop
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,14 +24,6 @@ func (m *mockProvider) CLIPath() string                          { return m.path
 func (m *mockProvider) InteractiveCommand(_, _ string) *exec.Cmd { return exec.Command("true") }
 func (m *mockProvider) ParseLine(line string) *Event             { return ParseLine(line) }
 func (m *mockProvider) LogFileName() string                      { return "claude.log" }
-
-func (m *mockProvider) ConvertCommand(_, _ string) (*exec.Cmd, OutputMode, string, error) {
-	return exec.Command("true"), OutputStdout, "", nil
-}
-
-func (m *mockProvider) FixJSONCommand(_ string) (*exec.Cmd, OutputMode, string, error) {
-	return exec.Command("true"), OutputStdout, "", nil
-}
 
 func (m *mockProvider) path() string {
 	if m.cliPath != "" {
@@ -70,27 +61,21 @@ func createMockClaudeScript(t *testing.T, dir string, output []string) string {
 	return scriptPath
 }
 
-// createTestPRD creates a minimal test PRD file.
+// createTestPRD creates a minimal test PRD markdown file.
 func createTestPRD(t *testing.T, dir string, allComplete bool) string {
 	t.Helper()
 
-	prdFile := &prd.PRD{
-		Project:     "Test Project",
-		Description: "Test Description",
-		UserStories: []prd.UserStory{
-			{
-				ID:          "US-001",
-				Title:       "Test Story",
-				Description: "A test story",
-				Priority:    1,
-				Passes:      allComplete,
-			},
-		},
+	status := ""
+	checkbox := "- [ ] It works"
+	if allComplete {
+		status = "**Status:** done\n"
+		checkbox = "- [x] It works"
 	}
 
-	prdPath := filepath.Join(dir, "prd.json")
-	data, _ := json.MarshalIndent(prdFile, "", "  ")
-	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+	md := fmt.Sprintf("# Test Project\n\nTest Description\n\n### US-001: Test Story\n%s%s\n", status, checkbox)
+
+	prdPath := filepath.Join(dir, "prd.md")
+	if err := os.WriteFile(prdPath, []byte(md), 0644); err != nil {
 		t.Fatalf("Failed to create test PRD: %v", err)
 	}
 
@@ -329,7 +314,7 @@ func TestLoop_LogFile(t *testing.T) {
 		t.Fatalf("Failed to create log file: %v", err)
 	}
 
-	l := NewLoop(filepath.Join(tmpDir, "prd.json"), "test", 1, testProvider)
+	l := NewLoop(filepath.Join(tmpDir, "prd.md"), "test", 1, testProvider)
 	l.logFile = logFile
 
 	l.logLine("test log line")
@@ -346,8 +331,8 @@ func TestLoop_LogFile(t *testing.T) {
 	}
 }
 
-// TestLoop_ChiefCompleteEvent tests detection of <chief-complete/> event.
-func TestLoop_ChiefCompleteEvent(t *testing.T) {
+// TestLoop_ChiefDoneEvent tests detection of <chief-done/> event.
+func TestLoop_ChiefDoneEvent(t *testing.T) {
 	l := NewLoop("/test/prd.json", "test", 5, testProvider)
 	l.iteration = 1
 
@@ -356,17 +341,17 @@ func TestLoop_ChiefCompleteEvent(t *testing.T) {
 	go func() {
 		for event := range l.Events() {
 			events = append(events, event)
-			if event.Type == EventComplete {
+			if event.Type == EventStoryDone {
 				break
 			}
 		}
 		done <- true
 	}()
 
-	// Simulate processing a line with chief-complete
+	// Simulate processing a line with chief-done
 	r, w, _ := os.Pipe()
 	go func() {
-		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"All done! <chief-complete/>"}]}}` + "\n")
+		w.WriteString(`{"type":"assistant","message":{"content":[{"type":"text","text":"All criteria pass! <chief-done/>"}]}}` + "\n")
 		w.Close()
 	}()
 
@@ -374,17 +359,23 @@ func TestLoop_ChiefCompleteEvent(t *testing.T) {
 	close(l.events)
 	<-done
 
-	// Check that we got a Complete event
-	hasComplete := false
+	// Check that we got a StoryDone event and sawStoryDone was set
+	hasStoryDone := false
 	for _, e := range events {
-		if e.Type == EventComplete {
-			hasComplete = true
+		if e.Type == EventStoryDone {
+			hasStoryDone = true
 		}
 	}
 
-	if !hasComplete {
-		t.Error("Expected Complete event for <chief-complete/>")
+	if !hasStoryDone {
+		t.Error("Expected StoryDone event for <chief-done/>")
 	}
+
+	l.mu.Lock()
+	if !l.sawStoryDone {
+		t.Error("Expected sawStoryDone to be true after processing <chief-done/>")
+	}
+	l.mu.Unlock()
 }
 
 // TestLoop_SetMaxIterations tests setting max iterations at runtime.

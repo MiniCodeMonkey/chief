@@ -30,7 +30,7 @@ func RunStatus(opts StatusOptions) error {
 	}
 
 	// Build PRD path
-	prdPath := filepath.Join(opts.BaseDir, ".chief", "prds", opts.Name, "prd.json")
+	prdPath := filepath.Join(opts.BaseDir, ".chief", "prds", opts.Name, "prd.md")
 
 	// Load PRD
 	p, err := prd.LoadPRD(prdPath)
@@ -123,7 +123,7 @@ func RunList(opts ListOptions) error {
 		}
 
 		name := entry.Name()
-		prdPath := filepath.Join(prdsDir, name, "prd.json")
+		prdPath := filepath.Join(prdsDir, name, "prd.md")
 
 		// Try to load the PRD
 		p, err := prd.LoadPRD(prdPath)

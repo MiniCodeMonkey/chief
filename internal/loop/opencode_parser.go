@@ -98,6 +98,12 @@ func ParseLineOpenCode(line string) *Event {
 		if ev.Part == nil {
 			return nil
 		}
+		if strings.Contains(ev.Part.Text, "<chief-done/>") {
+			return &Event{
+				Type: EventStoryDone,
+				Text: ev.Part.Text,
+			}
+		}
 		return &Event{
 			Type: EventAssistantText,
 			Text: ev.Part.Text,

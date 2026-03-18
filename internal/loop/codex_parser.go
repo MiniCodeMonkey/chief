@@ -102,15 +102,8 @@ func ParseLineCodex(line string) *Event {
 			}
 		case "agent_message":
 			text := ev.Item.Text
-			if strings.Contains(text, "<chief-complete/>") {
-				return &Event{Type: EventComplete, Text: text}
-			}
-			if storyID := extractStoryID(text, "<ralph-status>", "</ralph-status>"); storyID != "" {
-				return &Event{
-					Type:    EventStoryStarted,
-					Text:    text,
-					StoryID: storyID,
-				}
+			if strings.Contains(text, "<chief-done/>") {
+				return &Event{Type: EventStoryDone, Text: text}
 			}
 			return &Event{Type: EventAssistantText, Text: text}
 		case "file_change":

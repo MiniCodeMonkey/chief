@@ -945,14 +945,11 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		if isCurrentPRD {
 			a.lastActivity = "Tool completed"
 		}
-	case loop.EventStoryStarted:
+	case loop.EventStoryDone:
 		if isCurrentPRD {
-			a.lastActivity = "Working on: " + event.StoryID
-			// Finalize previous story timing
+			a.lastActivity = "Story done"
+			// Finalize story timing
 			a.finalizeStoryTiming()
-			// Start tracking the new story
-			a.currentStoryID = event.StoryID
-			a.currentStoryStart = time.Now()
 		}
 	case loop.EventComplete:
 		if isCurrentPRD {
@@ -995,16 +992,10 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 	// Reload PRD from disk only on meaningful state changes (not every event)
 	if isCurrentPRD {
 		switch event.Type {
-		case loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventMaxIterationsReached:
+		case loop.EventStoryDone, loop.EventComplete, loop.EventError, loop.EventMaxIterationsReached:
 			if p, err := prd.LoadPRD(a.prdPath); err == nil {
 				a.prd = p
 			}
-		}
-
-		// Mark the story as in-progress in the PRD and auto-select it
-		if event.Type == loop.EventStoryStarted && event.StoryID != "" {
-			a.markStoryInProgress(event.StoryID)
-			a.selectStoryByID(event.StoryID)
 		}
 
 		// Clear in-progress when the PRD completes or the loop stops
@@ -2166,25 +2157,28 @@ func (a *App) adjustStoriesScroll() {
 }
 
 // markStoryInProgress clears any existing in-progress flags and marks the
-// given story as in-progress, then saves the PRD to disk.
+// given story as in-progress, then reloads the PRD from disk.
 func (a *App) markStoryInProgress(storyID string) {
-	for i := range a.prd.UserStories {
-		a.prd.UserStories[i].InProgress = a.prd.UserStories[i].ID == storyID
+	_ = prd.SetStoryStatus(a.prdPath, storyID, "in-progress")
+	if p, err := prd.LoadPRD(a.prdPath); err == nil {
+		a.prd = p
 	}
-	_ = a.prd.Save(a.prdPath)
 }
 
-// clearInProgress clears all in-progress flags and saves the PRD to disk.
+// clearInProgress clears all in-progress flags by setting each in-progress
+// story's status to "todo" in the markdown file, then reloads.
 func (a *App) clearInProgress() {
 	dirty := false
-	for i := range a.prd.UserStories {
-		if a.prd.UserStories[i].InProgress {
-			a.prd.UserStories[i].InProgress = false
+	for _, story := range a.prd.UserStories {
+		if story.InProgress {
+			_ = prd.SetStoryStatus(a.prdPath, story.ID, "todo")
 			dirty = true
 		}
 	}
 	if dirty {
-		_ = a.prd.Save(a.prdPath)
+		if p, err := prd.LoadPRD(a.prdPath); err == nil {
+			a.prd = p
+		}
 	}
 }
 

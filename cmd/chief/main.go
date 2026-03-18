@@ -93,7 +93,7 @@ func findAvailablePRD() string {
 
 	for _, entry := range entries {
 		if entry.IsDir() {
-			prdPath := filepath.Join(prdsDir, entry.Name(), "prd.json")
+			prdPath := filepath.Join(prdsDir, entry.Name(), "prd.md")
 			if _, err := os.Stat(prdPath); err == nil {
 				return prdPath
 			}
@@ -113,7 +113,7 @@ func listAvailablePRDs() []string {
 	var names []string
 	for _, entry := range entries {
 		if entry.IsDir() {
-			prdPath := filepath.Join(prdsDir, entry.Name(), "prd.json")
+			prdPath := filepath.Join(prdsDir, entry.Name(), "prd.md")
 			if _, err := os.Stat(prdPath); err == nil {
 				names = append(names, entry.Name())
 			}
@@ -241,11 +241,11 @@ func parseTUIFlags() *TUIOptions {
 			os.Exit(1)
 		default:
 			// Positional argument: PRD name or path
-			if strings.HasSuffix(arg, ".json") || strings.HasSuffix(arg, "/") {
+			if strings.HasSuffix(arg, ".md") || strings.HasSuffix(arg, ".json") || strings.HasSuffix(arg, "/") {
 				opts.PRDPath = arg
 			} else {
 				// Treat as PRD name
-				opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", arg)
+				opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.md", arg)
 			}
 		}
 	}
@@ -282,18 +282,11 @@ func runNew() {
 func runEdit() {
 	opts := cmd.EditOptions{}
 
-	// Parse arguments: chief edit [name] [--merge] [--force] [--agent X] [--agent-path X]
+	// Parse arguments: chief edit [name] [--agent X] [--agent-path X]
 	flagAgent, flagPath, remaining := parseAgentFlags(os.Args, 2)
 	for _, arg := range remaining {
-		switch {
-		case arg == "--merge":
-			opts.Merge = true
-		case arg == "--force":
-			opts.Force = true
-		default:
-			if opts.Name == "" && !strings.HasPrefix(arg, "-") {
-				opts.Name = arg
-			}
+		if opts.Name == "" && !strings.HasPrefix(arg, "-") {
+			opts.Name = arg
 		}
 	}
 
@@ -368,7 +361,7 @@ func runTUIWithOptions(opts *TUIOptions) {
 	// If no PRD specified, try to find one
 	if prdPath == "" {
 		// Try "main" first
-		mainPath := ".chief/prds/main/prd.json"
+		mainPath := ".chief/prds/main/prd.md"
 		if _, err := os.Stat(mainPath); err == nil {
 			prdPath = mainPath
 		} else {
@@ -411,7 +404,7 @@ func runTUIWithOptions(opts *TUIOptions) {
 			}
 
 			// Restart TUI with the new PRD
-			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", result.PRDName)
+			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.md", result.PRDName)
 			runTUIWithOptions(opts)
 			return
 		}
@@ -419,22 +412,15 @@ func runTUIWithOptions(opts *TUIOptions) {
 
 	prdDir := filepath.Dir(prdPath)
 
-	// Check if prd.md is newer than prd.json and run conversion if needed
-	needsConvert, err := prd.NeedsConversion(prdDir)
-	if err != nil {
-		fmt.Printf("Warning: failed to check conversion status: %v\n", err)
-	} else if needsConvert {
-		fmt.Println("prd.md is newer than prd.json, running conversion...")
-		if err := cmd.RunConvertWithOptions(cmd.ConvertOptions{
-			PRDDir:   prdDir,
-			Merge:    opts.Merge,
-			Force:    opts.Force,
-			Provider: provider,
-		}); err != nil {
-			fmt.Printf("Error converting PRD: %v\n", err)
-			os.Exit(1)
+	// Auto-migrate: if prd.json exists alongside prd.md, migrate status
+	jsonPath := filepath.Join(prdDir, "prd.json")
+	if _, err := os.Stat(jsonPath); err == nil {
+		fmt.Println("Migrating status from prd.json to prd.md...")
+		if err := prd.MigrateFromJSON(prdDir); err != nil {
+			fmt.Printf("Warning: migration failed: %v\n", err)
+		} else {
+			fmt.Println("Migration complete (prd.json renamed to prd.json.bak).")
 		}
-		fmt.Println("Conversion complete.")
 	}
 
 	app, err := tui.NewAppWithOptions(prdPath, opts.MaxIterations, provider)
@@ -492,15 +478,13 @@ func runTUIWithOptions(opts *TUIOptions) {
 				os.Exit(1)
 			}
 			// Restart TUI with the new PRD
-			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", finalApp.PostExitPRD)
+			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.md", finalApp.PostExitPRD)
 			runTUIWithOptions(opts)
 
 		case tui.PostExitEdit:
 			// Run edit command then restart TUI
 			editOpts := cmd.EditOptions{
 				Name:     finalApp.PostExitPRD,
-				Merge:    opts.Merge,
-				Force:    opts.Force,
 				Provider: provider,
 			}
 			if err := cmd.RunEdit(editOpts); err != nil {
@@ -508,7 +492,7 @@ func runTUIWithOptions(opts *TUIOptions) {
 				os.Exit(1)
 			}
 			// Restart TUI with the edited PRD
-			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.json", finalApp.PostExitPRD)
+			opts.PRDPath = fmt.Sprintf(".chief/prds/%s/prd.md", finalApp.PostExitPRD)
 			runTUIWithOptions(opts)
 		}
 	}
@@ -518,7 +502,7 @@ func printHelp() {
 	fmt.Println(`Chief - Autonomous PRD Agent
 
 Usage:
-  chief [options] [<name>|<path/to/prd.json>]
+  chief [options] [<name>|<path/to/prd.md>]
   chief <command> [arguments]
 
 Commands:
@@ -545,13 +529,13 @@ Edit Options:
   --force                   Auto-overwrite on conversion conflicts
 
 Positional Arguments:
-  <name>                    PRD name (loads .chief/prds/<name>/prd.json)
-  <path/to/prd.json>        Direct path to a prd.json file
+  <name>                    PRD name (loads .chief/prds/<name>/prd.md)
+  <path/to/prd.md>        Direct path to a prd.md file
 
 Examples:
   chief                     Launch TUI with default PRD (.chief/prds/main/)
   chief auth                Launch TUI with named PRD (.chief/prds/auth/)
-  chief ./my-prd.json       Launch TUI with specific PRD file
+  chief ./my-prd.md       Launch TUI with specific PRD file
   chief -n 20               Launch with 20 max iterations
   chief --max-iterations=5 auth
                             Launch auth PRD with 5 max iterations

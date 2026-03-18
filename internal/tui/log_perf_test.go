@@ -27,7 +27,7 @@ func makeToolResultEvent(text string) loop.Event {
 
 // makeStoryEvent creates a story started event.
 func makeStoryEvent(storyID string) loop.Event {
-	return loop.Event{Type: loop.EventStoryStarted, StoryID: storyID}
+	return loop.Event{Type: loop.EventStoryDone, StoryID: storyID}
 }
 
 // --- AddEvent caching tests ---

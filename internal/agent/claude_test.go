@@ -54,55 +54,6 @@ func TestClaudeProvider_LoopCommand(t *testing.T) {
 	}
 }
 
-func TestClaudeProvider_ConvertCommand(t *testing.T) {
-	p := NewClaudeProvider("/bin/claude")
-	cmd, mode, outPath, err := p.ConvertCommand("/prd/dir", "convert prompt")
-	if err != nil {
-		t.Fatalf("ConvertCommand unexpected error: %v", err)
-	}
-	if mode != loop.OutputStdout {
-		t.Errorf("ConvertCommand mode = %v, want OutputStdout", mode)
-	}
-	if outPath != "" {
-		t.Errorf("ConvertCommand outPath = %q, want empty string", outPath)
-	}
-	if cmd.Dir != "/prd/dir" {
-		t.Errorf("ConvertCommand Dir = %q, want /prd/dir", cmd.Dir)
-	}
-	// Should use -p flag with stdin
-	wantArgs := []string{"/bin/claude", "-p"}
-	if len(cmd.Args) != len(wantArgs) {
-		t.Fatalf("ConvertCommand Args = %v, want %v", cmd.Args, wantArgs)
-	}
-	for i, w := range wantArgs {
-		if cmd.Args[i] != w {
-			t.Errorf("ConvertCommand Args[%d] = %q, want %q", i, cmd.Args[i], w)
-		}
-	}
-	if cmd.Stdin == nil {
-		t.Error("ConvertCommand Stdin must be set (prompt via stdin)")
-	}
-}
-
-func TestClaudeProvider_FixJSONCommand(t *testing.T) {
-	p := NewClaudeProvider("/bin/claude")
-	cmd, mode, outPath, err := p.FixJSONCommand("fix prompt")
-	if err != nil {
-		t.Fatalf("FixJSONCommand unexpected error: %v", err)
-	}
-	if mode != loop.OutputStdout {
-		t.Errorf("FixJSONCommand mode = %v, want OutputStdout", mode)
-	}
-	if outPath != "" {
-		t.Errorf("FixJSONCommand outPath = %q, want empty string", outPath)
-	}
-	// Should pass prompt as arg to -p
-	wantArgs := []string{"/bin/claude", "-p", "fix prompt"}
-	if len(cmd.Args) != len(wantArgs) {
-		t.Fatalf("FixJSONCommand Args = %v, want %v", cmd.Args, wantArgs)
-	}
-}
-
 func TestClaudeProvider_InteractiveCommand(t *testing.T) {
 	p := NewClaudeProvider("/bin/claude")
 	cmd := p.InteractiveCommand("/work", "my prompt")

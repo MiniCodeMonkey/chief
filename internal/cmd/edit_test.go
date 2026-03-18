@@ -73,47 +73,11 @@ func TestRunEditDefaultsToMain(t *testing.T) {
 	}
 }
 
-func TestRunEditWithMergeFlag(t *testing.T) {
-	opts := EditOptions{
-		Name:  "test",
-		Merge: true,
-		Force: false,
-	}
-
-	if !opts.Merge {
-		t.Error("Merge flag should be true")
-	}
-	if opts.Force {
-		t.Error("Force flag should be false")
-	}
-}
-
-func TestRunEditWithForceFlag(t *testing.T) {
-	opts := EditOptions{
-		Name:  "test",
-		Merge: false,
-		Force: true,
-	}
-
-	if opts.Merge {
-		t.Error("Merge flag should be false")
-	}
-	if !opts.Force {
-		t.Error("Force flag should be true")
-	}
-}
-
 func TestEditOptionsDefaults(t *testing.T) {
 	opts := EditOptions{}
 
 	if opts.Name != "" {
 		t.Error("Name should default to empty (filled later)")
-	}
-	if opts.Merge {
-		t.Error("Merge should default to false")
-	}
-	if opts.Force {
-		t.Error("Force should default to false")
 	}
 	if opts.BaseDir != "" {
 		t.Error("BaseDir should default to empty (filled later)")

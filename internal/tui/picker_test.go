@@ -896,11 +896,11 @@ func TestRefreshShowsDirectoryWithPrdMdOnly(t *testing.T) {
 	}
 }
 
-func TestRefreshShowsDirectoryWithPrdJsonOnly(t *testing.T) {
+func TestRefreshSkipsDirectoryWithOnlyPrdJson(t *testing.T) {
 	tmpDir := t.TempDir()
 	prdsDir := filepath.Join(tmpDir, ".chief", "prds")
 
-	// Create directory with only prd.json
+	// Create directory with only prd.json (no prd.md) — should be skipped
 	prdDir := filepath.Join(prdsDir, "converted")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create dir: %v", err)
@@ -916,11 +916,8 @@ func TestRefreshShowsDirectoryWithPrdJsonOnly(t *testing.T) {
 	}
 	p.Refresh()
 
-	if len(p.entries) != 1 {
-		t.Fatalf("expected 1 entry for directory with prd.json, got %d", len(p.entries))
-	}
-	if p.entries[0].Name != "converted" {
-		t.Errorf("expected entry name 'converted', got %q", p.entries[0].Name)
+	if len(p.entries) != 0 {
+		t.Fatalf("expected 0 entries for directory with only prd.json (no prd.md), got %d", len(p.entries))
 	}
 }
 

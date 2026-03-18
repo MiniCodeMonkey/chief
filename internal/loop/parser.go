@@ -19,11 +19,9 @@ const (
 	EventToolStart
 	// EventToolResult is emitted when a tool returns a result.
 	EventToolResult
-	// EventStoryStarted is emitted when Claude indicates a story is being worked on.
-	EventStoryStarted
-	// EventStoryCompleted is emitted when Claude completes a story.
-	EventStoryCompleted
-	// EventComplete is emitted when <chief-complete/> is detected.
+	// EventStoryDone is emitted when Claude signals a story is done via <chief-done/>.
+	EventStoryDone
+	// EventComplete is emitted when all stories are complete (buildPrompt returns error).
 	EventComplete
 	// EventMaxIterationsReached is emitted when max iterations are reached.
 	EventMaxIterationsReached
@@ -46,10 +44,8 @@ func (e EventType) String() string {
 		return "ToolStart"
 	case EventToolResult:
 		return "ToolResult"
-	case EventStoryStarted:
-		return "StoryStarted"
-	case EventStoryCompleted:
-		return "StoryCompleted"
+	case EventStoryDone:
+		return "StoryDone"
 	case EventComplete:
 		return "Complete"
 	case EventMaxIterationsReached:
@@ -138,8 +134,6 @@ func ParseLine(line string) *Event {
 		return parseUserMessage(msg.Message)
 
 	case "result":
-		// Result messages indicate the end of an iteration
-		// We don't emit a specific event for this, but could in the future
 		return nil
 
 	default:
@@ -158,26 +152,15 @@ func parseAssistantMessage(raw json.RawMessage) *Event {
 		return nil
 	}
 
-	// Process content blocks - return the first meaningful event
-	// In practice, we might want to return multiple events, but for simplicity
-	// we return the first one found
 	for _, block := range msg.Content {
 		switch block.Type {
 		case "text":
 			text := block.Text
-			// Check for <chief-complete/> tag
-			if strings.Contains(text, "<chief-complete/>") {
+			// Check for <chief-done/> tag
+			if strings.Contains(text, "<chief-done/>") {
 				return &Event{
-					Type: EventComplete,
+					Type: EventStoryDone,
 					Text: text,
-				}
-			}
-			// Check for story markers using ralph-status tags
-			if storyID := extractStoryID(text, "<ralph-status>", "</ralph-status>"); storyID != "" {
-				return &Event{
-					Type:    EventStoryStarted,
-					Text:    text,
-					StoryID: storyID,
 				}
 			}
 			return &Event{
@@ -218,20 +201,4 @@ func parseUserMessage(raw json.RawMessage) *Event {
 	}
 
 	return nil
-}
-
-// extractStoryID extracts a story ID from text between start and end tags.
-func extractStoryID(text, startTag, endTag string) string {
-	startIdx := strings.Index(text, startTag)
-	if startIdx == -1 {
-		return ""
-	}
-	startIdx += len(startTag)
-
-	endIdx := strings.Index(text[startIdx:], endTag)
-	if endIdx == -1 {
-		return ""
-	}
-
-	return strings.TrimSpace(text[startIdx : startIdx+endIdx])
 }

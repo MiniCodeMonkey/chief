@@ -14,8 +14,7 @@ func TestEventTypeString(t *testing.T) {
 		{EventAssistantText, "AssistantText"},
 		{EventToolStart, "ToolStart"},
 		{EventToolResult, "ToolResult"},
-		{EventStoryStarted, "StoryStarted"},
-		{EventStoryCompleted, "StoryCompleted"},
+		{EventStoryDone, "StoryDone"},
 		{EventComplete, "Complete"},
 		{EventMaxIterationsReached, "MaxIterationsReached"},
 		{EventError, "Error"},
@@ -97,11 +96,11 @@ func TestParseLineAssistantText(t *testing.T) {
 	}
 }
 
-func TestParseLineChiefComplete(t *testing.T) {
+func TestParseLineChiefDone(t *testing.T) {
 	tests := []string{
-		`{"type":"assistant","message":{"content":[{"type":"text","text":"All stories complete! <chief-complete/>"}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"text","text":"<chief-complete/>"}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"text","text":"Done\n<chief-complete/>\nGoodbye"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"All criteria pass! <chief-done/>"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"<chief-done/>"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Done\n<chief-done/>\nGoodbye"}]}}`,
 	}
 
 	for _, line := range tests {
@@ -109,8 +108,8 @@ func TestParseLineChiefComplete(t *testing.T) {
 		if event == nil {
 			t.Fatalf("ParseLine(%q) returned nil, want event", line)
 		}
-		if event.Type != EventComplete {
-			t.Errorf("ParseLine(%q): event.Type = %v, want EventComplete", line, event.Type)
+		if event.Type != EventStoryDone {
+			t.Errorf("ParseLine(%q): event.Type = %v, want EventStoryDone", line, event.Type)
 		}
 	}
 }
@@ -151,21 +150,6 @@ func TestParseLineToolResult(t *testing.T) {
 	}
 }
 
-func TestParseLineStoryStarted(t *testing.T) {
-	line := `{"type":"assistant","message":{"content":[{"type":"text","text":"Working on the next story.\n<ralph-status>US-003</ralph-status>\nLet me implement this."}]}}`
-
-	event := ParseLine(line)
-	if event == nil {
-		t.Fatal("ParseLine returned nil, want event")
-	}
-	if event.Type != EventStoryStarted {
-		t.Errorf("event.Type = %v, want EventStoryStarted", event.Type)
-	}
-	if event.StoryID != "US-003" {
-		t.Errorf("event.StoryID = %q, want %q", event.StoryID, "US-003")
-	}
-}
-
 func TestParseLineResultMessage(t *testing.T) {
 	line := `{"type":"result","subtype":"success","is_error":false,"result":"Done"}`
 
@@ -195,7 +179,6 @@ func TestParseLineEmptyContent(t *testing.T) {
 }
 
 func TestParseLineRealWorldSystemInit(t *testing.T) {
-	// Real example from Claude output
 	line := `{"type":"system","subtype":"init","cwd":"/Users/codemonkey/projects/chief","session_id":"7cdf33f6-72ec-4c0e-94fb-e2b637e109da","tools":["Task","Bash","Read"],"model":"claude-opus-4-5-20251101","permissionMode":"default"}`
 
 	event := ParseLine(line)
@@ -208,7 +191,6 @@ func TestParseLineRealWorldSystemInit(t *testing.T) {
 }
 
 func TestParseLineRealWorldToolUse(t *testing.T) {
-	// Real example from Claude output
 	line := `{"type":"assistant","message":{"model":"claude-opus-4-5-20251101","id":"msg_01XPBzHqPaCuQMUFm77eHe4D","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_01MiR5Ps9inHigemS2gxEz5R","name":"Read","input":{"file_path":"/Users/codemonkey/projects/chief/go.mod"}}]}}`
 
 	event := ParseLine(line)
@@ -223,65 +205,13 @@ func TestParseLineRealWorldToolUse(t *testing.T) {
 	}
 }
 
-func TestExtractStoryID(t *testing.T) {
-	tests := []struct {
-		text     string
-		startTag string
-		endTag   string
-		expected string
-	}{
-		{
-			text:     "<ralph-status>US-001</ralph-status>",
-			startTag: "<ralph-status>",
-			endTag:   "</ralph-status>",
-			expected: "US-001",
-		},
-		{
-			text:     "Some text <ralph-status>US-002</ralph-status> more text",
-			startTag: "<ralph-status>",
-			endTag:   "</ralph-status>",
-			expected: "US-002",
-		},
-		{
-			text:     "<ralph-status> US-003 </ralph-status>",
-			startTag: "<ralph-status>",
-			endTag:   "</ralph-status>",
-			expected: "US-003",
-		},
-		{
-			text:     "no tags here",
-			startTag: "<ralph-status>",
-			endTag:   "</ralph-status>",
-			expected: "",
-		},
-		{
-			text:     "<ralph-status>unclosed",
-			startTag: "<ralph-status>",
-			endTag:   "</ralph-status>",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.text, func(t *testing.T) {
-			got := extractStoryID(tt.text, tt.startTag, tt.endTag)
-			if got != tt.expected {
-				t.Errorf("extractStoryID(%q, %q, %q) = %q, want %q", tt.text, tt.startTag, tt.endTag, got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestParseLineMultipleContentBlocks(t *testing.T) {
-	// When there are multiple content blocks, we return the first meaningful one
-	// This tests that text comes before tool_use in the content array
 	line := `{"type":"assistant","message":{"content":[{"type":"text","text":"First"},{"type":"tool_use","name":"Read","input":{}}]}}`
 
 	event := ParseLine(line)
 	if event == nil {
 		t.Fatal("ParseLine returned nil, want event")
 	}
-	// Should return the text event since it comes first
 	if event.Type != EventAssistantText {
 		t.Errorf("event.Type = %v, want EventAssistantText", event.Type)
 	}
@@ -291,14 +221,12 @@ func TestParseLineMultipleContentBlocks(t *testing.T) {
 }
 
 func TestParseLineToolUseFirst(t *testing.T) {
-	// When tool_use comes first
 	line := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"/test"}},{"type":"text","text":"Second"}]}}`
 
 	event := ParseLine(line)
 	if event == nil {
 		t.Fatal("ParseLine returned nil, want event")
 	}
-	// Should return the tool_use event since it comes first
 	if event.Type != EventToolStart {
 		t.Errorf("event.Type = %v, want EventToolStart", event.Type)
 	}

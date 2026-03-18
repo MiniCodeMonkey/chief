@@ -36,17 +36,6 @@ func (p *OpenCodeProvider) InteractiveCommand(workDir, prompt string) *exec.Cmd 
 	return cmd
 }
 
-func (p *OpenCodeProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
-	cmd := exec.Command(p.cliPath, "run", "--format", "json", "--", prompt)
-	cmd.Dir = workDir
-	return cmd, loop.OutputStdout, "", nil
-}
-
-func (p *OpenCodeProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMode, string, error) {
-	cmd := exec.Command(p.cliPath, "run", "--format", "json", "--", prompt)
-	return cmd, loop.OutputStdout, "", nil
-}
-
 func (p *OpenCodeProvider) ParseLine(line string) *loop.Event {
 	return loop.ParseLineOpenCode(line)
 }
@@ -61,7 +50,6 @@ func (p *OpenCodeProvider) CleanOutput(output string) string {
 		return output
 	}
 
-	// Parse each line as JSON to find text events (last one wins).
 	var lastText string
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)

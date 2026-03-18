@@ -54,55 +54,6 @@ func TestOpenCodeProvider_LoopCommand(t *testing.T) {
 	}
 }
 
-func TestOpenCodeProvider_ConvertCommand(t *testing.T) {
-	p := NewOpenCodeProvider("/bin/opencode")
-	cmd, mode, outPath, err := p.ConvertCommand("/prd/dir", "convert prompt")
-	if err != nil {
-		t.Fatalf("ConvertCommand unexpected error: %v", err)
-	}
-	if mode != loop.OutputStdout {
-		t.Errorf("ConvertCommand mode = %v, want OutputStdout", mode)
-	}
-	if outPath != "" {
-		t.Errorf("ConvertCommand outPath = %q, want empty string", outPath)
-	}
-	if cmd.Dir != "/prd/dir" {
-		t.Errorf("ConvertCommand Dir = %q, want /prd/dir", cmd.Dir)
-	}
-	// Prompt is passed as CLI argument, not stdin
-	if cmd.Stdin != nil {
-		t.Error("ConvertCommand Stdin should be nil (prompt passed as arg)")
-	}
-	// Check args contain the prompt after "--"
-	wantArgs := []string{"/bin/opencode", "run", "--format", "json", "--", "convert prompt"}
-	if len(cmd.Args) != len(wantArgs) {
-		t.Fatalf("ConvertCommand Args = %v, want %v", cmd.Args, wantArgs)
-	}
-	for i, w := range wantArgs {
-		if cmd.Args[i] != w {
-			t.Errorf("ConvertCommand Args[%d] = %q, want %q", i, cmd.Args[i], w)
-		}
-	}
-}
-
-func TestOpenCodeProvider_FixJSONCommand(t *testing.T) {
-	p := NewOpenCodeProvider("/bin/opencode")
-	cmd, mode, outPath, err := p.FixJSONCommand("fix prompt")
-	if err != nil {
-		t.Fatalf("FixJSONCommand unexpected error: %v", err)
-	}
-	if mode != loop.OutputStdout {
-		t.Errorf("FixJSONCommand mode = %v, want OutputStdout", mode)
-	}
-	if outPath != "" {
-		t.Errorf("FixJSONCommand outPath = %q, want empty string", outPath)
-	}
-	// Prompt is passed as CLI argument, not stdin
-	if cmd.Stdin != nil {
-		t.Error("FixJSONCommand Stdin should be nil (prompt passed as arg)")
-	}
-}
-
 func TestOpenCodeProvider_CleanOutput_PlainText(t *testing.T) {
 	p := NewOpenCodeProvider("")
 	// Non-NDJSON input should be returned as-is

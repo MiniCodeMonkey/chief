@@ -118,12 +118,10 @@ func (p *PRDPicker) Refresh() {
 
 		name := entry.Name()
 		dirPath := filepath.Join(prdsDir, name)
-		prdPath := filepath.Join(dirPath, "prd.json")
+		prdPath := filepath.Join(dirPath, "prd.md")
 
-		// Skip directories without prd.md or prd.json (empty/incomplete)
-		_, jsonErr := os.Stat(prdPath)
-		_, mdErr := os.Stat(filepath.Join(dirPath, "prd.md"))
-		if os.IsNotExist(jsonErr) && os.IsNotExist(mdErr) {
+		// Skip directories without prd.md (empty/incomplete)
+		if _, err := os.Stat(prdPath); os.IsNotExist(err) {
 			continue
 		}
 
@@ -133,7 +131,7 @@ func (p *PRDPicker) Refresh() {
 	}
 
 	// Also check if there's a "main" PRD directly in .chief/ (legacy location)
-	mainPrdPath := filepath.Join(p.basePath, ".chief", "prd.json")
+	mainPrdPath := filepath.Join(p.basePath, ".chief", "prd.md")
 	if _, err := os.Stat(mainPrdPath); err == nil && !addedNames["main"] {
 		prdEntry := p.loadPRDEntry("main", mainPrdPath)
 		p.entries = append(p.entries, prdEntry)
@@ -175,11 +173,11 @@ func (p *PRDPicker) Refresh() {
 			if !found {
 				p.entries = append(p.entries, PRDEntry{
 					Name:        prdName,
-					Path:        filepath.Join(p.basePath, ".chief", "prds", prdName, "prd.json"),
+					Path:        filepath.Join(p.basePath, ".chief", "prds", prdName, "prd.md"),
 					LoopState:   loop.LoopStateReady,
 					WorktreeDir: absPath,
 					Orphaned:    true,
-					LoadError:   fmt.Errorf("orphaned worktree (no prd.json)"),
+					LoadError:   fmt.Errorf("orphaned worktree (no prd.md)"),
 				})
 			}
 		}

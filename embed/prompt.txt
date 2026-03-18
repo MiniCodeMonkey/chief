@@ -10,14 +10,12 @@ Your current story:
 </story>
 
 1. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
-2. After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
-3. Implement the user story above
-4. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-5. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
+2. Implement the user story above
+3. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
+4. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
    - **NEVER stage or commit `.chief/` files** — these are local working files and must stay out of version control
    - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
-6. Update the PRD at `{{PRD_PATH}}` to set `passes: true` for the completed story
-7. Append your progress to `{{PROGRESS_PATH}}`
+5. Append your progress to `{{PROGRESS_PATH}}`
 
 ## Progress Report Format
 
@@ -57,12 +55,10 @@ Only add patterns that are **general and reusable**, not story-specific details.
 
 ## Stop Condition
 
-After completing a user story, check if ALL stories have `passes: true`.
-
-If ALL stories are complete and passing, reply with:
-<chief-complete/>
-
-If there are still stories with `passes: false`, end your response normally (another iteration will pick up the next story).
+After implementing the story:
+1. Review EACH acceptance criterion one by one and verify it is met
+2. Only if ALL criteria pass: output <chief-done/>
+3. If any criterion is NOT met: end your response WITHOUT <chief-done/>
 
 ## Important
 

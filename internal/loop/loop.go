@@ -44,7 +44,7 @@ type Loop struct {
 	prdPath         string
 	workDir         string
 	prompt          string
-	buildPrompt     func() (string, error) // optional: rebuild prompt each iteration
+	buildPrompt     func() (string, string, error) // optional: rebuild prompt each iteration; returns (prompt, storyID, error)
 	maxIter         int
 	iteration       int
 	events          chan Event
@@ -57,6 +57,8 @@ type Loop struct {
 	retryConfig     RetryConfig
 	lastOutputTime  time.Time
 	watchdogTimeout time.Duration
+	sawStoryDone    bool
+	currentStoryID  string
 }
 
 // NewLoop creates a new Loop instance.
@@ -97,22 +99,26 @@ func NewLoopWithEmbeddedPrompt(prdPath string, maxIter int, provider Provider) *
 
 // promptBuilderForPRD returns a function that loads the PRD and builds a prompt
 // with the next story inlined. This is called before each iteration so that
-// newly completed stories are skipped.
-func promptBuilderForPRD(prdPath string) func() (string, error) {
-	return func() (string, error) {
+// newly completed stories are skipped. The returned storyID is stored on the Loop.
+func promptBuilderForPRD(prdPath string) func() (string, string, error) {
+	return func() (string, string, error) {
 		p, err := prd.LoadPRD(prdPath)
 		if err != nil {
-			return "", fmt.Errorf("failed to load PRD for prompt: %w", err)
+			return "", "", fmt.Errorf("failed to load PRD for prompt: %w", err)
 		}
 
 		story := p.NextStory()
 		if story == nil {
-			return "", fmt.Errorf("all stories are complete")
+			return "", "", fmt.Errorf("all stories are complete")
 		}
+
+		// Mark the story as in-progress in the markdown file
+		_ = prd.SetStoryStatus(prdPath, story.ID, "in-progress")
 
 		storyCtx := p.NextStoryContext()
 
-		return embed.GetPrompt(prdPath, prd.ProgressPath(prdPath), *storyCtx, story.ID, story.Title), nil
+		prompt := embed.GetPrompt(prd.ProgressPath(prdPath), *storyCtx, story.ID, story.Title)
+		return prompt, story.ID, nil
 	}
 }
 
@@ -170,7 +176,7 @@ func (l *Loop) Run(ctx context.Context) error {
 
 		// Rebuild prompt if builder is set (inlines the current story each iteration)
 		if l.buildPrompt != nil {
-			prompt, err := l.buildPrompt()
+			prompt, storyID, err := l.buildPrompt()
 			if err != nil {
 				l.events <- Event{
 					Type:      EventComplete,
@@ -180,6 +186,8 @@ func (l *Loop) Run(ctx context.Context) error {
 			}
 			l.mu.Lock()
 			l.prompt = prompt
+			l.currentStoryID = storyID
+			l.sawStoryDone = false
 			l.mu.Unlock()
 		}
 
@@ -205,23 +213,17 @@ func (l *Loop) Run(ctx context.Context) error {
 		default:
 		}
 
-		// Check prd.json for completion
-		p, err := prd.LoadPRD(l.prdPath)
-		if err != nil {
-			l.events <- Event{
-				Type: EventError,
-				Err:  fmt.Errorf("failed to load PRD: %w", err),
-			}
-			return err
+		// If the agent emitted <chief-done/>, mark the story as done in prd.md
+		l.mu.Lock()
+		saw := l.sawStoryDone
+		storyID := l.currentStoryID
+		l.sawStoryDone = false
+		l.mu.Unlock()
+		if saw && storyID != "" {
+			_ = prd.SetStoryStatus(l.prdPath, storyID, "done")
 		}
-
-		if p.AllComplete() {
-			l.events <- Event{
-				Type:      EventComplete,
-				Iteration: currentIter,
-			}
-			return nil
-		}
+		// buildPrompt on the next iteration will return error if all stories are complete,
+		// which causes EventComplete to be emitted above.
 
 		// Check pause flag after iteration (loop stops after current iteration completes)
 		l.mu.Lock()
@@ -466,6 +468,9 @@ func (l *Loop) processOutput(r io.Reader) {
 		if event := l.provider.ParseLine(line); event != nil {
 			l.mu.Lock()
 			event.Iteration = l.iteration
+			if event.Type == EventStoryDone {
+				l.sawStoryDone = true
+			}
 			l.mu.Unlock()
 			l.events <- *event
 		}

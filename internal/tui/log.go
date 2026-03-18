@@ -76,7 +76,7 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 	// Filter out events we don't want to display
 	switch event.Type {
 	case loop.EventAssistantText, loop.EventToolStart, loop.EventToolResult,
-		loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventRetrying,
+		loop.EventStoryDone, loop.EventComplete, loop.EventError, loop.EventRetrying,
 		loop.EventWatchdogTimeout:
 		// Pre-render and cache lines
 		if l.width > 0 {
@@ -354,8 +354,8 @@ func (l *LogViewer) renderEntry(entry LogEntry) []string {
 		return l.renderToolCard(entry)
 	case loop.EventToolResult:
 		return l.renderToolResult(entry)
-	case loop.EventStoryStarted:
-		return l.renderStoryStarted(entry)
+	case loop.EventStoryDone:
+		return l.renderStoryDone(entry)
 	case loop.EventComplete:
 		return l.renderComplete(entry)
 	case loop.EventError:
@@ -554,20 +554,20 @@ func stripLineNumbers(code string) string {
 	return strings.Join(result, "\n")
 }
 
-// renderStoryStarted renders a story started marker.
-func (l *LogViewer) renderStoryStarted(entry LogEntry) []string {
+// renderStoryDone renders a story done marker.
+func (l *LogViewer) renderStoryDone(entry LogEntry) []string {
 	storyStyle := lipgloss.NewStyle().
-		Foreground(PrimaryColor).
+		Foreground(SuccessColor).
 		Bold(true).
 		Padding(0, 1)
 
-	dividerStyle := lipgloss.NewStyle().Foreground(PrimaryColor)
+	dividerStyle := lipgloss.NewStyle().Foreground(SuccessColor)
 	divider := dividerStyle.Render(strings.Repeat("─", l.width-4))
 
 	return []string{
 		"",
 		divider,
-		storyStyle.Render(fmt.Sprintf("▶ Working on: %s", entry.StoryID)),
+		storyStyle.Render("✓ Story done"),
 		divider,
 		"",
 	}

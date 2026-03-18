@@ -6,15 +6,11 @@ import (
 )
 
 func TestGetPrompt(t *testing.T) {
-	prdPath := "/path/to/prd.json"
 	progressPath := "/path/to/progress.md"
 	storyContext := `{"id":"US-001","title":"Test Story"}`
-	prompt := GetPrompt(prdPath, progressPath, storyContext, "US-001", "Test Story")
+	prompt := GetPrompt(progressPath, storyContext, "US-001", "Test Story")
 
 	// Verify all placeholders were substituted
-	if strings.Contains(prompt, "{{PRD_PATH}}") {
-		t.Error("Expected {{PRD_PATH}} to be substituted")
-	}
 	if strings.Contains(prompt, "{{PROGRESS_PATH}}") {
 		t.Error("Expected {{PROGRESS_PATH}} to be substituted")
 	}
@@ -33,11 +29,6 @@ func TestGetPrompt(t *testing.T) {
 		t.Error("Expected prompt to contain exact commit message 'feat: US-001 - Test Story'")
 	}
 
-	// Verify the PRD path appears in the prompt
-	if !strings.Contains(prompt, prdPath) {
-		t.Errorf("Expected prompt to contain PRD path %q", prdPath)
-	}
-
 	// Verify the progress path appears in the prompt
 	if !strings.Contains(prompt, progressPath) {
 		t.Errorf("Expected prompt to contain progress path %q", progressPath)
@@ -48,22 +39,14 @@ func TestGetPrompt(t *testing.T) {
 		t.Error("Expected prompt to contain inlined story context")
 	}
 
-	// Verify the prompt contains key instructions
-	if !strings.Contains(prompt, "chief-complete") {
-		t.Error("Expected prompt to contain chief-complete instruction")
-	}
-
-	if !strings.Contains(prompt, "ralph-status") {
-		t.Error("Expected prompt to contain ralph-status instruction")
-	}
-
-	if !strings.Contains(prompt, "passes: true") {
-		t.Error("Expected prompt to contain passes: true instruction")
+	// Verify the prompt contains chief-done stop condition
+	if !strings.Contains(prompt, "chief-done") {
+		t.Error("Expected prompt to contain chief-done instruction")
 	}
 }
 
 func TestGetPrompt_NoFileReadInstruction(t *testing.T) {
-	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
+	prompt := GetPrompt("/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
 
 	// The prompt should NOT instruct Claude to read the PRD file
 	if strings.Contains(prompt, "Read the PRD") {
@@ -78,7 +61,7 @@ func TestPromptTemplateNotEmpty(t *testing.T) {
 }
 
 func TestGetPrompt_ChiefExclusion(t *testing.T) {
-	prompt := GetPrompt("/path/prd.json", "/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
+	prompt := GetPrompt("/path/progress.md", `{"id":"US-001"}`, "US-001", "Test Story")
 
 	// The prompt must instruct Claude to never stage or commit .chief/ files
 	if !strings.Contains(prompt, ".chief/") {
@@ -86,74 +69,6 @@ func TestGetPrompt_ChiefExclusion(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "NEVER stage or commit") {
 		t.Error("Expected prompt to explicitly say NEVER stage or commit .chief/ files")
-	}
-	// The commit step should not say "commit ALL changes" anymore
-	if strings.Contains(prompt, "commit ALL changes") {
-		t.Error("Expected prompt to NOT say 'commit ALL changes' — it should exclude .chief/ files")
-	}
-}
-
-func TestGetConvertPrompt(t *testing.T) {
-	prdFilePath := "/path/to/prds/main/prd.md"
-	prompt := GetConvertPrompt(prdFilePath, "US")
-
-	// Verify the prompt is not empty
-	if prompt == "" {
-		t.Error("Expected GetConvertPrompt() to return non-empty prompt")
-	}
-
-	// Verify file path is substituted (not inlined content)
-	if !strings.Contains(prompt, prdFilePath) {
-		t.Error("Expected prompt to contain the PRD file path")
-	}
-	if strings.Contains(prompt, "{{PRD_FILE_PATH}}") {
-		t.Error("Expected {{PRD_FILE_PATH}} to be substituted")
-	}
-
-	// Verify the old {{PRD_CONTENT}} placeholder is completely removed
-	if strings.Contains(prompt, "{{PRD_CONTENT}}") {
-		t.Error("Expected {{PRD_CONTENT}} placeholder to be completely removed")
-	}
-
-	// Verify ID prefix is substituted
-	if strings.Contains(prompt, "{{ID_PREFIX}}") {
-		t.Error("Expected {{ID_PREFIX}} to be substituted")
-	}
-	if !strings.Contains(prompt, "US-001") {
-		t.Error("Expected prompt to contain US-001 when prefix is US")
-	}
-
-	// Verify key instructions are present
-	if !strings.Contains(prompt, "JSON") {
-		t.Error("Expected prompt to mention JSON")
-	}
-
-	if !strings.Contains(prompt, "userStories") {
-		t.Error("Expected prompt to describe userStories structure")
-	}
-
-	if !strings.Contains(prompt, `"passes": false`) {
-		t.Error("Expected prompt to specify passes: false default")
-	}
-
-	// Verify prompt instructs Claude to read the file
-	if !strings.Contains(prompt, "Read the PRD file") {
-		t.Error("Expected prompt to instruct Claude to read the PRD file")
-	}
-}
-
-func TestGetConvertPrompt_CustomPrefix(t *testing.T) {
-	prompt := GetConvertPrompt("/path/prd.md", "MFR")
-
-	// Verify custom prefix is used, not hardcoded US
-	if strings.Contains(prompt, "{{ID_PREFIX}}") {
-		t.Error("Expected {{ID_PREFIX}} to be substituted")
-	}
-	if !strings.Contains(prompt, "MFR-001") {
-		t.Error("Expected prompt to contain MFR-001 when prefix is MFR")
-	}
-	if !strings.Contains(prompt, "MFR-002") {
-		t.Error("Expected prompt to contain MFR-002 when prefix is MFR")
 	}
 }
 
