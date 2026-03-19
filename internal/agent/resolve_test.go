@@ -67,37 +67,61 @@ func TestResolve_env(t *testing.T) {
 	savePath := os.Getenv(keyPath)
 	defer func() {
 		if saveAgent != "" {
-			os.Setenv(keyAgent, saveAgent)
+			if err := os.Setenv(keyAgent, saveAgent); err != nil {
+				t.Fatalf("restore %s: %v", keyAgent, err)
+			}
 		} else {
-			os.Unsetenv(keyAgent)
+			if err := os.Unsetenv(keyAgent); err != nil {
+				t.Fatalf("unset %s: %v", keyAgent, err)
+			}
 		}
 		if savePath != "" {
-			os.Setenv(keyPath, savePath)
+			if err := os.Setenv(keyPath, savePath); err != nil {
+				t.Fatalf("restore %s: %v", keyPath, err)
+			}
 		} else {
-			os.Unsetenv(keyPath)
+			if err := os.Unsetenv(keyPath); err != nil {
+				t.Fatalf("unset %s: %v", keyPath, err)
+			}
 		}
 	}()
 
-	os.Unsetenv(keyAgent)
-	os.Unsetenv(keyPath)
+	if err := os.Unsetenv(keyAgent); err != nil {
+		t.Fatalf("unset %s: %v", keyAgent, err)
+	}
+	if err := os.Unsetenv(keyPath); err != nil {
+		t.Fatalf("unset %s: %v", keyPath, err)
+	}
 
 	// Env provider when no flag
-	os.Setenv(keyAgent, "codex")
+	if err := os.Setenv(keyAgent, "codex"); err != nil {
+		t.Fatalf("set %s: %v", keyAgent, err)
+	}
 	got := mustResolve(t, "", "", nil)
 	if got.Name() != "Codex" {
 		t.Errorf("with CHIEF_AGENT=codex, name = %q, want Codex", got.Name())
 	}
-	os.Unsetenv(keyAgent)
+	if err := os.Unsetenv(keyAgent); err != nil {
+		t.Fatalf("unset %s: %v", keyAgent, err)
+	}
 
 	// Env path when no flag path
-	os.Setenv(keyAgent, "codex")
-	os.Setenv(keyPath, "/env/codex")
+	if err := os.Setenv(keyAgent, "codex"); err != nil {
+		t.Fatalf("set %s: %v", keyAgent, err)
+	}
+	if err := os.Setenv(keyPath, "/env/codex"); err != nil {
+		t.Fatalf("set %s: %v", keyPath, err)
+	}
 	got = mustResolve(t, "", "", nil)
 	if got.CLIPath() != "/env/codex" {
 		t.Errorf("with CHIEF_AGENT_PATH, CLIPath = %q, want /env/codex", got.CLIPath())
 	}
-	os.Unsetenv(keyPath)
-	os.Unsetenv(keyAgent)
+	if err := os.Unsetenv(keyPath); err != nil {
+		t.Fatalf("unset %s: %v", keyPath, err)
+	}
+	if err := os.Unsetenv(keyAgent); err != nil {
+		t.Fatalf("unset %s: %v", keyAgent, err)
+	}
 }
 
 func TestResolve_normalize(t *testing.T) {

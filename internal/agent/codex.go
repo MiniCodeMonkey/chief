@@ -52,7 +52,9 @@ func (p *CodexProvider) ConvertCommand(workDir, prompt string) (*exec.Cmd, loop.
 		return nil, 0, "", fmt.Errorf("failed to create temp file for conversion output: %w", err)
 	}
 	outPath := f.Name()
-	f.Close()
+	if err := f.Close(); err != nil {
+		return nil, 0, "", fmt.Errorf("failed to close temp file for conversion output: %w", err)
+	}
 	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "-o", outPath, "-")
 	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(prompt)
@@ -66,7 +68,9 @@ func (p *CodexProvider) FixJSONCommand(prompt string) (*exec.Cmd, loop.OutputMod
 		return nil, 0, "", fmt.Errorf("failed to create temp file for fix output: %w", err)
 	}
 	outPath := f.Name()
-	f.Close()
+	if err := f.Close(); err != nil {
+		return nil, 0, "", fmt.Errorf("failed to close temp file for fix output: %w", err)
+	}
 	cmd := exec.Command(p.cliPath, "exec", "--sandbox", "read-only", "--skip-git-repo-check", "-o", outPath, "-")
 	cmd.Stdin = strings.NewReader(prompt)
 	return cmd, loop.OutputFromFile, outPath, nil
