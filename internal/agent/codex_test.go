@@ -41,7 +41,7 @@ func TestCodexProvider_LoopCommand(t *testing.T) {
 	if cmd.Path != "/bin/codex" {
 		t.Errorf("LoopCommand Path = %q, want /bin/codex", cmd.Path)
 	}
-	wantArgs := []string{"/bin/codex", "exec", "--json", "--yolo", "-C", "/work/dir", "-"}
+	wantArgs := []string{"/bin/codex", "exec", "--json", "--yolo", "--skip-git-repo-check", "-C", "/work/dir", "-"}
 	if len(cmd.Args) != len(wantArgs) {
 		t.Fatalf("LoopCommand Args len = %d, want %d: %v", len(cmd.Args), len(wantArgs), cmd.Args)
 	}
@@ -76,14 +76,20 @@ func TestCodexProvider_ConvertCommand(t *testing.T) {
 		t.Errorf("ConvertCommand Path = %q", cmd.Path)
 	}
 	foundO := false
+	foundSkipGitRepoCheck := false
 	for i, a := range cmd.Args {
 		if a == "-o" && i+1 < len(cmd.Args) && cmd.Args[i+1] == outPath {
 			foundO = true
-			break
+		}
+		if a == "--skip-git-repo-check" {
+			foundSkipGitRepoCheck = true
 		}
 	}
 	if !foundO {
 		t.Errorf("ConvertCommand should have -o %q in args: %v", outPath, cmd.Args)
+	}
+	if !foundSkipGitRepoCheck {
+		t.Errorf("ConvertCommand should include --skip-git-repo-check: %v", cmd.Args)
 	}
 	if cmd.Dir != "/prd/dir" {
 		t.Errorf("ConvertCommand Dir = %q, want /prd/dir", cmd.Dir)
@@ -103,14 +109,20 @@ func TestCodexProvider_FixJSONCommand(t *testing.T) {
 		t.Error("FixJSONCommand outPath should be non-empty temp file")
 	}
 	foundO := false
+	foundSkipGitRepoCheck := false
 	for i, a := range cmd.Args {
 		if a == "-o" && i+1 < len(cmd.Args) && cmd.Args[i+1] == outPath {
 			foundO = true
-			break
+		}
+		if a == "--skip-git-repo-check" {
+			foundSkipGitRepoCheck = true
 		}
 	}
 	if !foundO {
 		t.Errorf("FixJSONCommand should have -o %q in args: %v", outPath, cmd.Args)
+	}
+	if !foundSkipGitRepoCheck {
+		t.Errorf("FixJSONCommand should include --skip-git-repo-check: %v", cmd.Args)
 	}
 }
 
@@ -120,8 +132,14 @@ func TestCodexProvider_InteractiveCommand(t *testing.T) {
 	if cmd.Dir != "/work" {
 		t.Errorf("InteractiveCommand Dir = %q, want /work", cmd.Dir)
 	}
-	if len(cmd.Args) < 2 || cmd.Args[0] != "codex" || cmd.Args[1] != "my prompt" {
-		t.Errorf("InteractiveCommand Args = %v", cmd.Args)
+	wantArgs := []string{"codex", "my prompt"}
+	if len(cmd.Args) != len(wantArgs) {
+		t.Fatalf("InteractiveCommand Args len = %d, want %d: %v", len(cmd.Args), len(wantArgs), cmd.Args)
+	}
+	for i, w := range wantArgs {
+		if cmd.Args[i] != w {
+			t.Errorf("InteractiveCommand Args[%d] = %q, want %q", i, cmd.Args[i], w)
+		}
 	}
 }
 
