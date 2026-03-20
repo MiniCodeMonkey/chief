@@ -6,15 +6,14 @@ import (
 	"path/filepath"
 
 	"github.com/minicodemonkey/chief/embed"
-	"github.com/minicodemonkey/chief/internal/loop"
-	"github.com/minicodemonkey/chief/internal/prd"
 )
 
 // EditOptions contains configuration for the edit command.
 type EditOptions struct {
-	Name     string        // PRD name (default: "main")
-	BaseDir  string        // Base directory for .chief/prds/ (default: current directory)
-	Provider loop.Provider // Agent CLI provider (Claude or Codex)
+	Name    string // PRD name (default: "main")
+	BaseDir string // Base directory for .chief/prds/ (default: current directory)
+	Merge   bool   // Auto-merge without prompting on conversion conflicts
+	Force   bool   // Auto-overwrite without prompting on conversion conflicts
 }
 
 // RunEdit edits an existing PRD by launching an interactive Claude session.
@@ -47,24 +46,26 @@ func RunEdit(opts EditOptions) error {
 
 	// Get the edit prompt with the PRD directory path
 	prompt := embed.GetEditPrompt(prdDir)
-	if opts.Provider == nil {
-		return fmt.Errorf("edit command requires Provider to be set")
-	}
 
-	// Launch interactive agent session
+	// Launch interactive Claude session
 	fmt.Printf("Editing PRD at %s...\n", prdDir)
-	fmt.Printf("Launching %s to help you edit your PRD...\n", opts.Provider.Name())
+	fmt.Println("Launching Claude to help you edit your PRD...")
 	fmt.Println()
 
-	if err := runInteractiveAgent(opts.Provider, opts.BaseDir, prompt); err != nil {
-		return fmt.Errorf("%s session failed: %w", opts.Provider.Name(), err)
+	if err := runInteractiveClaude(opts.BaseDir, prompt); err != nil {
+		return fmt.Errorf("Claude session failed: %w", err)
 	}
 
 	fmt.Println("\nPRD editing complete!")
 
-	// Validate the edited prd.md can be parsed
-	if _, err := prd.ParseMarkdownPRD(prdMdPath); err != nil {
-		fmt.Printf("Warning: prd.md could not be parsed: %v\n", err)
+	// Run conversion from prd.md to prd.json with progress protection
+	convertOpts := ConvertOptions{
+		PRDDir: prdDir,
+		Merge:  opts.Merge,
+		Force:  opts.Force,
+	}
+	if err := RunConvertWithOptions(convertOpts); err != nil {
+		return fmt.Errorf("conversion failed: %w", err)
 	}
 
 	fmt.Printf("\nYour PRD is updated! Run 'chief' or 'chief %s' to continue working on it.\n", opts.Name)

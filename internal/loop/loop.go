@@ -6,14 +6,15 @@ package loop
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/minicodemonkey/chief/embed"
@@ -22,13 +23,10 @@ import (
 
 // RetryConfig configures automatic retry behavior on Claude crashes.
 type RetryConfig struct {
-	MaxRetries  int             // Maximum number of retry attempts (default: 3)
+	MaxRetries  int           // Maximum number of retry attempts (default: 3)
 	RetryDelays []time.Duration // Delays between retries (default: 0s, 5s, 15s)
-	Enabled     bool            // Whether retry is enabled (default: true)
+	Enabled     bool          // Whether retry is enabled (default: true)
 }
-
-// DefaultWatchdogTimeout is the default duration of silence before the watchdog kills a hung process.
-const DefaultWatchdogTimeout = 5 * time.Minute
 
 // DefaultRetryConfig returns the default retry configuration.
 func DefaultRetryConfig() RetryConfig {
@@ -39,87 +37,51 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
-// Loop manages the core agent loop that invokes the configured agent repeatedly until all stories are complete.
+// Loop manages the core agent loop that invokes Claude repeatedly until all stories are complete.
 type Loop struct {
-	prdPath         string
-	workDir         string
-	prompt          string
-	buildPrompt     func() (string, string, error) // optional: rebuild prompt each iteration; returns (prompt, storyID, error)
-	maxIter         int
-	iteration       int
-	events          chan Event
-	provider        Provider
-	agentCmd        *exec.Cmd
-	logFile         *os.File
-	mu              sync.Mutex
-	stopped         bool
-	paused          bool
-	retryConfig     RetryConfig
-	lastOutputTime  time.Time
-	watchdogTimeout time.Duration
-	sawStoryDone    bool
-	currentStoryID  string
+	prdPath     string
+	workDir     string
+	prompt      string
+	maxIter     int
+	iteration   int
+	events      chan Event
+	claudeCmd   *exec.Cmd
+	logFile     *os.File
+	mu          sync.Mutex
+	stopped     bool
+	paused      bool
+	retryConfig RetryConfig
 }
 
 // NewLoop creates a new Loop instance.
-func NewLoop(prdPath, prompt string, maxIter int, provider Provider) *Loop {
+func NewLoop(prdPath, prompt string, maxIter int) *Loop {
 	return &Loop{
-		prdPath:         prdPath,
-		prompt:          prompt,
-		maxIter:         maxIter,
-		provider:        provider,
-		events:          make(chan Event, 100),
-		retryConfig:     DefaultRetryConfig(),
-		watchdogTimeout: DefaultWatchdogTimeout,
+		prdPath:     prdPath,
+		prompt:      prompt,
+		maxIter:     maxIter,
+		events:      make(chan Event, 100),
+		retryConfig: DefaultRetryConfig(),
 	}
 }
 
 // NewLoopWithWorkDir creates a new Loop instance with a configurable working directory.
 // When workDir is empty, defaults to the project root for backward compatibility.
-func NewLoopWithWorkDir(prdPath, workDir string, prompt string, maxIter int, provider Provider) *Loop {
+func NewLoopWithWorkDir(prdPath, workDir string, prompt string, maxIter int) *Loop {
 	return &Loop{
-		prdPath:         prdPath,
-		workDir:         workDir,
-		prompt:          prompt,
-		maxIter:         maxIter,
-		provider:        provider,
-		events:          make(chan Event, 100),
-		retryConfig:     DefaultRetryConfig(),
-		watchdogTimeout: DefaultWatchdogTimeout,
+		prdPath:     prdPath,
+		workDir:     workDir,
+		prompt:      prompt,
+		maxIter:     maxIter,
+		events:      make(chan Event, 100),
+		retryConfig: DefaultRetryConfig(),
 	}
 }
 
 // NewLoopWithEmbeddedPrompt creates a new Loop instance using the embedded agent prompt.
-// The prompt is rebuilt on each iteration to inline the current story context.
-func NewLoopWithEmbeddedPrompt(prdPath string, maxIter int, provider Provider) *Loop {
-	l := NewLoop(prdPath, "", maxIter, provider)
-	l.buildPrompt = promptBuilderForPRD(prdPath)
-	return l
-}
-
-// promptBuilderForPRD returns a function that loads the PRD and builds a prompt
-// with the next story inlined. This is called before each iteration so that
-// newly completed stories are skipped. The returned storyID is stored on the Loop.
-func promptBuilderForPRD(prdPath string) func() (string, string, error) {
-	return func() (string, string, error) {
-		p, err := prd.LoadPRD(prdPath)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to load PRD for prompt: %w", err)
-		}
-
-		story := p.NextStory()
-		if story == nil {
-			return "", "", fmt.Errorf("all stories are complete")
-		}
-
-		// Mark the story as in-progress in the markdown file
-		_ = prd.SetStoryStatus(prdPath, story.ID, "in-progress")
-
-		storyCtx := p.NextStoryContext()
-
-		prompt := embed.GetPrompt(prd.ProgressPath(prdPath), *storyCtx, story.ID, story.Title)
-		return prompt, story.ID, nil
-	}
+// The PRD path placeholder in the prompt is automatically substituted.
+func NewLoopWithEmbeddedPrompt(prdPath string, maxIter int) *Loop {
+	prompt := embed.GetPrompt(prdPath)
+	return NewLoop(prdPath, prompt, maxIter)
 }
 
 // Events returns the channel for receiving events from the loop.
@@ -136,13 +98,9 @@ func (l *Loop) Iteration() int {
 
 // Run executes the agent loop until completion or max iterations.
 func (l *Loop) Run(ctx context.Context) error {
-	if l.provider == nil {
-		return fmt.Errorf("loop provider is not configured")
-	}
-
 	// Open log file in PRD directory
 	prdDir := filepath.Dir(l.prdPath)
-	logPath := filepath.Join(prdDir, l.provider.LogFileName())
+	logPath := filepath.Join(prdDir, "claude.log")
 	var err error
 	l.logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
@@ -174,38 +132,24 @@ func (l *Loop) Run(ctx context.Context) error {
 			return nil
 		}
 
-		// Rebuild prompt if builder is set (inlines the current story each iteration)
-		if l.buildPrompt != nil {
-			prompt, storyID, err := l.buildPrompt()
-			if err != nil {
-				l.events <- Event{
-					Type:      EventComplete,
-					Iteration: currentIter,
-				}
-				return nil
-			}
-			l.mu.Lock()
-			l.prompt = prompt
-			l.currentStoryID = storyID
-			l.sawStoryDone = false
-			l.mu.Unlock()
-		}
-
-		// Send iteration start event with current story ID
-		l.mu.Lock()
-		iterStoryID := l.currentStoryID
-		l.mu.Unlock()
+		// Send iteration start event
 		l.events <- Event{
 			Type:      EventIterationStart,
 			Iteration: currentIter,
-			StoryID:   iterStoryID,
 		}
 
 		// Run a single iteration with retry logic
 		if err := l.runIterationWithRetry(ctx); err != nil {
-			l.events <- Event{
-				Type: EventError,
-				Err:  err,
+			if errors.Is(err, ErrQuotaExhausted) {
+				l.events <- Event{
+					Type: EventQuotaExhausted,
+					Err:  err,
+				}
+			} else {
+				l.events <- Event{
+					Type: EventError,
+					Err:  err,
+				}
 			}
 			return err
 		}
@@ -217,17 +161,23 @@ func (l *Loop) Run(ctx context.Context) error {
 		default:
 		}
 
-		// If the agent emitted <chief-done/>, mark the story as done in prd.md
-		l.mu.Lock()
-		saw := l.sawStoryDone
-		storyID := l.currentStoryID
-		l.sawStoryDone = false
-		l.mu.Unlock()
-		if saw && storyID != "" {
-			_ = prd.SetStoryStatus(l.prdPath, storyID, "done")
+		// Check prd.json for completion
+		p, err := prd.LoadPRD(l.prdPath)
+		if err != nil {
+			l.events <- Event{
+				Type: EventError,
+				Err:  fmt.Errorf("failed to load PRD: %w", err),
+			}
+			return err
 		}
-		// buildPrompt on the next iteration will return error if all stories are complete,
-		// which causes EventComplete to be emitted above.
+
+		if p.AllComplete() {
+			l.events <- Event{
+				Type:      EventComplete,
+				Iteration: currentIter,
+			}
+			return nil
+		}
 
 		// Check pause flag after iteration (loop stops after current iteration completes)
 		l.mu.Lock()
@@ -269,7 +219,7 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 				Iteration:  iter,
 				RetryCount: attempt,
 				RetryMax:   config.MaxRetries,
-				Text:       fmt.Sprintf("%s crashed, retrying (%d/%d)...", l.provider.Name(), attempt, config.MaxRetries),
+				Text:       fmt.Sprintf("Claude crashed, retrying (%d/%d)...", attempt, config.MaxRetries),
 			}
 
 			// Wait before retry
@@ -309,44 +259,45 @@ func (l *Loop) runIterationWithRetry(ctx context.Context) error {
 			return nil
 		}
 
+		// Quota errors should NOT be retried — return immediately
+		if errors.Is(err, ErrQuotaExhausted) {
+			return err
+		}
+
 		lastErr = err
 	}
 
 	return fmt.Errorf("max retries (%d) exceeded: %w", config.MaxRetries, lastErr)
 }
 
-// runIteration spawns the agent and processes its output.
+// runIteration spawns Claude and processes its output.
 func (l *Loop) runIteration(ctx context.Context) error {
-	workDir := l.effectiveWorkDir()
-	cmd := l.provider.LoopCommand(ctx, l.prompt, workDir)
+	// Build Claude command with required flags
 	l.mu.Lock()
-	l.agentCmd = cmd
-	// Initialize watchdog state
-	l.lastOutputTime = time.Now()
-	watchdogTimeout := l.watchdogTimeout
+	l.claudeCmd = exec.CommandContext(ctx, "claude",
+		"--dangerously-skip-permissions",
+		"-p", l.prompt,
+		"--output-format", "stream-json",
+		"--verbose",
+	)
+	// Set working directory: use workDir if configured, otherwise default to PRD directory
+	l.claudeCmd.Dir = l.effectiveWorkDir()
 	l.mu.Unlock()
 
 	// Create pipes for stdout and stderr
-	stdout, err := l.agentCmd.StdoutPipe()
+	stdout, err := l.claudeCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
-	stderr, err := l.agentCmd.StderrPipe()
+	stderr, err := l.claudeCmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	// Start the command
-	if err := l.agentCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start %s: %w", l.provider.Name(), err)
-	}
-
-	// Start watchdog goroutine to detect hung processes
-	watchdogDone := make(chan struct{})
-	var watchdogFired atomic.Bool
-	if watchdogTimeout > 0 {
-		go l.runWatchdog(watchdogTimeout, watchdogDone, &watchdogFired)
+	if err := l.claudeCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start Claude: %w", err)
 	}
 
 	// Process stdout in a separate goroutine
@@ -358,20 +309,18 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		l.processOutput(stdout)
 	}()
 
-	// Log stderr to the log file
+	// Capture stderr into a buffer while also logging it
+	var stderrBuf bytes.Buffer
 	go func() {
 		defer wg.Done()
-		l.logStream(stderr, "[stderr] ")
+		l.logAndCaptureStream(stderr, "[stderr] ", &stderrBuf)
 	}()
 
 	// Wait for output processing to complete
 	wg.Wait()
 
-	// Stop watchdog
-	close(watchdogDone)
-
 	// Wait for the command to finish
-	if err := l.agentCmd.Wait(); err != nil {
+	if err := l.claudeCmd.Wait(); err != nil {
 		// If the context was cancelled, don't treat it as an error
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -383,71 +332,19 @@ func (l *Loop) runIteration(ctx context.Context) error {
 		if stopped {
 			return nil
 		}
-		// Check if the watchdog killed the process
-		if watchdogFired.Load() {
-			return fmt.Errorf("watchdog timeout: no output for %s", watchdogTimeout)
+		// Check if this is a quota/rate-limit error
+		stderrText := stderrBuf.String()
+		if IsQuotaError(stderrText) || IsQuotaError(err.Error()) {
+			return fmt.Errorf("Claude quota exhausted: %w", ErrQuotaExhausted)
 		}
-		return fmt.Errorf("%s exited with error: %w", l.provider.Name(), err)
+		return fmt.Errorf("Claude exited with error: %w", err)
 	}
 
 	l.mu.Lock()
-	l.agentCmd = nil
+	l.claudeCmd = nil
 	l.mu.Unlock()
 
 	return nil
-}
-
-// runWatchdog monitors lastOutputTime and kills the process if no output is received
-// within the timeout duration. It stops when watchdogDone is closed.
-func (l *Loop) runWatchdog(timeout time.Duration, done <-chan struct{}, fired *atomic.Bool) {
-	// Check interval scales with timeout: 1/5 of timeout, clamped to [10ms, 10s]
-	checkInterval := timeout / 5
-	if checkInterval < 10*time.Millisecond {
-		checkInterval = 10 * time.Millisecond
-	}
-	if checkInterval > 10*time.Second {
-		checkInterval = 10 * time.Second
-	}
-	ticker := time.NewTicker(checkInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			l.mu.Lock()
-			lastOutput := l.lastOutputTime
-			stopped := l.stopped
-			l.mu.Unlock()
-
-			if stopped {
-				return
-			}
-
-			if time.Since(lastOutput) > timeout {
-				fired.Store(true)
-
-				// Emit watchdog timeout event
-				l.mu.Lock()
-				iter := l.iteration
-				l.mu.Unlock()
-				l.events <- Event{
-					Type:      EventWatchdogTimeout,
-					Iteration: iter,
-					Text:      fmt.Sprintf("No output for %s, killing hung process", timeout),
-				}
-
-				// Kill the process
-				l.mu.Lock()
-				if l.agentCmd != nil && l.agentCmd.Process != nil {
-					l.agentCmd.Process.Kill()
-				}
-				l.mu.Unlock()
-				return
-			}
-		case <-done:
-			return
-		}
-	}
 }
 
 // processOutput reads stdout line by line, logs it, and parses events.
@@ -460,21 +357,13 @@ func (l *Loop) processOutput(r io.Reader) {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// Update last output time for watchdog
-		l.mu.Lock()
-		l.lastOutputTime = time.Now()
-		l.mu.Unlock()
-
 		// Log raw output
 		l.logLine(line)
 
 		// Parse the line and emit event if valid
-		if event := l.provider.ParseLine(line); event != nil {
+		if event := ParseLine(line); event != nil {
 			l.mu.Lock()
 			event.Iteration = l.iteration
-			if event.Type == EventStoryDone {
-				l.sawStoryDone = true
-			}
 			l.mu.Unlock()
 			l.events <- *event
 		}
@@ -489,6 +378,17 @@ func (l *Loop) logStream(r io.Reader, prefix string) {
 	}
 }
 
+// logAndCaptureStream logs a stream with a prefix and also captures it into a buffer.
+func (l *Loop) logAndCaptureStream(r io.Reader, prefix string, buf *bytes.Buffer) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		text := scanner.Text()
+		l.logLine(prefix + text)
+		buf.WriteString(text)
+		buf.WriteByte('\n')
+	}
+}
+
 // logLine writes a line to the log file.
 func (l *Loop) logLine(line string) {
 	if l.logFile != nil {
@@ -496,15 +396,16 @@ func (l *Loop) logLine(line string) {
 	}
 }
 
-// Stop terminates the current agent process and stops the loop.
+// Stop terminates the current Claude process and stops the loop.
 func (l *Loop) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	l.stopped = true
 
-	if l.agentCmd != nil && l.agentCmd.Process != nil {
-		l.agentCmd.Process.Kill()
+	if l.claudeCmd != nil && l.claudeCmd.Process != nil {
+		// Kill the process
+		l.claudeCmd.Process.Kill()
 	}
 }
 
@@ -536,7 +437,7 @@ func (l *Loop) IsStopped() bool {
 	return l.stopped
 }
 
-// effectiveWorkDir returns the working directory to use for the agent.
+// effectiveWorkDir returns the working directory to use for Claude.
 // If workDir is set, it is used directly. Otherwise, defaults to the PRD directory.
 func (l *Loop) effectiveWorkDir() string {
 	if l.workDir != "" {
@@ -545,11 +446,11 @@ func (l *Loop) effectiveWorkDir() string {
 	return filepath.Dir(l.prdPath)
 }
 
-// IsRunning returns whether an agent process is currently running.
+// IsRunning returns whether a Claude process is currently running.
 func (l *Loop) IsRunning() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.agentCmd != nil && l.agentCmd.Process != nil
+	return l.claudeCmd != nil && l.claudeCmd.Process != nil
 }
 
 // SetMaxIterations updates the maximum iterations limit.
@@ -578,19 +479,4 @@ func (l *Loop) DisableRetry() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.retryConfig.Enabled = false
-}
-
-// SetWatchdogTimeout sets the watchdog timeout duration.
-// Setting timeout to 0 disables the watchdog.
-func (l *Loop) SetWatchdogTimeout(timeout time.Duration) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.watchdogTimeout = timeout
-}
-
-// WatchdogTimeout returns the current watchdog timeout duration.
-func (l *Loop) WatchdogTimeout() time.Duration {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.watchdogTimeout
 }

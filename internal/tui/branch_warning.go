@@ -11,10 +11,10 @@ import (
 type BranchWarningOption int
 
 const (
-	BranchOptionCreateWorktree BranchWarningOption = iota // Create worktree + branch
-	BranchOptionCreateBranch                              // Create branch only (no worktree)
-	BranchOptionContinue                                  // Continue on current branch / run in same directory
-	BranchOptionCancel                                    // Cancel
+	BranchOptionCreateWorktree   BranchWarningOption = iota // Create worktree + branch
+	BranchOptionCreateBranch                                // Create branch only (no worktree)
+	BranchOptionContinue                                    // Continue on current branch / run in same directory
+	BranchOptionCancel                                      // Cancel
 )
 
 // DialogContext determines which set of options to show.

@@ -15,13 +15,13 @@ type WatcherEvent struct {
 
 // Watcher watches a prd.json file for changes and sends events.
 type Watcher struct {
-	path    string
-	watcher *fsnotify.Watcher
-	events  chan WatcherEvent
-	done    chan struct{}
-	mu      sync.Mutex
-	running bool
-	lastPRD *PRD
+	path     string
+	watcher  *fsnotify.Watcher
+	events   chan WatcherEvent
+	done     chan struct{}
+	mu       sync.Mutex
+	running  bool
+	lastPRD  *PRD
 }
 
 // NewWatcher creates a new Watcher for the given PRD file path.
@@ -110,7 +110,7 @@ func (w *Watcher) processEvents() {
 
 			// Handle file removal - try to re-watch
 			if event.Op&fsnotify.Remove != 0 {
-				w.events <- WatcherEvent{Error: errors.New("prd.md was removed")}
+				w.events <- WatcherEvent{Error: errors.New("prd.json was removed")}
 				// Try to re-add the watch (file might be re-created)
 				_ = w.watcher.Add(w.path)
 			}

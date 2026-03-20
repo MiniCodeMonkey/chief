@@ -1,11 +1,11 @@
 ---
 layout: home
-description: Build big projects autonomously. Chief breaks your work into tasks and builds them one by one.
+description: Build big projects with Claude. Chief breaks your work into tasks and runs Claude in a loop until they're done.
 
 hero:
   name: Chief
-  text: Build Big Projects, Autonomously
-  tagline: Chief breaks your work into tasks and builds them one by one.
+  text: Build Big Projects with Claude
+  tagline: Chief breaks your work into tasks. Claude builds them one by one.
   image:
     src: /images/tui-screenshot.png
     alt: Chief TUI

@@ -1,9 +1,5 @@
 # Chief
 
-<p align="center">
-  <img src="assets/hero.png" alt="Chief" width="500">
-</p>
-
 Build big projects with Claude. Chief breaks your work into tasks and runs Claude Code in a loop until they're done.
 
 **[Documentation](https://minicodemonkey.github.io/chief/)** · **[Quick Start](https://minicodemonkey.github.io/chief/guide/quick-start)**
@@ -44,17 +40,7 @@ See the [documentation](https://minicodemonkey.github.io/chief/concepts/how-it-w
 
 ## Requirements
 
-- **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)**, **[Codex CLI](https://developers.openai.com/codex/cli/reference)**, or **[OpenCode CLI](https://opencode.ai)** installed and authenticated
-
-Use Claude by default, or configure Codex or OpenCode in `.chief/config.yaml`:
-
-```yaml
-agent:
-  provider: opencode
-  cliPath: /usr/local/bin/opencode   # optional
-```
-
-Or run with `chief --agent opencode` or set `CHIEF_AGENT=opencode`.
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 
 ## License
 
@@ -62,8 +48,6 @@ MIT
 
 ## Acknowledgments
 
-- [@Simon-BEE](https://github.com/Simon-BEE) — Multi-agent architecture and Codex CLI integration
-- [@tpaulshippy](https://github.com/tpaulshippy) — OpenCode CLI support and NDJSON parser
 - [snarktank/ralph](https://github.com/snarktank/ralph) — The original Ralph implementation that inspired this project
 - [Geoffrey Huntley](https://ghuntley.com/ralph/) — For coining the "Ralph Wiggum loop" pattern
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) — TUI framework

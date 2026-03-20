@@ -30,11 +30,11 @@ type CompletionScreen struct {
 	width  int
 	height int
 
-	prdName        string
-	completed      int
-	total          int
-	branch         string
-	commitCount    int
+	prdName    string
+	completed  int
+	total      int
+	branch     string
+	commitCount int
 	hasAutoActions bool // Whether push/PR auto-actions are configured
 
 	// Duration data

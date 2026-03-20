@@ -76,8 +76,7 @@ func (l *LogViewer) AddEvent(event loop.Event) {
 	// Filter out events we don't want to display
 	switch event.Type {
 	case loop.EventAssistantText, loop.EventToolStart, loop.EventToolResult,
-		loop.EventStoryDone, loop.EventComplete, loop.EventError, loop.EventRetrying,
-		loop.EventWatchdogTimeout:
+		loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventRetrying:
 		// Pre-render and cache lines
 		if l.width > 0 {
 			entry.cachedLines = l.renderEntry(entry)
@@ -354,16 +353,14 @@ func (l *LogViewer) renderEntry(entry LogEntry) []string {
 		return l.renderToolCard(entry)
 	case loop.EventToolResult:
 		return l.renderToolResult(entry)
-	case loop.EventStoryDone:
-		return l.renderStoryDone(entry)
+	case loop.EventStoryStarted:
+		return l.renderStoryStarted(entry)
 	case loop.EventComplete:
 		return l.renderComplete(entry)
 	case loop.EventError:
 		return l.renderError(entry)
 	case loop.EventRetrying:
 		return l.renderRetrying(entry)
-	case loop.EventWatchdogTimeout:
-		return l.renderWatchdogTimeout(entry)
 	default:
 		return l.renderText(entry)
 	}
@@ -554,20 +551,20 @@ func stripLineNumbers(code string) string {
 	return strings.Join(result, "\n")
 }
 
-// renderStoryDone renders a story done marker.
-func (l *LogViewer) renderStoryDone(entry LogEntry) []string {
+// renderStoryStarted renders a story started marker.
+func (l *LogViewer) renderStoryStarted(entry LogEntry) []string {
 	storyStyle := lipgloss.NewStyle().
-		Foreground(SuccessColor).
+		Foreground(PrimaryColor).
 		Bold(true).
 		Padding(0, 1)
 
-	dividerStyle := lipgloss.NewStyle().Foreground(SuccessColor)
+	dividerStyle := lipgloss.NewStyle().Foreground(PrimaryColor)
 	divider := dividerStyle.Render(strings.Repeat("─", l.width-4))
 
 	return []string{
 		"",
 		divider,
-		storyStyle.Render("✓ Story done"),
+		storyStyle.Render(fmt.Sprintf("▶ Working on: %s", entry.StoryID)),
 		divider,
 		"",
 	}
@@ -617,18 +614,4 @@ func (l *LogViewer) renderRetrying(entry LogEntry) []string {
 	}
 
 	return []string{retryStyle.Render("🔄 " + text)}
-}
-
-// renderWatchdogTimeout renders a watchdog timeout message.
-func (l *LogViewer) renderWatchdogTimeout(entry LogEntry) []string {
-	style := lipgloss.NewStyle().
-		Foreground(WarningColor).
-		Bold(true)
-
-	text := entry.Text
-	if text == "" {
-		text = "Watchdog timeout: process killed"
-	}
-
-	return []string{style.Render("⏱ " + text)}
 }

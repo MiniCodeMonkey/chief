@@ -1,42 +1,28 @@
 package prd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
-// createTestPRDMd creates a markdown PRD file for testing.
-func createTestPRDMd(t *testing.T, dir string, stories []UserStory) string {
-	t.Helper()
-	prdPath := filepath.Join(dir, "prd.md")
-
-	md := "# Test\n\n"
-	for _, s := range stories {
-		md += "### " + s.ID + ": " + s.Title + "\n"
-		if s.Passes {
-			md += "**Status:** done\n"
-		} else if s.InProgress {
-			md += "**Status:** in-progress\n"
-		}
-		if s.Description != "" {
-			md += "**Description:** " + s.Description + "\n"
-		}
-		md += "- [ ] criterion\n\n"
-	}
-
-	if err := os.WriteFile(prdPath, []byte(md), 0644); err != nil {
-		t.Fatalf("Failed to write test PRD: %v", err)
-	}
-	return prdPath
-}
-
 func TestNewWatcher(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdPath := createTestPRDMd(t, tmpDir, []UserStory{
-		{ID: "US-001", Title: "Test Story", Passes: false},
-	})
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	// Create a test PRD file
+	testPRD := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Title: "Test Story", Passes: false},
+		},
+	}
+	data, _ := json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test PRD: %v", err)
+	}
 
 	watcher, err := NewWatcher(prdPath)
 	if err != nil {
@@ -51,9 +37,19 @@ func TestNewWatcher(t *testing.T) {
 
 func TestWatcherStart(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdPath := createTestPRDMd(t, tmpDir, []UserStory{
-		{ID: "US-001", Title: "Test Story", Passes: false},
-	})
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	// Create a test PRD file
+	testPRD := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Title: "Test Story", Passes: false},
+		},
+	}
+	data, _ := json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test PRD: %v", err)
+	}
 
 	watcher, err := NewWatcher(prdPath)
 	if err != nil {
@@ -73,9 +69,19 @@ func TestWatcherStart(t *testing.T) {
 
 func TestWatcherDetectsFileChange(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdPath := createTestPRDMd(t, tmpDir, []UserStory{
-		{ID: "US-001", Title: "Test Story", Passes: false},
-	})
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	// Create a test PRD file
+	testPRD := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Title: "Test Story", Passes: false},
+		},
+	}
+	data, _ := json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test PRD: %v", err)
+	}
 
 	watcher, err := NewWatcher(prdPath)
 	if err != nil {
@@ -87,13 +93,17 @@ func TestWatcherDetectsFileChange(t *testing.T) {
 		t.Fatalf("Failed to start watcher: %v", err)
 	}
 
+	// Give watcher time to initialize
 	time.Sleep(100 * time.Millisecond)
 
 	// Modify the file - change passes status
-	if err := SetStoryStatus(prdPath, "US-001", "done"); err != nil {
+	testPRD.UserStories[0].Passes = true
+	data, _ = json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
 		t.Fatalf("Failed to update test PRD: %v", err)
 	}
 
+	// Wait for the event
 	select {
 	case event := <-watcher.Events():
 		if event.Error != nil {
@@ -112,9 +122,19 @@ func TestWatcherDetectsFileChange(t *testing.T) {
 
 func TestWatcherDetectsInProgressChange(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdPath := createTestPRDMd(t, tmpDir, []UserStory{
-		{ID: "US-001", Title: "Test Story", Passes: false, InProgress: false},
-	})
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	// Create a test PRD file
+	testPRD := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Title: "Test Story", Passes: false, InProgress: false},
+		},
+	}
+	data, _ := json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test PRD: %v", err)
+	}
 
 	watcher, err := NewWatcher(prdPath)
 	if err != nil {
@@ -126,13 +146,17 @@ func TestWatcherDetectsInProgressChange(t *testing.T) {
 		t.Fatalf("Failed to start watcher: %v", err)
 	}
 
+	// Give watcher time to initialize
 	time.Sleep(100 * time.Millisecond)
 
 	// Modify the file - change inProgress status
-	if err := SetStoryStatus(prdPath, "US-001", "in-progress"); err != nil {
+	testPRD.UserStories[0].InProgress = true
+	data, _ = json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
 		t.Fatalf("Failed to update test PRD: %v", err)
 	}
 
+	// Wait for the event
 	select {
 	case event := <-watcher.Events():
 		if event.Error != nil {
@@ -151,7 +175,50 @@ func TestWatcherDetectsInProgressChange(t *testing.T) {
 
 func TestWatcherHandlesFileNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdPath := filepath.Join(tmpDir, "nonexistent.md")
+	prdPath := filepath.Join(tmpDir, "nonexistent.json")
+
+	watcher, err := NewWatcher(prdPath)
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+	defer watcher.Stop()
+
+	// Start should still work, but we'll get an error event
+	if err := watcher.Start(); err != nil {
+		// This is expected since the file doesn't exist
+		// But the watcher.Add might fail first
+		// Let's check that events channel has an error
+		t.Logf("Got expected start error: %v", err)
+		return
+	}
+
+	// If start succeeded, check for error event
+	select {
+	case event := <-watcher.Events():
+		if event.Error == nil {
+			t.Error("Expected error event for nonexistent file")
+		}
+	case <-time.After(1 * time.Second):
+		// Might not get event if watcher.Add failed
+		t.Log("No error event received, which is acceptable if Add failed")
+	}
+}
+
+func TestWatcherIgnoresNonStatusChanges(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	// Create a test PRD file
+	testPRD := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Title: "Test Story", Description: "Original", Passes: false},
+		},
+	}
+	data, _ := json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test PRD: %v", err)
+	}
 
 	watcher, err := NewWatcher(prdPath)
 	if err != nil {
@@ -160,25 +227,45 @@ func TestWatcherHandlesFileNotFound(t *testing.T) {
 	defer watcher.Stop()
 
 	if err := watcher.Start(); err != nil {
-		t.Logf("Got expected start error: %v", err)
-		return
+		t.Fatalf("Failed to start watcher: %v", err)
 	}
 
+	// Give watcher time to initialize
+	time.Sleep(100 * time.Millisecond)
+
+	// Modify the file - only change description (not status)
+	testPRD.UserStories[0].Description = "Modified"
+	data, _ = json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to update test PRD: %v", err)
+	}
+
+	// Should NOT receive an event since status didn't change
 	select {
 	case event := <-watcher.Events():
-		if event.Error == nil {
-			t.Error("Expected error event for nonexistent file")
+		if event.PRD != nil {
+			t.Error("Did not expect PRD event for non-status change")
 		}
-	case <-time.After(1 * time.Second):
-		t.Log("No error event received, which is acceptable if Add failed")
+	case <-time.After(500 * time.Millisecond):
+		// Expected - no event for non-status changes
 	}
 }
 
 func TestWatcherStop(t *testing.T) {
 	tmpDir := t.TempDir()
-	prdPath := createTestPRDMd(t, tmpDir, []UserStory{
-		{ID: "US-001", Title: "Test Story", Passes: false},
-	})
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	// Create a test PRD file
+	testPRD := &PRD{
+		Project: "Test",
+		UserStories: []UserStory{
+			{ID: "US-001", Title: "Test Story", Passes: false},
+		},
+	}
+	data, _ := json.Marshal(testPRD)
+	if err := os.WriteFile(prdPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test PRD: %v", err)
+	}
 
 	watcher, err := NewWatcher(prdPath)
 	if err != nil {
@@ -189,8 +276,11 @@ func TestWatcherStop(t *testing.T) {
 		t.Fatalf("Failed to start watcher: %v", err)
 	}
 
+	// Stop should not panic or hang
 	watcher.Stop()
-	watcher.Stop() // Should be safe
+
+	// Stopping again should be safe
+	watcher.Stop()
 }
 
 func TestHasStatusChanged(t *testing.T) {

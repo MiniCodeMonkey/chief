@@ -21,8 +21,8 @@ var (
 	TextBrightColor = lipgloss.Color("#FFFFFF") // Bright white - emphasis
 
 	// Background colors
-	BgColor          = lipgloss.Color("#1E1E2E") // Dark background
-	BgSelectedColor  = lipgloss.Color("#313244") // Selected item background
+	BgColor         = lipgloss.Color("#1E1E2E") // Dark background
+	BgSelectedColor = lipgloss.Color("#313244") // Selected item background
 	BgHighlightColor = lipgloss.Color("#45475A") // Highlight background
 )
 

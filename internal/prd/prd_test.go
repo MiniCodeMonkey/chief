@@ -1,30 +1,32 @@
 package prd
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestLoadPRD(t *testing.T) {
-	// Create a temp file with valid PRD markdown
+	// Create a temp file with valid PRD JSON
 	tmpDir := t.TempDir()
-	prdPath := filepath.Join(tmpDir, "prd.md")
+	prdPath := filepath.Join(tmpDir, "prd.json")
 
-	validMd := `# Test Project
+	validJSON := `{
+		"project": "Test Project",
+		"description": "A test PRD",
+		"userStories": [
+			{
+				"id": "US-001",
+				"title": "First Story",
+				"description": "Test description",
+				"acceptanceCriteria": ["AC1", "AC2"],
+				"priority": 1,
+				"passes": false
+			}
+		]
+	}`
 
-A test PRD
-
-### US-001: First Story
-**Description:** Test description
-
-- [ ] AC1
-- [ ] AC2
-`
-
-	if err := os.WriteFile(prdPath, []byte(validMd), 0644); err != nil {
+	if err := os.WriteFile(prdPath, []byte(validJSON), 0644); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
@@ -48,9 +50,63 @@ A test PRD
 }
 
 func TestLoadPRD_FileNotFound(t *testing.T) {
-	_, err := LoadPRD("/nonexistent/path/prd.md")
+	_, err := LoadPRD("/nonexistent/path/prd.json")
 	if err == nil {
 		t.Error("expected error for nonexistent file, got nil")
+	}
+}
+
+func TestLoadPRD_InvalidJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	if err := os.WriteFile(prdPath, []byte("not valid json"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	_, err := LoadPRD(prdPath)
+	if err == nil {
+		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestPRD_Save(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	p := &PRD{
+		Project:     "Saved Project",
+		Description: "A saved PRD",
+		UserStories: []UserStory{
+			{
+				ID:                 "US-001",
+				Title:              "Test Story",
+				Description:        "Test",
+				AcceptanceCriteria: []string{"AC1"},
+				Priority:           1,
+				Passes:             true,
+			},
+		},
+	}
+
+	if err := p.Save(prdPath); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Verify by loading it back
+	loaded, err := LoadPRD(prdPath)
+	if err != nil {
+		t.Fatalf("LoadPRD after Save failed: %v", err)
+	}
+
+	if loaded.Project != p.Project {
+		t.Errorf("expected project '%s', got '%s'", p.Project, loaded.Project)
+	}
+	if len(loaded.UserStories) != 1 {
+		t.Errorf("expected 1 user story, got %d", len(loaded.UserStories))
+	}
+	if !loaded.UserStories[0].Passes {
+		t.Error("expected story to have passes: true")
 	}
 }
 
@@ -180,6 +236,7 @@ func TestPRD_NextStory_SkipsCompleted(t *testing.T) {
 }
 
 func TestPRD_NextStory_InterruptedTakesPrecedence(t *testing.T) {
+	// Even if there's a lower priority story, in-progress takes precedence
 	p := &PRD{
 		Project: "Test",
 		UserStories: []UserStory{
@@ -216,186 +273,33 @@ func TestUserStory_Fields(t *testing.T) {
 	}
 }
 
-func TestPRD_NextStoryContext_ReturnsHighestPriority(t *testing.T) {
-	p := &PRD{
-		Project: "Test",
-		UserStories: []UserStory{
-			{ID: "US-001", Title: "Low priority", Priority: 3, Passes: false},
-			{ID: "US-002", Title: "High priority", Priority: 1, Passes: false},
-			{ID: "US-003", Title: "Mid priority", Priority: 2, Passes: false},
-		},
-	}
+func TestPRD_Save_PreservesInProgress(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := filepath.Join(tmpDir, "prd.json")
 
-	ctx := p.NextStoryContext()
-	if ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
-
-	var story UserStory
-	if err := json.Unmarshal([]byte(*ctx), &story); err != nil {
-		t.Fatalf("failed to parse story context JSON: %v", err)
-	}
-	if story.ID != "US-002" {
-		t.Errorf("expected highest-priority story US-002, got %s", story.ID)
-	}
-}
-
-func TestPRD_NextStoryContext_ReturnsNilWhenAllComplete(t *testing.T) {
-	p := &PRD{
-		Project: "Test",
-		UserStories: []UserStory{
-			{ID: "US-001", Passes: true},
-			{ID: "US-002", Passes: true},
-		},
-	}
-
-	ctx := p.NextStoryContext()
-	if ctx != nil {
-		t.Errorf("expected nil when all stories complete, got %q", *ctx)
-	}
-}
-
-func TestPRD_NextStoryContext_SkipsPassingStories(t *testing.T) {
-	p := &PRD{
-		Project: "Test",
-		UserStories: []UserStory{
-			{ID: "US-001", Title: "Done", Priority: 1, Passes: true},
-			{ID: "US-002", Title: "Pending", Priority: 2, Passes: false},
-		},
-	}
-
-	ctx := p.NextStoryContext()
-	if ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
-
-	var story UserStory
-	if err := json.Unmarshal([]byte(*ctx), &story); err != nil {
-		t.Fatalf("failed to parse story context JSON: %v", err)
-	}
-	if story.ID != "US-002" {
-		t.Errorf("expected US-002 (only pending story), got %s", story.ID)
-	}
-}
-
-func TestPRD_NextStoryContext_EmptyPRD(t *testing.T) {
-	p := &PRD{
-		Project:     "Empty",
-		UserStories: []UserStory{},
-	}
-
-	ctx := p.NextStoryContext()
-	if ctx != nil {
-		t.Errorf("expected nil for empty PRD, got %q", *ctx)
-	}
-}
-
-func TestPRD_NextStoryContext_ValidJSON(t *testing.T) {
 	p := &PRD{
 		Project: "Test",
 		UserStories: []UserStory{
 			{
-				ID:                 "US-001",
-				Title:              "Test Story",
-				Description:        "A test description",
-				AcceptanceCriteria: []string{"AC1", "AC2"},
-				Priority:           1,
-				Passes:             false,
+				ID:         "US-001",
+				Title:      "Story",
+				Priority:   1,
+				Passes:     false,
+				InProgress: true,
 			},
 		},
 	}
 
-	ctx := p.NextStoryContext()
-	if ctx == nil {
-		t.Fatal("expected non-nil context")
+	if err := p.Save(prdPath); err != nil {
+		t.Fatalf("Save failed: %v", err)
 	}
 
-	var story UserStory
-	if err := json.Unmarshal([]byte(*ctx), &story); err != nil {
-		t.Fatalf("NextStoryContext did not return valid JSON: %v", err)
-	}
-	if story.ID != "US-001" {
-		t.Errorf("expected ID US-001, got %s", story.ID)
-	}
-	if story.Title != "Test Story" {
-		t.Errorf("expected title 'Test Story', got '%s'", story.Title)
-	}
-	if len(story.AcceptanceCriteria) != 2 {
-		t.Errorf("expected 2 acceptance criteria, got %d", len(story.AcceptanceCriteria))
-	}
-}
-
-func TestPRD_NextStoryContext_PromptSizeUnder10KB(t *testing.T) {
-	stories := make([]UserStory, 300)
-	for i := range stories {
-		stories[i] = UserStory{
-			ID:                 fmt.Sprintf("US-%03d", i+1),
-			Title:              fmt.Sprintf("Story %d with a reasonably long title for realism", i+1),
-			Description:        "This is a description that is moderately long to simulate realistic PRD content for testing purposes.",
-			AcceptanceCriteria: []string{"Criterion A", "Criterion B", "Criterion C"},
-			Priority:           float64(i + 1),
-			Passes:             i > 0,
-		}
-	}
-	p := &PRD{
-		Project:     "Large Project",
-		Description: "A large PRD with 300 stories",
-		UserStories: stories,
+	loaded, err := LoadPRD(prdPath)
+	if err != nil {
+		t.Fatalf("LoadPRD failed: %v", err)
 	}
 
-	ctx := p.NextStoryContext()
-	if ctx == nil {
-		t.Fatal("expected non-nil context for 300-story PRD")
-	}
-	if len(*ctx) > 10*1024 {
-		t.Errorf("story context is %d bytes, expected under 10KB", len(*ctx))
-	}
-}
-
-func TestPRD_ExtractIDPrefix_US(t *testing.T) {
-	p := &PRD{
-		Project: "Test",
-		UserStories: []UserStory{
-			{ID: "US-001"},
-			{ID: "US-002"},
-		},
-	}
-	if got := p.ExtractIDPrefix(); got != "US" {
-		t.Errorf("ExtractIDPrefix() = %q, want %q", got, "US")
-	}
-}
-
-func TestPRD_ExtractIDPrefix_MFR(t *testing.T) {
-	p := &PRD{
-		Project: "Test",
-		UserStories: []UserStory{
-			{ID: "MFR-001"},
-			{ID: "MFR-002"},
-		},
-	}
-	if got := p.ExtractIDPrefix(); got != "MFR" {
-		t.Errorf("ExtractIDPrefix() = %q, want %q", got, "MFR")
-	}
-}
-
-func TestPRD_ExtractIDPrefix_Default(t *testing.T) {
-	p := &PRD{
-		Project:     "Empty",
-		UserStories: []UserStory{},
-	}
-	if got := p.ExtractIDPrefix(); got != "US" {
-		t.Errorf("ExtractIDPrefix() = %q, want %q for empty PRD", got, "US")
-	}
-}
-
-func TestPRD_ExtractIDPrefix_SingleChar(t *testing.T) {
-	p := &PRD{
-		Project: "Test",
-		UserStories: []UserStory{
-			{ID: "T-001"},
-		},
-	}
-	if got := p.ExtractIDPrefix(); got != "T" {
-		t.Errorf("ExtractIDPrefix() = %q, want %q", got, "T")
+	if !loaded.UserStories[0].InProgress {
+		t.Error("expected InProgress to be preserved as true")
 	}
 }

@@ -2,10 +2,12 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/minicodemonkey/chief/embed"
 	"github.com/minicodemonkey/chief/internal/config"
 	"github.com/minicodemonkey/chief/internal/prd"
 )
@@ -66,13 +68,12 @@ type ManagerEvent struct {
 
 // Manager manages multiple Loop instances for parallel PRD execution.
 type Manager struct {
-	instances      map[string]*LoopInstance
-	events         chan ManagerEvent
-	maxIter        int
-	retryConfig    RetryConfig
-	provider       Provider
-	baseDir        string         // Project root directory (for CLAUDE.md etc.)
-	config         *config.Config // Project config for post-completion actions
+	instances   map[string]*LoopInstance
+	events      chan ManagerEvent
+	maxIter     int
+	retryConfig RetryConfig
+	baseDir        string                               // Project root directory (for CLAUDE.md etc.)
+	config         *config.Config                       // Project config for post-completion actions
 	mu             sync.RWMutex
 	wg             sync.WaitGroup
 	onComplete     func(prdName string)                  // Callback when a PRD completes
@@ -80,13 +81,12 @@ type Manager struct {
 }
 
 // NewManager creates a new loop manager.
-func NewManager(maxIter int, provider Provider) *Manager {
+func NewManager(maxIter int) *Manager {
 	return &Manager{
 		instances:   make(map[string]*LoopInstance),
 		events:      make(chan ManagerEvent, 100),
 		maxIter:     maxIter,
 		retryConfig: DefaultRetryConfig(),
-		provider:    provider,
 	}
 }
 
@@ -209,10 +209,6 @@ func (m *Manager) Unregister(name string) error {
 
 // Start starts the loop for a specific PRD.
 func (m *Manager) Start(name string) error {
-	if m.provider == nil {
-		return fmt.Errorf("manager provider is not configured")
-	}
-
 	m.mu.Lock()
 	instance, exists := m.instances[name]
 	m.mu.Unlock()
@@ -230,14 +226,14 @@ func (m *Manager) Start(name string) error {
 	// Create a new loop instance, using worktree-aware constructor if WorktreeDir is set.
 	// When no worktree is configured, run from the project root (baseDir) so that
 	// CLAUDE.md and other project-level files are visible to Claude.
+	prompt := embed.GetPrompt(instance.PRDPath)
 	workDir := instance.WorktreeDir
 	if workDir == "" {
 		m.mu.RLock()
 		workDir = m.baseDir
 		m.mu.RUnlock()
 	}
-	instance.Loop = NewLoopWithWorkDir(instance.PRDPath, workDir, "", m.maxIter, m.provider)
-	instance.Loop.buildPrompt = promptBuilderForPRD(instance.PRDPath)
+	instance.Loop = NewLoopWithWorkDir(instance.PRDPath, workDir, prompt, m.maxIter)
 	m.mu.RLock()
 	instance.Loop.SetRetryConfig(m.retryConfig)
 	m.mu.RUnlock()
@@ -313,8 +309,14 @@ func (m *Manager) runLoop(instance *LoopInstance) {
 	// Update state based on result
 	instance.mu.Lock()
 	if err != nil && err != context.Canceled {
-		instance.State = LoopStateError
-		instance.Error = err
+		if errors.Is(err, ErrQuotaExhausted) {
+			// Quota exhaustion pauses the run (resumable by user)
+			instance.State = LoopStatePaused
+			instance.Error = err
+		} else {
+			instance.State = LoopStateError
+			instance.Error = err
+		}
 	} else if instance.Loop.IsPaused() {
 		instance.State = LoopStatePaused
 	} else if instance.Loop.IsStopped() {

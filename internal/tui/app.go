@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/minicodemonkey/chief/internal/config"
+	"github.com/minicodemonkey/chief/internal/engine"
 	"github.com/minicodemonkey/chief/internal/git"
 	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/prd"
@@ -84,10 +85,10 @@ type mergeResultMsg struct {
 
 // cleanResultMsg is sent when a clean operation completes.
 type cleanResultMsg struct {
-	prdName     string
-	success     bool
-	message     string
-	clearBranch bool
+	prdName      string
+	success      bool
+	message      string
+	clearBranch  bool
 }
 
 // autoActionResultMsg is sent when a post-completion auto-action (push/PR) completes.
@@ -151,22 +152,24 @@ const (
 
 // App is the main Bubble Tea model for the Chief TUI.
 type App struct {
-	prd                 *prd.PRD
-	prdPath             string
-	prdName             string
-	state               AppState
-	iteration           int
-	startTime           time.Time
-	selectedIndex       int
-	storiesScrollOffset int
-	width               int
-	height              int
-	err                 error
+	prd           *prd.PRD
+	prdPath       string
+	prdName       string
+	state         AppState
+	iteration     int
+	startTime     time.Time
+	selectedIndex int
+	width         int
+	height        int
+	err           error
 
-	// Loop manager for parallel PRD execution
-	manager  *loop.Manager
-	provider loop.Provider
-	maxIter  int
+	// Shared engine for parallel PRD execution (used by both TUI and serve)
+	eng     *engine.Engine
+	maxIter int
+
+	// Event subscription from engine
+	eventCh   <-chan engine.ManagerEvent
+	unsubFn   func()
 
 	// Activity tracking
 	lastActivity string
@@ -198,8 +201,8 @@ type App struct {
 	previousViewMode ViewMode // View to return to when closing help
 
 	// Branch warning dialog
-	branchWarning       *BranchWarning
-	pendingStartPRD     string // PRD name waiting to start after branch decision
+	branchWarning      *BranchWarning
+	pendingStartPRD    string // PRD name waiting to start after branch decision
 	pendingWorktreePath string // Absolute worktree path for pending PRD
 
 	// Worktree setup spinner
@@ -209,8 +212,8 @@ type App struct {
 	completionScreen *CompletionScreen
 
 	// Story timing tracking
-	storyTimings      []StoryTiming
-	currentStoryID    string
+	storyTimings     []StoryTiming
+	currentStoryID   string
 	currentStoryStart time.Time
 
 	// Settings overlay
@@ -240,13 +243,65 @@ const (
 )
 
 // NewApp creates a new App with the given PRD.
-func NewApp(prdPath string, provider loop.Provider) (*App, error) {
-	return NewAppWithOptions(prdPath, 10, provider)
+func NewApp(prdPath string) (*App, error) {
+	return NewAppWithOptions(prdPath, 10) // default max iterations
+}
+
+// NewAppWithEngine creates a new App using a pre-existing engine.
+// This is used by the serve command to share an engine between the TUI and WebSocket handler.
+func NewAppWithEngine(prdPath string, eng *engine.Engine) (*App, error) {
+	p, err := prd.LoadPRD(prdPath)
+	if err != nil {
+		return nil, err
+	}
+
+	prdName := filepath.Base(filepath.Dir(prdPath))
+	if prdName == "." || prdName == "/" {
+		prdName = filepath.Base(prdPath)
+	}
+
+	watcher, err := prd.NewWatcher(prdPath)
+	if err != nil {
+		return nil, err
+	}
+
+	baseDir := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(prdPath))))
+	if !strings.Contains(prdPath, ".chief/prds/") {
+		baseDir, _ = os.Getwd()
+	}
+
+	// Subscribe to engine events for TUI consumption
+	eventCh, unsubFn := eng.Subscribe()
+
+	return &App{
+		prd:              p,
+		prdPath:          prdPath,
+		prdName:          prdName,
+		state:            StateReady,
+		selectedIndex:    0,
+		maxIter:          eng.MaxIterations(),
+		eng:              eng,
+		eventCh:          eventCh,
+		unsubFn:          unsubFn,
+		watcher:          watcher,
+		viewMode:         ViewDashboard,
+		logViewer:        NewLogViewer(),
+		diffViewer:       NewDiffViewer(baseDir),
+		tabBar:           NewTabBar(baseDir, prdName, eng.Manager()),
+		picker:           NewPRDPicker(baseDir, prdName, eng.Manager()),
+		baseDir:          baseDir,
+		config:           eng.Config(),
+		helpOverlay:      NewHelpOverlay(),
+		branchWarning:    NewBranchWarning(),
+		worktreeSpinner:  NewWorktreeSpinner(),
+		completionScreen: NewCompletionScreen(),
+		settingsOverlay:  NewSettingsOverlay(),
+	}, nil
 }
 
 // NewAppWithOptions creates a new App with the given PRD and options.
 // If maxIter <= 0, it will be calculated dynamically based on remaining stories.
-func NewAppWithOptions(prdPath string, maxIter int, provider loop.Provider) (*App, error) {
+func NewAppWithOptions(prdPath string, maxIter int) (*App, error) {
 	p, err := prd.LoadPRD(prdPath)
 	if err != nil {
 		return nil, err
@@ -302,54 +357,58 @@ func NewAppWithOptions(prdPath string, maxIter int, provider loop.Provider) (*Ap
 	progressWatcher, _ := prd.NewProgressWatcher(prdPath)
 	progress, _ := prd.ParseProgress(prd.ProgressPath(prdPath))
 
-	// Create loop manager for parallel PRD execution
-	manager := loop.NewManager(maxIter, provider)
-	manager.SetBaseDir(baseDir)
-	manager.SetConfig(cfg)
+	// Create shared engine for parallel PRD execution
+	eng := engine.New(maxIter)
+	eng.Manager().SetBaseDir(baseDir)
+	eng.SetConfig(cfg)
 
-	// Register the initial PRD with the manager
-	manager.Register(prdName, prdPath)
+	// Register the initial PRD with the engine
+	eng.Register(prdName, prdPath)
+
+	// Subscribe to engine events for TUI consumption
+	eventCh, unsubFn := eng.Subscribe()
 
 	// Create tab bar for always-visible PRD tabs
-	tabBar := NewTabBar(baseDir, prdName, manager)
+	tabBar := NewTabBar(baseDir, prdName, eng.Manager())
 
 	// Create picker with manager reference (for creating new PRDs)
-	picker := NewPRDPicker(baseDir, prdName, manager)
+	picker := NewPRDPicker(baseDir, prdName, eng.Manager())
 
 	return &App{
-		prd:              p,
-		prdPath:          prdPath,
-		prdName:          prdName,
-		state:            StateReady,
-		iteration:        0,
-		selectedIndex:    0,
-		maxIter:          maxIter,
-		manager:          manager,
-		provider:         provider,
+		prd:           p,
+		prdPath:       prdPath,
+		prdName:       prdName,
+		state:         StateReady,
+		iteration:     0,
+		selectedIndex: 0,
+		maxIter:       maxIter,
+		eng:              eng,
+		eventCh:          eventCh,
+		unsubFn:          unsubFn,
 		watcher:          watcher,
 		progressWatcher:  progressWatcher,
 		progress:         progress,
 		viewMode:         ViewDashboard,
-		logViewer:        NewLogViewer(),
-		diffViewer:       NewDiffViewer(baseDir),
-		tabBar:           tabBar,
-		picker:           picker,
-		baseDir:          baseDir,
-		config:           cfg,
+		logViewer:     NewLogViewer(),
+		diffViewer:    NewDiffViewer(baseDir),
+		tabBar:        tabBar,
+		picker:        picker,
+		baseDir:       baseDir,
+		config:        cfg,
 		helpOverlay:      NewHelpOverlay(),
 		branchWarning:    NewBranchWarning(),
 		worktreeSpinner:  NewWorktreeSpinner(),
 		completionScreen: NewCompletionScreen(),
 		settingsOverlay:  NewSettingsOverlay(),
-		quitConfirm:      NewQuitConfirmation(),
+		quitConfirm:     NewQuitConfirmation(),
 	}, nil
 }
 
 // SetCompletionCallback sets a callback that is called when any PRD completes.
 func (a *App) SetCompletionCallback(fn func(prdName string)) {
 	a.onCompletion = fn
-	if a.manager != nil {
-		a.manager.SetCompletionCallback(fn)
+	if a.eng != nil {
+		a.eng.SetCompletionCallback(fn)
 	}
 }
 
@@ -360,8 +419,8 @@ func (a *App) SetVerbose(v bool) {
 
 // DisableRetry disables automatic retry on Claude crashes.
 func (a *App) DisableRetry() {
-	if a.manager != nil {
-		a.manager.DisableRetry()
+	if a.eng != nil {
+		a.eng.DisableRetry()
 	}
 }
 
@@ -388,13 +447,13 @@ func (a App) Init() tea.Cmd {
 	)
 }
 
-// listenForManagerEvents listens for events from all managed loops.
+// listenForManagerEvents listens for events from the engine's subscription.
 func (a *App) listenForManagerEvents() tea.Cmd {
-	if a.manager == nil {
+	if a.eventCh == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		event, ok := <-a.manager.Events()
+		event, ok := <-a.eventCh
 		if !ok {
 			return nil
 		}
@@ -583,7 +642,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.viewMode == ViewDashboard || a.viewMode == ViewLog {
 				// Use the current PRD's worktree directory if available, otherwise base dir
 				diffDir := a.baseDir
-				if instance := a.manager.GetInstance(a.prdName); instance != nil && instance.WorktreeDir != "" {
+				if instance := a.eng.Manager().GetInstance(a.prdName); instance != nil && instance.WorktreeDir != "" {
 					diffDir = instance.WorktreeDir
 				}
 				a.diffViewer.SetBaseDir(diffDir)
@@ -663,9 +722,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				if a.selectedIndex > 0 {
 					a.selectedIndex--
-					if a.selectedIndex < a.storiesScrollOffset {
-						a.storiesScrollOffset = a.selectedIndex
-					}
 				}
 			}
 		case "down", "j":
@@ -676,7 +732,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				if a.selectedIndex < len(a.prd.UserStories)-1 {
 					a.selectedIndex++
-					a.adjustStoriesScroll()
 				}
 			}
 
@@ -768,10 +823,10 @@ func (a App) startLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
 
 // isAnotherPRDRunningInSameDir checks if another PRD is running in the project root (no worktree).
 func (a *App) isAnotherPRDRunningInSameDir(prdName string) bool {
-	if a.manager == nil {
+	if a.eng == nil {
 		return false
 	}
-	for _, inst := range a.manager.GetAllInstances() {
+	for _, inst := range a.eng.GetAllInstances() {
 		if inst.Name != prdName && inst.State == loop.LoopStateRunning && inst.WorktreeDir == "" {
 			return true
 		}
@@ -782,14 +837,14 @@ func (a *App) isAnotherPRDRunningInSameDir(prdName string) bool {
 // doStartLoop actually starts the loop (after branch check).
 func (a App) doStartLoop(prdName, prdDir string) (tea.Model, tea.Cmd) {
 	// Check if this PRD is registered, if not register it
-	if instance := a.manager.GetInstance(prdName); instance == nil {
+	if instance := a.eng.GetInstance(prdName); instance == nil {
 		// Find the PRD path
 		prdPath := filepath.Join(prdDir, "prd.json")
-		a.manager.Register(prdName, prdPath)
+		a.eng.Register(prdName, prdPath)
 	}
 
 	// Start the loop via manager
-	if err := a.manager.Start(prdName); err != nil {
+	if err := a.eng.Start(prdName); err != nil {
 		a.lastActivity = "Error starting loop: " + err.Error()
 		return a, nil
 	}
@@ -817,8 +872,8 @@ func (a App) pauseLoop() (tea.Model, tea.Cmd) {
 
 // pauseLoopForPRD pauses the loop for a specific PRD.
 func (a App) pauseLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
-	if a.manager != nil {
-		a.manager.Pause(prdName)
+	if a.eng != nil {
+		a.eng.Pause(prdName)
 	}
 	if prdName == a.prdName {
 		a.lastActivity = "Pausing after current iteration..."
@@ -835,8 +890,8 @@ func (a *App) stopLoop() {
 
 // stopLoopForPRD stops the loop for a specific PRD immediately.
 func (a *App) stopLoopForPRD(prdName string) {
-	if a.manager != nil {
-		a.manager.Stop(prdName)
+	if a.eng != nil {
+		a.eng.Stop(prdName)
 	}
 }
 
@@ -857,17 +912,20 @@ func (a App) stopLoopAndUpdateForPRD(prdName string) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// stopAllLoops stops all running loops.
+// stopAllLoops stops all running loops and unsubscribes from events.
 func (a *App) stopAllLoops() {
-	if a.manager != nil {
-		a.manager.StopAll()
+	if a.eng != nil {
+		a.eng.StopAll()
+	}
+	if a.unsubFn != nil {
+		a.unsubFn()
 	}
 }
 
 // tryQuit attempts to quit the app. If any loop is running, it shows the quit
 // confirmation dialog instead of quitting immediately.
 func (a App) tryQuit() (tea.Model, tea.Cmd) {
-	if a.manager != nil && a.manager.IsAnyRunning() {
+	if a.eng.Manager() != nil && a.eng.Manager().IsAnyRunning() {
 		a.previousViewMode = a.viewMode
 		a.viewMode = ViewQuitConfirm
 		a.quitConfirm.Reset()
@@ -927,12 +985,6 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 	case loop.EventIterationStart:
 		if isCurrentPRD {
 			a.lastActivity = "Starting iteration..."
-			// Start tracking story timing if this is a new story
-			if event.StoryID != "" && event.StoryID != a.currentStoryID {
-				a.finalizeStoryTiming()
-				a.currentStoryID = event.StoryID
-				a.currentStoryStart = time.Now()
-			}
 		}
 	case loop.EventAssistantText:
 		if isCurrentPRD {
@@ -951,11 +1003,14 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		if isCurrentPRD {
 			a.lastActivity = "Tool completed"
 		}
-	case loop.EventStoryDone:
+	case loop.EventStoryStarted:
 		if isCurrentPRD {
-			a.lastActivity = "Story done"
-			// Finalize story timing
+			a.lastActivity = "Working on: " + event.StoryID
+			// Finalize previous story timing
 			a.finalizeStoryTiming()
+			// Start tracking the new story
+			a.currentStoryID = event.StoryID
+			a.currentStoryStart = time.Now()
 		}
 	case loop.EventComplete:
 		if isCurrentPRD {
@@ -989,19 +1044,21 @@ func (a App) handleLoopEvent(prdName string, event loop.Event) (tea.Model, tea.C
 		if isCurrentPRD {
 			a.lastActivity = event.Text
 		}
-	case loop.EventWatchdogTimeout:
-		if isCurrentPRD {
-			a.lastActivity = event.Text
-		}
 	}
 
 	// Reload PRD from disk only on meaningful state changes (not every event)
 	if isCurrentPRD {
 		switch event.Type {
-		case loop.EventStoryDone, loop.EventComplete, loop.EventError, loop.EventMaxIterationsReached:
+		case loop.EventStoryStarted, loop.EventComplete, loop.EventError, loop.EventMaxIterationsReached:
 			if p, err := prd.LoadPRD(a.prdPath); err == nil {
 				a.prd = p
 			}
+		}
+
+		// Mark the story as in-progress in the PRD and auto-select it
+		if event.Type == loop.EventStoryStarted && event.StoryID != "" {
+			a.markStoryInProgress(event.StoryID)
+			a.selectStoryByID(event.StoryID)
 		}
 
 		// Clear in-progress when the PRD completes or the loop stops
@@ -1027,7 +1084,7 @@ func (a App) handleLoopFinished(prdName string, err error) (tea.Model, tea.Cmd) 
 	// Only update state if this is the current PRD
 	if prdName == a.prdName {
 		// Get the actual state from the manager
-		if state, _, _ := a.manager.GetState(prdName); state != 0 {
+		if state, _, _ := a.eng.GetState(prdName); state != 0 {
 			switch state {
 			case loop.LoopStateError:
 				a.state = StateError
@@ -1177,8 +1234,8 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			// Track the branch on the manager instance
-			if instance := a.manager.GetInstance(prdName); instance != nil {
-				a.manager.UpdateWorktreeInfo(prdName, "", branchName)
+			if instance := a.eng.GetInstance(prdName); instance != nil {
+				a.eng.UpdateWorktreeInfo(prdName, "", branchName)
 			}
 			a.lastActivity = "Created branch: " + branchName
 			// Now start the loop
@@ -1267,7 +1324,7 @@ func (a *App) showCompletionScreen(prdName string) tea.Cmd {
 
 	// Get branch from manager
 	branch := ""
-	if instance := a.manager.GetInstance(prdName); instance != nil {
+	if instance := a.eng.GetInstance(prdName); instance != nil {
 		branch = instance.Branch
 	}
 
@@ -1312,7 +1369,7 @@ func (a *App) runBackgroundAutoActions(prdName string) tea.Cmd {
 		return nil
 	}
 
-	instance := a.manager.GetInstance(prdName)
+	instance := a.eng.GetInstance(prdName)
 	if instance == nil || instance.Branch == "" {
 		return nil
 	}
@@ -1371,7 +1428,7 @@ func (a App) handleBackgroundAutoAction(msg backgroundAutoActionResultMsg) (tea.
 
 	if msg.action == "push" && a.config != nil && a.config.OnComplete.CreatePR {
 		// Chain PR creation after successful push
-		instance := a.manager.GetInstance(msg.prdName)
+		instance := a.eng.GetInstance(msg.prdName)
 		if instance != nil && instance.Branch != "" {
 			prdName := msg.prdName
 			branch := instance.Branch
@@ -1398,7 +1455,7 @@ func (a *App) runAutoPush() tea.Cmd {
 	branch := a.completionScreen.Branch()
 	// Use worktree dir if available, otherwise base dir
 	dir := a.baseDir
-	if instance := a.manager.GetInstance(a.completionScreen.PRDName()); instance != nil && instance.WorktreeDir != "" {
+	if instance := a.eng.GetInstance(a.completionScreen.PRDName()); instance != nil && instance.WorktreeDir != "" {
 		dir = instance.WorktreeDir
 	}
 	return func() tea.Msg {
@@ -1696,10 +1753,10 @@ func (a App) finishWorktreeSetup() (tea.Model, tea.Cmd) {
 
 	// Register or update with worktree info
 	prdPath := filepath.Join(prdDir, "prd.json")
-	if instance := a.manager.GetInstance(prdName); instance == nil {
-		a.manager.RegisterWithWorktree(prdName, prdPath, worktreePath, branchName)
+	if instance := a.eng.GetInstance(prdName); instance == nil {
+		a.eng.RegisterWithWorktree(prdName, prdPath, worktreePath, branchName)
 	} else {
-		a.manager.UpdateWorktreeInfo(prdName, worktreePath, branchName)
+		a.eng.UpdateWorktreeInfo(prdName, worktreePath, branchName)
 	}
 
 	a.lastActivity = fmt.Sprintf("Created worktree at %s on branch %s", worktreePath, branchName)
@@ -1814,8 +1871,8 @@ func (a App) handleCleanResult(msg cleanResultMsg) (tea.Model, tea.Cmd) {
 
 	if msg.success {
 		// Clear worktree info from manager
-		if a.manager != nil {
-			a.manager.ClearWorktreeInfo(msg.prdName, msg.clearBranch)
+		if a.eng != nil {
+			a.eng.ClearWorktreeInfo(msg.prdName, msg.clearBranch)
 		}
 		a.picker.Refresh()
 		a.lastActivity = fmt.Sprintf("Cleaned worktree for %s", msg.prdName)
@@ -2004,8 +2061,8 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	}
 
 	// Register with manager if not already registered
-	if instance := a.manager.GetInstance(name); instance == nil {
-		a.manager.Register(name, prdPath)
+	if instance := a.eng.GetInstance(name); instance == nil {
+		a.eng.Register(name, prdPath)
 	}
 
 	// Create new watcher for the new PRD
@@ -2028,7 +2085,7 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	a.progress, _ = prd.ParseProgress(prd.ProgressPath(prdPath))
 
 	// Get the state from the manager for this PRD
-	loopState, iteration, loopErr := a.manager.GetState(name)
+	loopState, iteration, loopErr := a.eng.GetState(name)
 	appState := StateReady
 	switch loopState {
 	case loop.LoopStateRunning:
@@ -2044,7 +2101,7 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	}
 
 	// Only recalculate max iterations if no loop is currently running for this PRD
-	if instance := a.manager.GetInstance(name); instance == nil || instance.State != loop.LoopStateRunning {
+	if instance := a.eng.Manager().GetInstance(name); instance == nil || instance.State != loop.LoopStateRunning {
 		remaining := 0
 		for _, story := range newPRD.UserStories {
 			if !story.Passes {
@@ -2062,13 +2119,12 @@ func (a App) switchToPRD(name, prdPath string) (tea.Model, tea.Cmd) {
 	a.prdPath = prdPath
 	a.prdName = name
 	a.selectedIndex = 0
-	a.storiesScrollOffset = 0
 	a.state = appState
 	a.iteration = iteration
 	a.err = loopErr
 	if appState == StateRunning {
 		// Keep the existing start time if running
-		if instance := a.manager.GetInstance(name); instance != nil {
+		if instance := a.eng.GetInstance(name); instance != nil {
 			a.startTime = instance.StartTime
 		}
 	} else {
@@ -2122,69 +2178,26 @@ func (a *App) GetSelectedStory() *prd.UserStory {
 	return nil
 }
 
-// storiesListHeight calculates how many story lines fit in the panel.
-// Must match the calculation in renderStoriesPanel.
-func (a *App) storiesListHeight() int {
-	fh := footerHeight
-	if a.height < 12 {
-		fh = 0
-	}
-	contentHeight := a.height - a.effectiveHeaderHeight() - fh - 2
-	if a.isNarrowMode() {
-		storiesHeight := max((contentHeight*40)/100, 5)
-		return storiesHeight - 5
-	}
-	return contentHeight - 5
-}
-
-// adjustStoriesScroll ensures the selected index is visible in the scroll window.
-func (a *App) adjustStoriesScroll() {
-	listHeight := a.storiesListHeight()
-	if listHeight <= 0 {
-		return
-	}
-	if a.selectedIndex < a.storiesScrollOffset {
-		a.storiesScrollOffset = a.selectedIndex
-	}
-	if a.selectedIndex >= a.storiesScrollOffset+listHeight {
-		a.storiesScrollOffset = a.selectedIndex - listHeight + 1
-	}
-	// Clamp
-	maxOffset := len(a.prd.UserStories) - listHeight
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	if a.storiesScrollOffset > maxOffset {
-		a.storiesScrollOffset = maxOffset
-	}
-	if a.storiesScrollOffset < 0 {
-		a.storiesScrollOffset = 0
-	}
-}
-
 // markStoryInProgress clears any existing in-progress flags and marks the
-// given story as in-progress, then reloads the PRD from disk.
+// given story as in-progress, then saves the PRD to disk.
 func (a *App) markStoryInProgress(storyID string) {
-	_ = prd.SetStoryStatus(a.prdPath, storyID, "in-progress")
-	if p, err := prd.LoadPRD(a.prdPath); err == nil {
-		a.prd = p
+	for i := range a.prd.UserStories {
+		a.prd.UserStories[i].InProgress = a.prd.UserStories[i].ID == storyID
 	}
+	_ = a.prd.Save(a.prdPath)
 }
 
-// clearInProgress clears all in-progress flags by setting each in-progress
-// story's status to "todo" in the markdown file, then reloads.
+// clearInProgress clears all in-progress flags and saves the PRD to disk.
 func (a *App) clearInProgress() {
 	dirty := false
-	for _, story := range a.prd.UserStories {
-		if story.InProgress {
-			_ = prd.SetStoryStatus(a.prdPath, story.ID, "todo")
+	for i := range a.prd.UserStories {
+		if a.prd.UserStories[i].InProgress {
+			a.prd.UserStories[i].InProgress = false
 			dirty = true
 		}
 	}
 	if dirty {
-		if p, err := prd.LoadPRD(a.prdPath); err == nil {
-			a.prd = p
-		}
+		_ = a.prd.Save(a.prdPath)
 	}
 }
 
@@ -2193,7 +2206,6 @@ func (a *App) selectStoryByID(storyID string) {
 	for i, story := range a.prd.UserStories {
 		if story.ID == storyID {
 			a.selectedIndex = i
-			a.adjustStoriesScroll()
 			return
 		}
 	}
@@ -2204,7 +2216,6 @@ func (a *App) selectInProgressStory() {
 	for i, story := range a.prd.UserStories {
 		if story.InProgress {
 			a.selectedIndex = i
-			a.adjustStoriesScroll()
 			return
 		}
 	}
@@ -2256,10 +2267,10 @@ func (a *App) adjustMaxIterations(delta int) {
 	a.maxIter = newMax
 
 	// Update the manager's default
-	if a.manager != nil {
-		a.manager.SetMaxIterations(newMax)
+	if a.eng != nil {
+		a.eng.SetMaxIterations(newMax)
 		// Also update any running loop for the current PRD
-		a.manager.SetMaxIterationsForInstance(a.prdName, newMax)
+		a.eng.SetMaxIterationsForInstance(a.prdName, newMax)
 	}
 
 	a.lastActivity = fmt.Sprintf("Max iterations: %d", newMax)
@@ -2312,7 +2323,6 @@ func (a App) handlePRDUpdate(msg PRDUpdateMsg) (tea.Model, tea.Cmd) {
 
 		// Auto-select the in-progress story so the user sees its details
 		a.selectInProgressStory()
-		a.adjustStoriesScroll()
 	}
 
 	// Continue listening for changes

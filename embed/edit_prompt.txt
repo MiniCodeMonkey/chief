@@ -127,10 +127,12 @@ Before saving the edited PRD, verify:
 - [ ] Functional requirements are numbered and unambiguous
 - [ ] Non-goals updated if scope changed
 - [ ] Success metrics reviewed and updated if needed
+- [ ] The file is ready for conversion to prd.json
+
 ---
 
 ## Final Step
 
-Once the edits are complete, tell the user to type `exit` to finish.
+Once the edits are complete, tell the user to type `/exit` to finish. Chief will automatically convert the updated PRD.
 
 Start by reading the existing PRD and understanding what changes the user wants to make.

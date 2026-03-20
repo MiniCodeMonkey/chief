@@ -62,6 +62,121 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadSettingsFields(t *testing.T) {
+	dir := t.TempDir()
+	autoCommit := false
+	cfg := &Config{
+		MaxIterations: 10,
+		AutoCommit:    &autoCommit,
+		CommitPrefix:  "feat:",
+		ClaudeModel:   "claude-sonnet-4-5-20250929",
+		TestCommand:   "go test ./...",
+	}
+
+	if err := Save(dir, cfg); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if loaded.MaxIterations != 10 {
+		t.Errorf("expected MaxIterations 10, got %d", loaded.MaxIterations)
+	}
+	if loaded.AutoCommit == nil || *loaded.AutoCommit != false {
+		t.Errorf("expected AutoCommit false, got %v", loaded.AutoCommit)
+	}
+	if loaded.CommitPrefix != "feat:" {
+		t.Errorf("expected CommitPrefix %q, got %q", "feat:", loaded.CommitPrefix)
+	}
+	if loaded.ClaudeModel != "claude-sonnet-4-5-20250929" {
+		t.Errorf("expected ClaudeModel %q, got %q", "claude-sonnet-4-5-20250929", loaded.ClaudeModel)
+	}
+	if loaded.TestCommand != "go test ./..." {
+		t.Errorf("expected TestCommand %q, got %q", "go test ./...", loaded.TestCommand)
+	}
+}
+
+func TestEffectiveDefaults(t *testing.T) {
+	cfg := Default()
+
+	if cfg.EffectiveMaxIterations() != 5 {
+		t.Errorf("expected EffectiveMaxIterations 5, got %d", cfg.EffectiveMaxIterations())
+	}
+	if !cfg.EffectiveAutoCommit() {
+		t.Error("expected EffectiveAutoCommit true")
+	}
+
+	// With explicit values
+	cfg.MaxIterations = 3
+	autoCommit := false
+	cfg.AutoCommit = &autoCommit
+
+	if cfg.EffectiveMaxIterations() != 3 {
+		t.Errorf("expected EffectiveMaxIterations 3, got %d", cfg.EffectiveMaxIterations())
+	}
+	if cfg.EffectiveAutoCommit() {
+		t.Error("expected EffectiveAutoCommit false")
+	}
+}
+
+func TestLoadUserConfig_NonExistent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg, err := LoadUserConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WSURL != "" {
+		t.Errorf("expected empty WSURL, got %q", cfg.WSURL)
+	}
+}
+
+func TestLoadUserConfig_WithWSURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	chiefDir := filepath.Join(home, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("ws_url: ws://localhost:8080/ws/server\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadUserConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WSURL != "ws://localhost:8080/ws/server" {
+		t.Errorf("expected ws://localhost:8080/ws/server, got %q", cfg.WSURL)
+	}
+}
+
+func TestLoadUserConfig_EmptyWSURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	chiefDir := filepath.Join(home, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadUserConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WSURL != "" {
+		t.Errorf("expected empty WSURL, got %q", cfg.WSURL)
+	}
+}
+
 func TestExists(t *testing.T) {
 	dir := t.TempDir()
 

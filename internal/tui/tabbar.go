@@ -66,7 +66,7 @@ func (t *TabBar) Refresh() {
 		}
 
 		name := entry.Name()
-		prdPath := filepath.Join(prdsDir, name, "prd.md")
+		prdPath := filepath.Join(prdsDir, name, "prd.json")
 
 		tabEntry := t.loadTabEntry(name, prdPath)
 		t.entries = append(t.entries, tabEntry)
@@ -74,7 +74,7 @@ func (t *TabBar) Refresh() {
 	}
 
 	// Also check if there's a "main" PRD directly in .chief/ (legacy location)
-	mainPrdPath := filepath.Join(t.baseDir, ".chief", "prd.md")
+	mainPrdPath := filepath.Join(t.baseDir, ".chief", "prd.json")
 	if _, err := os.Stat(mainPrdPath); err == nil && !addedNames["main"] {
 		tabEntry := t.loadTabEntry("main", mainPrdPath)
 		t.entries = append(t.entries, tabEntry)

@@ -12,17 +12,17 @@ import (
 type SettingsItemType int
 
 const (
-	SettingsItemBool SettingsItemType = iota
+	SettingsItemBool   SettingsItemType = iota
 	SettingsItemString
 )
 
 // SettingsItem represents a single editable setting.
 type SettingsItem struct {
-	Section   string
-	Label     string
-	Key       string // config key for identification
-	Type      SettingsItemType
-	BoolVal   bool
+	Section  string
+	Label    string
+	Key      string // config key for identification
+	Type     SettingsItemType
+	BoolVal  bool
 	StringVal string
 }
 
@@ -39,7 +39,7 @@ type SettingsOverlay struct {
 	editBuffer string
 
 	// GH CLI validation error
-	ghError     string
+	ghError    string
 	showGHError bool
 }
 

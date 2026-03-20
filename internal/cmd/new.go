@@ -6,22 +6,21 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/minicodemonkey/chief/embed"
-	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/prd"
 )
 
 // NewOptions contains configuration for the new command.
 type NewOptions struct {
-	Name     string        // PRD name (default: "main")
-	Context  string        // Optional context to pass to the agent
-	BaseDir  string        // Base directory for .chief/prds/ (default: current directory)
-	Provider loop.Provider // Agent CLI provider (Claude or Codex)
+	Name    string // PRD name (default: "main")
+	Context string // Optional context to pass to Claude
+	BaseDir string // Base directory for .chief/prds/ (default: current directory)
 }
 
-// RunNew creates a new PRD by launching an interactive agent session.
+// RunNew creates a new PRD by launching an interactive Claude session.
 func RunNew(opts NewOptions) error {
 	// Set defaults
 	if opts.Name == "" {
@@ -54,49 +53,65 @@ func RunNew(opts NewOptions) error {
 
 	// Get the init prompt with the PRD directory path
 	prompt := embed.GetInitPrompt(prdDir, opts.Context)
-	if opts.Provider == nil {
-		return fmt.Errorf("new command requires Provider to be set")
-	}
 
-	// Launch interactive agent session
+	// Launch interactive Claude session
 	fmt.Printf("Creating PRD in %s...\n", prdDir)
-	fmt.Printf("Launching %s to help you create your PRD...\n", opts.Provider.Name())
+	fmt.Println("Launching Claude to help you create your PRD...")
 	fmt.Println()
 
-	if err := runInteractiveAgent(opts.Provider, opts.BaseDir, prompt); err != nil {
-		return fmt.Errorf("%s session failed: %w", opts.Provider.Name(), err)
+	if err := runInteractiveClaude(opts.BaseDir, prompt); err != nil {
+		return fmt.Errorf("Claude session failed: %w", err)
 	}
 
 	// Check if prd.md was created
 	if _, err := os.Stat(prdMdPath); os.IsNotExist(err) {
-		// Clean up empty directory to prevent broken picker entries
-		os.Remove(prdDir)
 		fmt.Println("\nNo prd.md was created. Run 'chief new' again to try again.")
 		return nil
 	}
 
-	// Validate the created prd.md can be parsed
-	if _, err := prd.ParseMarkdownPRD(prdMdPath); err != nil {
-		fmt.Printf("\nWarning: prd.md was created but could not be parsed: %v\n", err)
-		fmt.Println("You may need to edit it to match the expected format.")
-	} else {
-		fmt.Println("\nPRD created successfully!")
+	fmt.Println("\nPRD created successfully!")
+
+	// Run conversion from prd.md to prd.json
+	if err := RunConvert(prdDir); err != nil {
+		return fmt.Errorf("conversion failed: %w", err)
 	}
 
 	fmt.Printf("\nYour PRD is ready! Run 'chief' or 'chief %s' to start working on it.\n", opts.Name)
 	return nil
 }
 
-// runInteractiveAgent launches an interactive agent session in the specified directory.
-func runInteractiveAgent(provider loop.Provider, workDir, prompt string) error {
-	if provider == nil {
-		return fmt.Errorf("interactive agent requires Provider to be set")
-	}
-	cmd := provider.InteractiveCommand(workDir, prompt)
+// runInteractiveClaude launches an interactive Claude session in the specified directory.
+func runInteractiveClaude(workDir, prompt string) error {
+	// Pass prompt as argument (not -p which is print mode / non-interactive)
+	cmd := exec.Command("claude", prompt)
+	cmd.Dir = workDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
 	return cmd.Run()
+}
+
+// ConvertOptions contains configuration for the conversion command.
+type ConvertOptions struct {
+	PRDDir string // PRD directory containing prd.md
+	Merge  bool   // Auto-merge without prompting on conversion conflicts
+	Force  bool   // Auto-overwrite without prompting on conversion conflicts
+}
+
+// RunConvert converts prd.md to prd.json using Claude.
+func RunConvert(prdDir string) error {
+	return RunConvertWithOptions(ConvertOptions{PRDDir: prdDir})
+}
+
+// RunConvertWithOptions converts prd.md to prd.json using Claude with options.
+// The Merge and Force flags will be fully implemented in US-019.
+func RunConvertWithOptions(opts ConvertOptions) error {
+	return prd.Convert(prd.ConvertOptions{
+		PRDDir: opts.PRDDir,
+		Merge:  opts.Merge,
+		Force:  opts.Force,
+	})
 }
 
 // isValidPRDName checks if the name contains only valid characters.

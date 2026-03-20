@@ -9,16 +9,16 @@ import (
 
 // DiffViewer displays git diffs with syntax highlighting and scrolling.
 type DiffViewer struct {
-	lines    []string
-	offset   int
-	width    int
-	height   int
-	stats    string
-	baseDir  string
-	storyID  string // Story ID whose commit diff is being shown (empty = full branch diff)
-	noCommit bool   // True when no commit was found for the selected story
-	err      error
-	loaded   bool
+	lines      []string
+	offset     int
+	width      int
+	height     int
+	stats      string
+	baseDir    string
+	storyID    string // Story ID whose commit diff is being shown (empty = full branch diff)
+	noCommit   bool   // True when no commit was found for the selected story
+	err        error
+	loaded     bool
 }
 
 // NewDiffViewer creates a new diff viewer.
@@ -236,3 +236,4 @@ func (d *DiffViewer) styleLine(line string) string {
 		return line
 	}
 }
+

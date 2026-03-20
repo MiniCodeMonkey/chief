@@ -64,7 +64,7 @@
           </div>
           <h3 class="feature-title">Beautiful TUI</h3>
           <p class="feature-description">
-            Real-time progress, live logs, and keyboard controls. Watch your code get built in style.
+            Real-time progress, live logs, and keyboard controls. Watch Claude work in style.
           </p>
         </div>
       </div>

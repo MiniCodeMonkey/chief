@@ -47,10 +47,10 @@ const (
 
 // CleanConfirmation holds the state of the clean confirmation dialog.
 type CleanConfirmation struct {
-	EntryName   string // Name of the PRD being cleaned
-	Branch      string // Branch name to display
-	WorktreeDir string // Worktree path to display
-	SelectedIdx int    // Selected option index (0-2)
+	EntryName    string // Name of the PRD being cleaned
+	Branch       string // Branch name to display
+	WorktreeDir  string // Worktree path to display
+	SelectedIdx  int    // Selected option index (0-2)
 }
 
 // CleanResult holds the result of a clean operation for display.
@@ -61,18 +61,18 @@ type CleanResult struct {
 
 // PRDPicker manages the PRD picker modal state.
 type PRDPicker struct {
-	entries           []PRDEntry
-	selectedIndex     int
-	width             int
-	height            int
-	basePath          string             // Base path where .chief/prds/ is located
-	currentPRD        string             // Name of the currently active PRD
-	inputMode         bool               // Whether we're in input mode for new PRD name
-	inputValue        string             // The current input value for new PRD name
-	manager           *loop.Manager      // Reference to the loop manager for status updates
-	mergeResult       *MergeResult       // Result of the last merge operation (nil = none)
-	cleanConfirmation *CleanConfirmation // Active clean confirmation dialog (nil = none)
-	cleanResult       *CleanResult       // Result of the last clean operation (nil = none)
+	entries       []PRDEntry
+	selectedIndex int
+	width         int
+	height        int
+	basePath      string        // Base path where .chief/prds/ is located
+	currentPRD    string        // Name of the currently active PRD
+	inputMode     bool          // Whether we're in input mode for new PRD name
+	inputValue    string        // The current input value for new PRD name
+	manager            *loop.Manager      // Reference to the loop manager for status updates
+	mergeResult        *MergeResult       // Result of the last merge operation (nil = none)
+	cleanConfirmation  *CleanConfirmation // Active clean confirmation dialog (nil = none)
+	cleanResult        *CleanResult       // Result of the last clean operation (nil = none)
 }
 
 // NewPRDPicker creates a new PRD picker.
@@ -117,13 +117,7 @@ func (p *PRDPicker) Refresh() {
 		}
 
 		name := entry.Name()
-		dirPath := filepath.Join(prdsDir, name)
-		prdPath := filepath.Join(dirPath, "prd.md")
-
-		// Skip directories without prd.md (empty/incomplete)
-		if _, err := os.Stat(prdPath); os.IsNotExist(err) {
-			continue
-		}
+		prdPath := filepath.Join(prdsDir, name, "prd.json")
 
 		prdEntry := p.loadPRDEntry(name, prdPath)
 		p.entries = append(p.entries, prdEntry)
@@ -131,7 +125,7 @@ func (p *PRDPicker) Refresh() {
 	}
 
 	// Also check if there's a "main" PRD directly in .chief/ (legacy location)
-	mainPrdPath := filepath.Join(p.basePath, ".chief", "prd.md")
+	mainPrdPath := filepath.Join(p.basePath, ".chief", "prd.json")
 	if _, err := os.Stat(mainPrdPath); err == nil && !addedNames["main"] {
 		prdEntry := p.loadPRDEntry("main", mainPrdPath)
 		p.entries = append(p.entries, prdEntry)
@@ -173,11 +167,11 @@ func (p *PRDPicker) Refresh() {
 			if !found {
 				p.entries = append(p.entries, PRDEntry{
 					Name:        prdName,
-					Path:        filepath.Join(p.basePath, ".chief", "prds", prdName, "prd.md"),
+					Path:        filepath.Join(p.basePath, ".chief", "prds", prdName, "prd.json"),
 					LoopState:   loop.LoopStateReady,
 					WorktreeDir: absPath,
 					Orphaned:    true,
-					LoadError:   fmt.Errorf("orphaned worktree (no prd.md)"),
+					LoadError:   fmt.Errorf("orphaned worktree (no prd.json)"),
 				})
 			}
 		}

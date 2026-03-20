@@ -6,78 +6,54 @@ description: Troubleshoot common Chief issues including Claude not found, permis
 
 Solutions to frequently encountered problems.
 
-## Agent CLI Not Found
+## Claude Not Found
 
-**Symptom:** Error that the agent CLI (Claude, Codex, or OpenCode) is not found.
+**Symptom:** Error message about Claude Code CLI not being installed.
 
 ```
-Error: Claude CLI not found in PATH. Install it or set agent.cliPath in .chief/config.yaml
-```
-or
-```
-Error: Codex CLI not found in PATH. Install it or set agent.cliPath in .chief/config.yaml
-```
-or
-```
-Error: OpenCode CLI not found in PATH. Install it or set agent.cliPath in .chief/config.yaml
+Error: Claude Code CLI not found. Please install it first.
 ```
 
-**Cause:** The chosen agent CLI isn't installed or isn't in your PATH.
+**Cause:** Claude Code isn't installed or isn't in your PATH.
 
 **Solution:**
 
-- **Claude (default):** Install [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/getting-started), then verify:
-  ```bash
-  claude --version
-  ```
-- **Codex:** Install [Codex CLI](https://developers.openai.com/codex/cli/reference) and ensure `codex` is in PATH, or set the path in config:
-  ```yaml
-  agent:
-    provider: codex
-    cliPath: /usr/local/bin/codex
-  ```
-  Verify with `codex --version` (or your `cliPath`).
-- **OpenCode:** Install [OpenCode CLI](https://opencode.ai/docs/) and ensure `opencode` is in PATH, or set the path in config:
-  ```yaml
-  agent:
-    provider: opencode
-    cliPath: /usr/local/bin/opencode
-  ```
-  Verify with `opencode --version` (or your `cliPath`).
-- **Cursor:** Install [Cursor CLI](https://cursor.com/docs/cli/overview) and ensure `agent` is in PATH, or set the path in config:
-  ```yaml
-  agent:
-    provider: cursor
-    cliPath: /path/to/agent
-  ```
-  Run `agent login`. Verify with `agent --version` (or your `cliPath`).
+Install Claude Code following the [official instructions](https://docs.anthropic.com/en/docs/claude-code/getting-started), then verify:
+
+```bash
+claude --version
+```
 
 ## Permission Denied
 
-**Symptom:** The agent keeps asking for permission, disrupting autonomous flow.
+**Symptom:** Claude keeps asking for permission, disrupting autonomous flow.
 
-**Cause:** Some agents (like Claude Code) require explicit permission for file writes and command execution.
+**Cause:** Claude Code requires explicit permission for file writes and command execution.
 
 **Solution:**
 
-Chief automatically configures the agent for autonomous operation by disabling permission prompts. If you're still seeing permission issues, ensure you're running Chief (not the agent directly) and that your agent CLI is up to date.
+Chief automatically runs Claude with permission prompts disabled for autonomous operation. If you're still seeing permission issues, ensure you're running Chief (not Claude directly) and that your Claude Code installation is up to date.
 
 ## PRD Not Updating
 
-**Symptom:** Stories stay incomplete even though the agent seems to finish.
+**Symptom:** Stories stay incomplete even though Claude seems to finish.
 
-**Cause:** The agent didn't output the completion signal, or file watching failed.
+**Cause:** Claude didn't output the completion signal, or file watching failed.
 
 **Solution:**
 
-1. Check the agent log for errors (the log file matches your agent: `claude.log`, `codex.log`, `opencode.log`, or `cursor.log`):
+1. Check `claude.log` for errors:
    ```bash
-   tail -100 .chief/prds/your-prd/claude.log  # or codex.log / opencode.log / cursor.log
+   tail -100 .chief/prds/your-prd/claude.log
    ```
 
-2. Manually mark story complete if appropriate by editing `prd.md`:
-   ```markdown
-   **Status:** done
+2. Manually mark story complete if appropriate:
+   ```json
+   {
+     "id": "US-001",
+     "passes": true,
+     "inProgress": false
+   }
    ```
 
 3. Restart Chief to pick up where it left off
@@ -86,13 +62,13 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 **Symptom:** Chief runs but doesn't make progress on stories.
 
-**Cause:** Various—the agent may be stuck, context too large, or PRD unclear.
+**Cause:** Various—Claude may be stuck, context too large, or PRD unclear.
 
 **Solution:**
 
-1. Check the agent log for what the agent is doing:
+1. Check `claude.log` for what Claude is doing:
    ```bash
-   tail -f .chief/prds/your-prd/claude.log  # or codex.log / opencode.log / cursor.log
+   tail -f .chief/prds/your-prd/claude.log
    ```
 
 2. Simplify the current story's acceptance criteria
@@ -110,7 +86,7 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 **Symptom:** Chief stops with "max iterations reached" message.
 
-**Cause:** The agent hasn't completed after the iteration limit.
+**Cause:** Claude hasn't completed after the iteration limit.
 
 **Solution:**
 
@@ -121,7 +97,7 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 2. Or investigate why it's taking so many iterations:
    - Story too complex? Split it
-   - Stuck in a loop? Check the agent log (`claude.log`, `codex.log`, `opencode.log`, or `cursor.log`)
+   - Stuck in a loop? Check `claude.log`
    - Unclear acceptance criteria? Clarify them
 
 ## "No PRD Found"
@@ -147,26 +123,27 @@ Chief automatically configures the agent for autonomous operation by disabling p
    .chief/
    └── prds/
        └── my-feature/
-           └── prd.md
+           ├── prd.md
+           └── prd.json
    ```
 
-## Invalid PRD Format
+## Invalid JSON
 
-**Symptom:** Error parsing `prd.md`.
+**Symptom:** Error parsing `prd.json`.
 
-**Cause:** The markdown structure doesn't match what Chief expects.
+**Cause:** Syntax error in the JSON file.
 
 **Solution:**
 
-1. Verify your story headings use the correct format:
-   ```markdown
-   ### US-001: Story Title
+1. Validate your JSON:
+   ```bash
+   cat .chief/prds/your-prd/prd.json | jq .
    ```
 
 2. Common issues:
-   - Missing colon between ID and title in heading
-   - Invalid `**Status:**` value (must be `done`, `in-progress`, or `todo`)
-   - Non-numeric `**Priority:**` value
+   - Trailing commas (not allowed in JSON)
+   - Missing quotes around keys
+   - Unescaped characters in strings
 
 ## Worktree Setup Failures
 
@@ -261,5 +238,5 @@ If none of these solutions help:
 2. Search [GitHub Issues](https://github.com/minicodemonkey/chief/issues)
 3. Open a new issue with:
    - Chief version (`chief --version`)
-   - Your `prd.md` (sanitized)
-   - Relevant agent log excerpts (e.g. `claude.log`, `codex.log`, `opencode.log`, or `cursor.log`)
+   - Your `prd.json` (sanitized)
+   - Relevant `claude.log` excerpts

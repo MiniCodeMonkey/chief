@@ -4,22 +4,18 @@ You are an autonomous coding agent working on a software project.
 
 ## Your Task
 
-Your current story:
-<story>
-{{STORY_CONTEXT}}
-</story>
-
-1. Read `{{PROGRESS_PATH}}` if it exists (check Codebase Patterns section first)
-2. Implement the user story above
-3. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
-4. If checks pass, commit changes with message: `feat: {{STORY_ID}} - {{STORY_TITLE}}`
-   - **NEVER stage or commit `.chief/` files** — these are local working files and must stay out of version control
-   - Stage only the files you changed for the story (do NOT use `git add -A` or `git add .`)
-5. Append your progress to `{{PROGRESS_PATH}}`
+1. Read the PRD at `{{PRD_PATH}}`
+2. Read `progress.md` if it exists (check Codebase Patterns section first)
+3. Pick the **highest priority** user story where `passes: false` -- After determining which story to work on, output exact story id, e.g.: <ralph-status>US-056</ralph-status>
+4. Implement that single user story
+5. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
+6. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`
+7. Update the PRD to set `passes: true` for the completed story
+8. Append your progress to `progress.md`
 
 ## Progress Report Format
 
-APPEND to `{{PROGRESS_PATH}}` (never replace, always append):
+APPEND to progress.md (never replace, always append):
 ```
 ## [Date/Time] - [Story ID]
 - What was implemented
@@ -35,7 +31,7 @@ The learnings section is critical - it helps future iterations avoid repeating m
 
 ## Consolidate Patterns
 
-If you discover a **reusable pattern** that future iterations should know, add it to the `## Codebase Patterns` section at the TOP of `{{PROGRESS_PATH}}` (create it if it doesn't exist). This section should consolidate the most important learnings:
+If you discover a **reusable pattern** that future iterations should know, add it to the `## Codebase Patterns` section at the TOP of progress.md (create it if it doesn't exist). This section should consolidate the most important learnings:
 
 ```
 ## Codebase Patterns
@@ -55,14 +51,16 @@ Only add patterns that are **general and reusable**, not story-specific details.
 
 ## Stop Condition
 
-After implementing the story:
-1. Review EACH acceptance criterion one by one and verify it is met
-2. Only if ALL criteria pass: output <chief-done/>
-3. If any criterion is NOT met: end your response WITHOUT <chief-done/>
+After completing a user story, check if ALL stories have `passes: true`.
+
+If ALL stories are complete and passing, reply with:
+<chief-complete/>
+
+If there are still stories with `passes: false`, end your response normally (another iteration will pick up the next story).
 
 ## Important
 
 - Work on ONE story per iteration
 - Commit frequently
 - Keep CI green
-- Read the Codebase Patterns section in `{{PROGRESS_PATH}}` before starting
+- Read the Codebase Patterns section in progress.md before starting

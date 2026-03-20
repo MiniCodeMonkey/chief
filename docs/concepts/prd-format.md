@@ -1,14 +1,10 @@
 ---
-description: Complete guide to Chief's PRD format. How prd.md structures user stories, status tracking, selection logic, and best practices.
+description: Complete guide to Chief's PRD format including prd.md and prd.json structure, user story fields, selection logic, and best practices.
 ---
 
 # PRD Format
 
-Chief uses a single `prd.md` file that serves as both human-readable context and machine-readable structured data. Chief parses structured markdown headings, status fields, and checkbox items directly from this file — no separate JSON file is needed.
-
-::: info Multi-agent support
-Chief supports multiple agent backends: **Claude Code** (default), **Codex CLI**, and **OpenCode CLI**. This page uses "the agent" to refer to whichever backend you've configured. See [Configuration](/reference/configuration) for setup details.
-:::
+Chief uses a structured PRD format with two files: a human-readable markdown file (`prd.md`) and a machine-readable JSON file (`prd.json`). Together, they give Chief everything it needs to autonomously build your feature.
 
 ## File Structure
 
@@ -16,40 +12,28 @@ Each PRD lives in its own subdirectory inside `.chief/prds/`:
 
 ```
 .chief/prds/my-feature/
-├── prd.md        # Structured PRD (you write, Chief reads and updates)
+├── prd.md        # Human-readable context for Claude
+├── prd.json      # Structured data Chief reads and updates
 ├── progress.md   # Auto-generated progress log
-└── claude.log    # Raw agent output from each iteration
+└── claude.log    # Raw Claude output from each iteration
 ```
 
-- **`prd.md`** — Written by you, read and updated by Chief. Contains project context and structured user stories.
-- **`progress.md`** — Written by the agent. Tracks what was done, what changed, and what was learned.
-- **`claude.log`** (or `codex.log` / `opencode.log` / `cursor.log`) — Written by Chief. Raw output from the agent for debugging.
+- **`prd.md`** — Written by you. Provides context, background, and guidance.
+- **`prd.json`** — The source of truth. Chief reads, updates, and drives execution from this file.
+- **`progress.md`** — Written by Claude. Tracks what was done, what changed, and what was learned.
+- **`claude.log`** — Written by Chief. Raw output from Claude for debugging.
 
-## prd.md — The PRD File
+## prd.md — The Human-Readable File
 
-The `prd.md` file has two parts: **freeform context** at the top and **structured user stories** below. The freeform section gives the agent background on your project. The structured stories use specific markdown patterns that Chief parses to drive execution.
+The markdown file is your chance to give Claude context that doesn't fit into structured fields. Write whatever helps Claude understand the project — there's no required format.
 
-### Freeform Context
-
-The top of the file is your chance to give the agent context that doesn't fit into structured fields. Write whatever helps the agent understand the project — there's no required format for this section.
-
-**What to Include:**
+### What to Include
 
 - **Overview** — What are you building and why?
 - **Technical context** — What stack, frameworks, and patterns does the project use?
 - **Design notes** — Any constraints, preferences, or conventions to follow.
 - **Examples** — Reference implementations, API shapes, or UI mockups.
 - **Links** — Related docs, design files, or prior art.
-
-### Structured User Stories
-
-Below the freeform context, define your user stories using structured markdown headings that Chief parses:
-
-- `### US-001: Story Title` — story heading (ID + title)
-- `**Status:** done|in-progress|todo` — tracked by Chief
-- `**Priority:** N` — execution order (optional; defaults to document order)
-- `**Description:** ...` — story description (or freeform prose after heading)
-- `- [ ] criterion` / `- [x] criterion` — acceptance criteria as checkboxes
 
 ### Example prd.md
 
@@ -75,59 +59,73 @@ Users need to register, log in, reset passwords, and manage sessions.
 ## Reference
 - Existing user model: `prisma/schema.prisma`
 - API route pattern: `src/routes/health.ts`
-
-## User Stories
-
-### US-001: User Registration
-
-**Status:** todo
-**Priority:** 1
-**Description:** As a new user, I want to register an account so that I can access the application.
-
-- [ ] Registration form with email and password fields
-- [ ] Email format validation
-- [ ] Password minimum 8 characters
-- [ ] Confirmation email sent on registration
-- [ ] User redirected to login after registration
-
-### US-002: User Login
-
-**Status:** todo
-**Priority:** 2
-**Description:** As a registered user, I want to log in so that I can access my account.
-
-- [ ] Login form with email and password fields
-- [ ] Error message for invalid credentials
-- [ ] JWT token issued on success
-- [ ] Redirect to dashboard on success
-
-### US-003: Password Reset
-
-**Status:** todo
-**Priority:** 3
-**Description:** As a user, I want to reset my password so that I can recover my account.
-
-- [ ] "Forgot password" link on login page
-- [ ] Email with reset link sent to user
-- [ ] Reset token expires after 1 hour
-- [ ] New password form with confirmation field
 ```
 
-This file is included in the agent's context and also parsed by Chief to track story status and selection.
+This file is included in Claude's context but never parsed programmatically. Claude reads it to understand what you're building and how.
 
 ::: tip
-The better your `prd.md`, the better the agent's output. Spend time on the freeform context — it pays off across every story.
+The better your `prd.md`, the better Claude's output. Spend time here — it pays off across every story.
 :::
+
+## prd.json — The Machine-Readable File
+
+The JSON file is what Chief actually uses to drive execution. It defines the project metadata, optional settings, and an ordered list of user stories.
+
+### Top-Level Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `project` | `string` | Yes | Project name, used in logs and TUI |
+| `description` | `string` | Yes | Brief description of what you're building |
+| `userStories` | `array` | Yes | Ordered list of user stories |
+
+### UserStory Object
+
+Each story in the `userStories` array has the following fields:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `id` | `string` | Yes | — | Unique identifier (e.g., `US-001`). Appears in commit messages. |
+| `title` | `string` | Yes | — | Short, descriptive title. Keep under 50 characters. |
+| `description` | `string` | Yes | — | Full description. User story format recommended. |
+| `acceptanceCriteria` | `string[]` | Yes | — | List of requirements. Claude uses these to know when the story is done. |
+| `priority` | `number` | Yes | — | Execution order. Lower number = higher priority. |
+| `passes` | `boolean` | Yes | `false` | Whether the story has been completed and verified. |
+| `inProgress` | `boolean` | Yes | `false` | Whether Claude is currently working on this story. |
+
+### Minimal Example
+
+```json
+{
+  "project": "My Feature",
+  "description": "A new feature for my application",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Basic Setup",
+      "description": "As a developer, I want the project scaffolded so I can start building.",
+      "acceptanceCriteria": [
+        "Project directory created",
+        "Dependencies installed",
+        "Dev server starts successfully"
+      ],
+      "priority": 1,
+      "passes": false,
+      "inProgress": false
+    }
+  ]
+}
+```
 
 ## Story Selection Logic
 
 Chief picks the next story to work on using a simple, deterministic algorithm:
 
 ```
-1. Filter stories without **Status:** done
-2. Sort remaining stories by **Priority:** (ascending), or document order if unset
+1. Filter stories where passes = false
+2. Sort remaining stories by priority (ascending)
 3. Pick the first one
-4. Mark it as **Status:** in-progress
+4. Set inProgress = true on that story
 5. Start the iteration
 ```
 
@@ -135,99 +133,125 @@ Chief picks the next story to work on using a simple, deterministic algorithm:
 
 Priority is a number where **lower = higher priority**. Chief always picks the lowest-numbered incomplete story:
 
-| Story | Priority | Status | Selected? |
+| Story | Priority | Passes | Selected? |
 |-------|----------|--------|-----------|
-| US-001 | 1 | `done` | No — already complete |
-| US-002 | 2 | `todo` | **Yes — lowest priority number that isn't done** |
-| US-003 | 3 | `todo` | No — US-002 goes first |
+| US-001 | 1 | `true` | No — already complete |
+| US-002 | 2 | `false` | **Yes — lowest priority number with passes: false** |
+| US-003 | 3 | `false` | No — US-002 goes first |
 
-### What `in-progress` Does
+### What `inProgress` Does
 
-When Chief starts working on a story, it sets `**Status:** in-progress`. This serves as a signal that the story is being actively worked on. When the story completes:
+When Chief starts working on a story, it sets `inProgress: true`. This serves as a signal that the story is being actively worked on. When the story completes:
 
-- `**Status:**` is set to `done`
-- Acceptance criteria checkboxes are checked (`- [x]`)
+- `passes` is set to `true`
+- `inProgress` is set back to `false`
 
-If Chief is interrupted mid-iteration, the status may remain `in-progress`. On the next run, Chief will pick up the same story and continue.
+If Chief is interrupted mid-iteration (e.g., you stop it), `inProgress` may remain `true`. On the next run, Chief will pick up the same story and continue.
 
 ### Completion Signal
 
-When the agent finishes a story, it outputs `<chief-done/>` to signal that the current story is complete. Chief then marks the story as done in `prd.md` and selects the next one. When no incomplete stories remain, the loop ends naturally.
+When all stories have `passes: true`, the iteration ends and Chief reports completion. No more iterations are started.
 
 ## Annotated Example PRD
 
-Here's a complete `prd.md` with annotations explaining each part:
+Here's a complete `prd.json` with annotations explaining each part:
 
-```markdown
-# User Authentication                    ← Project heading (shown in TUI)
+```json
+{
+  // The project name — shown in the TUI header and logs
+  "project": "User Authentication",
 
-## Overview
-Complete auth system with login,         ← Freeform context for the agent
-registration, and password reset.
+  // A brief description — helps Claude understand scope
+  "description": "Complete auth system with login, registration, and password reset",
 
-## User Stories
+  "userStories": [
+    {
+      // Unique ID — appears in commit messages as: feat: [US-001] - User Registration
+      "id": "US-001",
 
-### US-001: User Registration            ← Story ID + title (appears in commits)
+      // Short title — keep it under 50 chars for clean commits
+      "title": "User Registration",
 
-**Status:** done                         ← Chief tracks this (done/in-progress/todo)
-**Priority:** 1                          ← Execution order (1 = first)
-**Description:** As a new user, I want   ← Story description
-to register an account so that I can
-access the application.
+      // Description — user story format gives Claude clear context
+      "description": "As a new user, I want to register an account so that I can access the application.",
 
-- [x] Registration form with email       ← Acceptance criteria (checked = done)
-      and password fields
-- [x] Email format validation
-- [x] Password minimum 8 characters
-- [x] Confirmation email sent
-- [x] User redirected to login
+      // Acceptance criteria — Claude checks these off as it works
+      // Each item should be specific and verifiable
+      "acceptanceCriteria": [
+        "Registration form with email and password fields",
+        "Email format validation",
+        "Password minimum 8 characters",
+        "Confirmation email sent on registration",
+        "User redirected to login after registration"
+      ],
 
-### US-002: User Login                   ← Next story
+      // Priority 1 = done first
+      "priority": 1,
 
-**Status:** in-progress                  ← Currently being worked on
-**Priority:** 2
-**Description:** As a registered user,
-I want to log in so that I can access
-my account.
+      // Chief sets this to true when the story passes all checks
+      "passes": false,
 
-- [x] Login form with email and         ← Some criteria already met
-      password fields
-- [ ] Error message for invalid          ← Still in progress
-      credentials
-- [ ] JWT token issued on success
-- [ ] Redirect to dashboard on success
-
-### US-003: Password Reset               ← Pending story
-
-**Status:** todo
-**Priority:** 3
-**Description:** As a user, I want to
-reset my password so that I can recover
-my account.
-
-- [ ] "Forgot password" link on login
-- [ ] Email with reset link sent
-- [ ] Reset token expires after 1 hour
-- [ ] New password form with confirmation
+      // Chief sets this to true while Claude is working on it
+      "inProgress": false
+    },
+    {
+      "id": "US-002",
+      "title": "User Login",
+      "description": "As a registered user, I want to log in so that I can access my account.",
+      "acceptanceCriteria": [
+        "Login form with email and password fields",
+        "Error message for invalid credentials",
+        "JWT token issued on success",
+        "Redirect to dashboard on success"
+      ],
+      // Priority 2 = done after US-001
+      "priority": 2,
+      "passes": false,
+      "inProgress": false
+    },
+    {
+      "id": "US-003",
+      "title": "Password Reset",
+      "description": "As a user, I want to reset my password so that I can recover my account.",
+      "acceptanceCriteria": [
+        "\"Forgot password\" link on login page",
+        "Email with reset link sent to user",
+        "Reset token expires after 1 hour",
+        "New password form with confirmation field"
+      ],
+      "priority": 3,
+      "passes": false,
+      "inProgress": false
+    }
+  ]
+}
 ```
+
+::: info
+JSON doesn't support comments. The annotations above are for illustration only — your actual `prd.json` should be valid JSON without comments.
+:::
 
 ## Best Practices
 
 ### Write Specific Acceptance Criteria
 
-Each criterion should be concrete and verifiable. The agent uses these to determine what to build and when the story is done.
+Each criterion should be concrete and verifiable. Claude uses these to determine what to build and when the story is done.
 
-```markdown
-<!-- ✓ Good — specific and testable -->
-- [ ] Login form with email and password fields
-- [ ] Error message shown for invalid credentials
-- [ ] JWT token stored in httpOnly cookie on success
-- [ ] Redirect to /dashboard after login
+```json
+// ✓ Good — specific and testable
+"acceptanceCriteria": [
+  "Login form with email and password fields",
+  "Error message shown for invalid credentials",
+  "JWT token stored in httpOnly cookie on success",
+  "Redirect to /dashboard after login"
+]
 
-<!-- ✗ Bad — vague and subjective -->
-- [ ] Nice login page
-- [ ] Good error handling
-- [ ] Secure authentication
+// ✗ Bad — vague and subjective
+"acceptanceCriteria": [
+  "Nice login page",
+  "Good error handling",
+  "Secure authentication"
+]
 ```
 
 ### Keep Stories Small
@@ -235,44 +259,38 @@ Each criterion should be concrete and verifiable. The agent uses these to determ
 A story should represent one logical piece of work. If a story has more than 5–7 acceptance criteria, consider splitting it into multiple stories.
 
 **Too large:**
-```markdown
-### US-001: Complete Authentication System
-
-- [ ] Registration form
-- [ ] Login form
-- [ ] Password reset
-- [ ] Email verification
-- [ ] OAuth integration
-- [ ] Session management
-- [ ] Rate limiting
-- [ ] Account lockout
-- [ ] Audit logging
+```json
+{
+  "title": "Complete Authentication System",
+  "acceptanceCriteria": [
+    "Registration form", "Login form", "Password reset",
+    "Email verification", "OAuth integration", "Session management",
+    "Rate limiting", "Account lockout", "Audit logging"
+  ]
+}
 ```
 
 **Better — split into focused stories:**
-```markdown
-### US-001: User Registration
-### US-002: User Login
-### US-003: Password Reset
-### US-004: OAuth Integration
+```json
+[
+  { "id": "US-001", "title": "User Registration", "priority": 1, ... },
+  { "id": "US-002", "title": "User Login", "priority": 2, ... },
+  { "id": "US-003", "title": "Password Reset", "priority": 3, ... },
+  { "id": "US-004", "title": "OAuth Integration", "priority": 4, ... }
+]
 ```
 
 ### Order Stories by Dependency
 
-Use priority to ensure foundational stories are completed before dependent ones. The agent works through stories sequentially, so earlier stories can set up what later stories need.
+Use priority to ensure foundational stories are completed before dependent ones. Claude works through stories sequentially, so earlier stories can set up what later stories need.
 
-```markdown
-### US-001: Database Schema
-**Priority:** 1
-
-### US-002: API Endpoints
-**Priority:** 2
-
-### US-003: Frontend Forms
-**Priority:** 3
-
-### US-004: Integration Tests
-**Priority:** 4
+```json
+[
+  { "id": "US-001", "title": "Database Schema", "priority": 1 },
+  { "id": "US-002", "title": "API Endpoints", "priority": 2 },
+  { "id": "US-003", "title": "Frontend Forms", "priority": 3 },
+  { "id": "US-004", "title": "Integration Tests", "priority": 4 }
+]
 ```
 
 ### Use Consistent ID Patterns
@@ -283,9 +301,9 @@ Story IDs appear in commit messages (`feat: [US-001] - User Registration`). Pick
 - `AUTH-001`, `AUTH-002` — feature-scoped prefixes
 - `BUG-001`, `FIX-001` — for bug fix PRDs
 
-### Give the Agent Context
+### Give Claude Context in prd.md
 
-The freeform context section at the top of `prd.md` is where you set the agent up for success. Since the context and structured stories live in the same file, the agent sees everything in one place. Include:
+The more context you provide in `prd.md`, the better the output. Include:
 
 - What frameworks and tools the project uses
 - Where to find existing patterns to follow
@@ -294,10 +312,10 @@ The freeform context section at the top of `prd.md` is where you set the agent u
 
 ### Use `chief new` to Get Started
 
-Running `chief new` scaffolds a `prd.md` with a template. You can also run `chief edit` to open an existing PRD for editing. This is the easiest way to create a well-structured PRD.
+Running `chief new` scaffolds both files with a template. You can also run `chief edit` to open an existing PRD for editing. This is the easiest way to create a well-structured PRD.
 
 ## What's Next
 
-- [PRD Format Reference](/reference/prd-schema) — Complete field documentation and validation rules
+- [PRD Schema Reference](/reference/prd-schema) — Complete TypeScript type definitions and field details
 - [The .chief Directory](/concepts/chief-directory) — Understanding the full directory structure
 - [How Chief Works](/concepts/how-it-works) — How Chief uses these files during execution

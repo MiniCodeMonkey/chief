@@ -230,10 +230,12 @@ Before saving the PRD, verify:
 - [ ] Functional requirements are numbered and unambiguous
 - [ ] Non-goals section defines clear boundaries
 - [ ] Success metrics are specific and measurable
+- [ ] The file is ready for conversion to prd.json
+
 ---
 
 ## Final Step
 
-Once the PRD file is written, tell the user to type `exit` to finish.
+Once the PRD file is written, tell the user to type `/exit` to finish. Chief will automatically convert it to the format needed for implementation.
 
 Start by understanding what the user wants to build. Ask your clarifying questions first, then create the PRD.

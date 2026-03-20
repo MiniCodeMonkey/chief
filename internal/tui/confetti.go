@@ -55,13 +55,13 @@ func NewConfetti(width, height int) *Confetti {
 
 	for i := range c.particles {
 		c.particles[i] = Particle{
-			x:     rand.Float64() * float64(width),
-			y:     rand.Float64()*float64(height+10) - float64(height/2), // stagger: some above screen, some mid
-			vx:    (rand.Float64() - 0.5) * 0.6,                          // lateral drift -0.3 to 0.3
-			vy:    0.2 + rand.Float64()*0.4,                              // falling 0.2-0.6
-			char:  confettiChars[rand.Intn(len(confettiChars))],
+			x:    rand.Float64() * float64(width),
+			y:    rand.Float64()*float64(height+10) - float64(height/2), // stagger: some above screen, some mid
+			vx:   (rand.Float64() - 0.5) * 0.6,                         // lateral drift -0.3 to 0.3
+			vy:   0.2 + rand.Float64()*0.4,                              // falling 0.2-0.6
+			char: confettiChars[rand.Intn(len(confettiChars))],
 			color: confettiColors[rand.Intn(len(confettiColors))],
-			life:  80 + rand.Intn(120), // 80-200 ticks
+			life: 80 + rand.Intn(120), // 80-200 ticks
 		}
 	}
 

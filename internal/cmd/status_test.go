@@ -9,29 +9,25 @@ import (
 func TestRunStatusWithValidPRD(t *testing.T) {
 	tmpDir := t.TempDir()
 
+	// Create a PRD directory with prd.json
 	prdDir := filepath.Join(tmpDir, ".chief", "prds", "test")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
 
-	prdMd := `# Test Project
-
-Test description
-
-### US-001: Story 1
-**Status:** done
-- [x] Done
-
-### US-002: Story 2
-- [ ] Pending
-
-### US-003: Story 3
-**Status:** in-progress
-- [ ] Working
-`
-	prdPath := filepath.Join(prdDir, "prd.md")
-	if err := os.WriteFile(prdPath, []byte(prdMd), 0644); err != nil {
-		t.Fatalf("Failed to create prd.md: %v", err)
+	// Create a test prd.json
+	prdJSON := `{
+  "project": "Test Project",
+  "description": "Test description",
+  "userStories": [
+    {"id": "US-001", "title": "Story 1", "passes": true, "priority": 1},
+    {"id": "US-002", "title": "Story 2", "passes": false, "priority": 2},
+    {"id": "US-003", "title": "Story 3", "passes": false, "inProgress": true, "priority": 3}
+  ]
+}`
+	prdPath := filepath.Join(prdDir, "prd.json")
+	if err := os.WriteFile(prdPath, []byte(prdJSON), 0644); err != nil {
+		t.Fatalf("Failed to create prd.json: %v", err)
 	}
 
 	opts := StatusOptions{
@@ -39,6 +35,7 @@ Test description
 		BaseDir: tmpDir,
 	}
 
+	// Should not return error
 	err := RunStatus(opts)
 	if err != nil {
 		t.Errorf("RunStatus() returned error: %v", err)
@@ -48,19 +45,23 @@ Test description
 func TestRunStatusWithDefaultName(t *testing.T) {
 	tmpDir := t.TempDir()
 
+	// Create a PRD directory with prd.json using default name "main"
 	prdDir := filepath.Join(tmpDir, ".chief", "prds", "main")
 	if err := os.MkdirAll(prdDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
 
-	prdMd := "# Main Project\n"
-	prdPath := filepath.Join(prdDir, "prd.md")
-	if err := os.WriteFile(prdPath, []byte(prdMd), 0644); err != nil {
-		t.Fatalf("Failed to create prd.md: %v", err)
+	prdJSON := `{
+  "project": "Main Project",
+  "userStories": []
+}`
+	prdPath := filepath.Join(prdDir, "prd.json")
+	if err := os.WriteFile(prdPath, []byte(prdJSON), 0644); err != nil {
+		t.Fatalf("Failed to create prd.json: %v", err)
 	}
 
 	opts := StatusOptions{
-		Name:    "",
+		Name:    "", // Empty should default to "main"
 		BaseDir: tmpDir,
 	}
 
@@ -91,6 +92,7 @@ func TestRunListWithNoPRDs(t *testing.T) {
 		BaseDir: tmpDir,
 	}
 
+	// Should not return error, just print "No PRDs found"
 	err := RunList(opts)
 	if err != nil {
 		t.Errorf("RunList() returned error: %v", err)
@@ -100,17 +102,24 @@ func TestRunListWithNoPRDs(t *testing.T) {
 func TestRunListWithPRDs(t *testing.T) {
 	tmpDir := t.TempDir()
 
+	// Create multiple PRD directories
 	prds := []struct {
-		name string
-		md   string
+		name    string
+		project string
+		stories string
 	}{
 		{
 			"auth",
-			"# Authentication\n\n### US-001: Login\n**Status:** done\n- [x] Works\n\n### US-002: Logout\n- [ ] Works\n",
+			"Authentication",
+			`[{"id": "US-001", "title": "Login", "passes": true, "priority": 1},
+			 {"id": "US-002", "title": "Logout", "passes": false, "priority": 2}]`,
 		},
 		{
 			"api",
-			"# API Service\n\n### US-001: Endpoints\n**Status:** done\n- [x] Done\n\n### US-002: Auth\n**Status:** done\n- [x] Done\n\n### US-003: Rate limiting\n**Status:** done\n- [x] Done\n",
+			"API Service",
+			`[{"id": "US-001", "title": "Endpoints", "passes": true, "priority": 1},
+			 {"id": "US-002", "title": "Auth", "passes": true, "priority": 2},
+			 {"id": "US-003", "title": "Rate limiting", "passes": true, "priority": 3}]`,
 		},
 	}
 
@@ -119,9 +128,11 @@ func TestRunListWithPRDs(t *testing.T) {
 		if err := os.MkdirAll(prdDir, 0755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
-		prdPath := filepath.Join(prdDir, "prd.md")
-		if err := os.WriteFile(prdPath, []byte(p.md), 0644); err != nil {
-			t.Fatalf("Failed to create prd.md: %v", err)
+
+		prdJSON := `{"project": "` + p.project + `", "userStories": ` + p.stories + `}`
+		prdPath := filepath.Join(prdDir, "prd.json")
+		if err := os.WriteFile(prdPath, []byte(prdJSON), 0644); err != nil {
+			t.Fatalf("Failed to create prd.json: %v", err)
 		}
 	}
 
@@ -143,20 +154,31 @@ func TestRunListSkipsInvalidPRDs(t *testing.T) {
 	if err := os.MkdirAll(validDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(validDir, "prd.md"), []byte("# Valid\n"), 0644); err != nil {
-		t.Fatalf("Failed to create prd.md: %v", err)
+	validJSON := `{"project": "Valid", "userStories": []}`
+	if err := os.WriteFile(filepath.Join(validDir, "prd.json"), []byte(validJSON), 0644); err != nil {
+		t.Fatalf("Failed to create prd.json: %v", err)
 	}
 
-	// Create an invalid PRD directory (no prd.md)
+	// Create an invalid PRD directory (no prd.json)
 	invalidDir := filepath.Join(tmpDir, ".chief", "prds", "invalid")
 	if err := os.MkdirAll(invalidDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
+	}
+
+	// Create another invalid PRD (invalid JSON)
+	badJsonDir := filepath.Join(tmpDir, ".chief", "prds", "badjson")
+	if err := os.MkdirAll(badJsonDir, 0755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(badJsonDir, "prd.json"), []byte("not json"), 0644); err != nil {
+		t.Fatalf("Failed to create prd.json: %v", err)
 	}
 
 	opts := ListOptions{
 		BaseDir: tmpDir,
 	}
 
+	// Should not return error, just skip invalid PRDs
 	err := RunList(opts)
 	if err != nil {
 		t.Errorf("RunList() returned error: %v", err)
@@ -171,10 +193,16 @@ func TestRunStatusAllComplete(t *testing.T) {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
 
-	prdMd := "# Complete Project\n\n### US-001: Story 1\n**Status:** done\n- [x] Done\n\n### US-002: Story 2\n**Status:** done\n- [x] Done\n"
-	prdPath := filepath.Join(prdDir, "prd.md")
-	if err := os.WriteFile(prdPath, []byte(prdMd), 0644); err != nil {
-		t.Fatalf("Failed to create prd.md: %v", err)
+	prdJSON := `{
+  "project": "Complete Project",
+  "userStories": [
+    {"id": "US-001", "title": "Story 1", "passes": true, "priority": 1},
+    {"id": "US-002", "title": "Story 2", "passes": true, "priority": 2}
+  ]
+}`
+	prdPath := filepath.Join(prdDir, "prd.json")
+	if err := os.WriteFile(prdPath, []byte(prdJSON), 0644); err != nil {
+		t.Fatalf("Failed to create prd.json: %v", err)
 	}
 
 	opts := StatusOptions{
@@ -196,10 +224,10 @@ func TestRunStatusEmptyPRD(t *testing.T) {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
 
-	prdMd := "# Empty Project\n"
-	prdPath := filepath.Join(prdDir, "prd.md")
-	if err := os.WriteFile(prdPath, []byte(prdMd), 0644); err != nil {
-		t.Fatalf("Failed to create prd.md: %v", err)
+	prdJSON := `{"project": "Empty Project", "userStories": []}`
+	prdPath := filepath.Join(prdDir, "prd.json")
+	if err := os.WriteFile(prdPath, []byte(prdJSON), 0644); err != nil {
+		t.Fatalf("Failed to create prd.json: %v", err)
 	}
 
 	opts := StatusOptions{
