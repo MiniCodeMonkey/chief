@@ -40,7 +40,7 @@ Laravel 13 (Octane/FrankenPHP)
 - **Auth layer:** Custom GitHub OAuth + email/password. No Laravel starter kit. Sanctum for API token management. GitHub OAuth includes incremental scope authorization for features like deploy key management.
 - **Team layer:** Users belong to teams. All resources (devices, servers, projects, PRDs) are scoped to a team. Simple roles: Owner (full control) and Member (view everything, create PRDs, start runs, but can't manage devices/team/servers).
 - **Device layer:** Raw WebSocket endpoint at `/ws/device`. `DeviceConnectionManager` tracks live connections in memory, validates against DB. Separate from Reverb — different protocol, different handler.
-- **Broadcast layer:** Reverb for browser push. Private channels per team (`private-team.{teamId}`) and per device (`private-device.{deviceId}`).
+- **Broadcast layer:** Reverb for browser push. Private channels per team (`private-team.{teamId}`) for cross-device updates and per device (`private-device.{deviceId}`) for device-specific state. Note: the protocol spec references `private-user.{userId}` — this is superseded by team-scoped channels since teams are the access boundary.
 - **Provisioning layer:** Hetzner Cloud and DigitalOcean API integration. Provisioning scripts for Debian. Server lifecycle management (reboot, resize, rebuild, destroy).
 
 ### Device Protocol
@@ -264,7 +264,7 @@ GitHub-style code review experience.
 #### Server Detail Page (Management)
 
 - Status card: online/offline, uptime, IP address, provider, region, size
-- Resource monitoring: CPU, RAM, disk usage
+- Resource monitoring: CPU, RAM, disk usage (polled from cloud provider API — Hetzner Metrics / DO Monitoring)
 - Actions: Reboot, Resize, Rebuild, Destroy (with confirmation modals)
 - Service management: Start/Stop/Restart chief systemd service, view status
 - Server logs: system logs and chief service logs
