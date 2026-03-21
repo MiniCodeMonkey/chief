@@ -157,6 +157,7 @@ uplink:
 
 - Exponential backoff with jitter: 1s, 2s, 4s, 8s... capped at 60s
 - On reconnect, chief sends a fresh `state.sync` — server replaces its entire cache for that device
+- After processing `state.sync`, server drains any `pending_commands` (oldest first) to the device
 - No need to track "what changed since disconnect"
 
 ### Token Refresh
