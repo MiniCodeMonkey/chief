@@ -127,8 +127,7 @@ RUN install-php-extensions \
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apk add --no-cache nodejs npm
+RUN apk add --no-cache nodejs npm
 
 WORKDIR /var/www/html
 
@@ -387,9 +386,9 @@ h1, h2, h3, h4 {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title inertia>{{ config('app.name') }}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-sans/style.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/geist@1/dist/fonts/geist-mono/style.css" rel="stylesheet">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @inertiaHead
 </head>
@@ -602,13 +601,13 @@ it('creates a default team when a user registers', function () {
     ]);
 
     expect($user->teams)->toHaveCount(1);
-    expect($user->currentTeam->name)->toBe("Test User's Team");
+    expect($user->currentTeam()()->name)->toBe("Test User's Team");
     expect($user->teams->first()->pivot->role)->toBe('owner');
 });
 
 it('returns the current team', function () {
     $user = User::factory()->create();
-    $team = $user->currentTeam;
+    $team = $user->currentTeam();
 
     expect($team)->toBeInstanceOf(Team::class);
     expect($team->owner_id)->toBe($user->id);
@@ -827,7 +826,7 @@ class TeamInvitation extends Model
 public function configure(): static
 {
     return $this->afterCreating(function (User $user) {
-        $user->currentTeam(); // triggers default team creation
+        $user->currentTeam()(); // triggers default team creation
     });
 }
 ```
@@ -1048,10 +1047,20 @@ Route::middleware('auth')->group(function () {
 });
 ```
 
-Add to `bootstrap/app.php` or `routes/web.php`:
+Register the auth routes file in `bootstrap/app.php` inside the `withRouting` call:
+
 ```php
-require __DIR__.'/auth.php';
+->withRouting(
+    web: __DIR__.'/../routes/web.php',
+    commands: __DIR__.'/../routes/console.php',
+    health: '/up',
+    then: function () {
+        Route::middleware('web')->group(base_path('routes/auth.php'));
+    },
+)
 ```
+
+Add `use Illuminate\Support\Facades\Route;` to the imports in `bootstrap/app.php`.
 
 - [ ] **Step 5: Create Login.vue**
 
@@ -1438,7 +1447,7 @@ use Illuminate\Http\Request;
 
 class TrackLastVisitedUrl
 {
-    private array $excluded = ['/', '/login', '/register', '/logout'];
+    private array $excluded = ['', 'login', 'register', 'logout', 'activate'];
 
     public function handle(Request $request, Closure $next)
     {
@@ -1513,7 +1522,7 @@ use App\Services\TeamService;
 it('creates an invitation', function () {
     $service = new TeamService();
     $user = User::factory()->create();
-    $team = $user->currentTeam;
+    $team = $user->currentTeam();
 
     $invitation = $service->invite($team, 'invitee@example.com');
 
@@ -1628,12 +1637,19 @@ it('allows owner to invite a member', function () {
     ]);
 });
 
-it('prevents member from inviting', function () {
+it('prevents member from managing the team they do not own', function () {
     $owner = User::factory()->create();
-    $team = $owner->currentTeam;
-    $member = User::factory()->create();
+    $team = $owner->currentTeam();
+
+    // Create member without their own default team for this test
+    $member = User::create([
+        'name' => 'Member',
+        'email' => 'member@example.com',
+        'password' => bcrypt('password'),
+    ]);
     $team->users()->attach($member->id, ['role' => 'member']);
 
+    // Member's currentTeam() returns the shared team (their only team)
     $this->actingAs($member)->post('/settings/team/invite', [
         'email' => 'another@example.com',
     ])->assertForbidden();
@@ -2020,7 +2036,7 @@ it('shows the device activation page', function () {
 
 it('approves a device code', function () {
     $user = User::factory()->create();
-    $team = $user->currentTeam;
+    $team = $user->currentTeam();
 
     DB::table('device_codes')->insert([
         'device_code' => 'dev_code_123',
