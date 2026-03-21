@@ -205,7 +205,7 @@ pending_commands → id, device_id, type, payload, status (pending/delivered/fai
 ### Broadcasting to Browser
 
 - Standard Laravel events + Reverb private channels
-- `private-user.{userId}` — cross-device updates (device online/offline, new projects)
+- `private-team.{teamId}` — cross-device updates (device online/offline, new projects)
 - `private-device.{deviceId}` — device-specific state (PRD updates, run progress, streaming)
 - Browser subscribes on page load and receives real-time updates
 
