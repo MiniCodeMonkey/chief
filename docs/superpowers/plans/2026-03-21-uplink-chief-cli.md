@@ -451,6 +451,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -844,6 +845,9 @@ func (c *Client) Connect() error {
 
 	c.mu.Lock()
 	c.conn = conn
+	// Reset channels for reconnection support
+	c.ready = make(chan struct{})
+	c.done = make(chan struct{})
 	c.mu.Unlock()
 
 	go c.readLoop()
@@ -1441,6 +1445,7 @@ func TestChatSessionBuildArgs(t *testing.T) {
 		"--output-format", "stream-json",
 		"--verbose",
 		"--dangerously-skip-permissions",
+		"--dir", "/home/user/project",
 		"-p", "Create a REST API for users",
 	}
 
@@ -1500,7 +1505,6 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/protocol"
 )
 
@@ -1579,6 +1583,7 @@ func (cs *ChatSession) buildArgs(message string) []string {
 		"--output-format", "stream-json",
 		"--verbose",
 		"--dangerously-skip-permissions",
+		"--dir", cs.workDir,
 	}
 
 	if cs.sessionID != "" {
@@ -1887,6 +1892,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	workDir, _ := os.Getwd()
 
 	// Set up state collector
+	// Version is defined in root.go (set from main.go at build time)
 	collector := uplink.NewStateCollector(creds.DeviceID, Version)
 	collector.AddProject(workDir)
 
@@ -1915,12 +1921,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	handler.OnPRDCreate(func(cmd protocol.CmdPRDCreate) error {
 		log.Printf("Creating PRD in project %s", cmd.ProjectID)
+		// Generate PRD ID upfront so we can key the session consistently
+		prdID := "prd_" + fmt.Sprintf("%d", time.Now().UnixNano())
 		cs := session.NewChatSession(resolveAgentPath(), workDir)
 		cs.OnEvent(func(event protocol.StatePRDChatOutput) {
-			event.PRDID = "prd_new" // Will be assigned properly
+			event.PRDID = prdID
 			env := protocol.NewEnvelope(protocol.TypeStatePRDChatOutput, creds.DeviceID, event)
 			client.Send(env)
 		})
+
+		// Store session keyed by PRD ID (same key used by OnPRDMessage)
+		chatSessions[prdID] = cs
 
 		go func() {
 			result, err := cs.SendMessage(context.Background(), cmd.Message)
@@ -1928,8 +1939,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 				log.Printf("PRD create failed: %v", err)
 				return
 			}
-			log.Printf("PRD created: %s", result[:min(len(result), 100)])
-			chatSessions[cs.SessionID()] = cs
+			log.Printf("PRD created (id=%s): %s", prdID, result[:min(len(result), 100)])
 		}()
 
 		return nil
@@ -2005,13 +2015,6 @@ func buildWSURL(baseURL string) (string, error) {
 func resolveAgentPath() string {
 	// TODO: resolve from config, for now use "claude"
 	return "claude"
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 ```
 
@@ -2151,7 +2154,13 @@ handler.OnLogGet(func(cmd protocol.CmdLogGet) error {
 
 handler.OnFilesList(func(cmd protocol.CmdFilesList) error {
 	go func() {
-		entries, err := os.ReadDir(filepath.Join(workDir, cmd.Path))
+		// Sanitize path to prevent directory traversal
+		resolved := filepath.Join(workDir, filepath.Clean("/"+cmd.Path))
+		if !strings.HasPrefix(resolved, workDir) {
+			log.Printf("Path traversal blocked: %s", cmd.Path)
+			return
+		}
+		entries, err := os.ReadDir(resolved)
 		if err != nil {
 			log.Printf("ReadDir failed: %v", err)
 			return
@@ -2185,7 +2194,13 @@ handler.OnFilesList(func(cmd protocol.CmdFilesList) error {
 
 handler.OnFileGet(func(cmd protocol.CmdFileGet) error {
 	go func() {
-		content, err := os.ReadFile(filepath.Join(workDir, cmd.Path))
+		// Sanitize path to prevent directory traversal
+		resolved := filepath.Join(workDir, filepath.Clean("/"+cmd.Path))
+		if !strings.HasPrefix(resolved, workDir) {
+			log.Printf("Path traversal blocked: %s", cmd.Path)
+			return
+		}
+		content, err := os.ReadFile(resolved)
 		if err != nil {
 			log.Printf("ReadFile failed: %v", err)
 			return

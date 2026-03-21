@@ -18,6 +18,10 @@
 contract/
   schemas/
     envelope.json                    ← outer message format (type, id, device_id, timestamp, payload)
+    types/
+      project.json                   ← shared project type definition
+      prd.json                       ← shared PRD type definition
+      run.json                       ← shared run type definition
     state/
       sync.json                      ← full state snapshot payload
       projects-updated.json
@@ -108,7 +112,7 @@ internal/protocol/
   "properties": {
     "type": {
       "type": "string",
-      "pattern": "^(state|cmd|welcome|ack|error)\\."
+      "pattern": "^(state|cmd)\\.|^(welcome|ack|error)$"
     },
     "id": {
       "type": "string",
@@ -1786,7 +1790,7 @@ func TestValidateAllValidFixtures(t *testing.T) {
 		if err != nil || info.IsDir() {
 			return err
 		}
-		if !filepath.HasSuffix(path, ".valid.json") {
+		if !strings.HasSuffix(path, ".valid.json") {
 			return nil
 		}
 		t.Run(path, func(t *testing.T) {
@@ -1816,7 +1820,7 @@ func TestValidateAllInvalidFixtures(t *testing.T) {
 		if err != nil || info.IsDir() {
 			return err
 		}
-		if !filepath.HasSuffix(path, ".invalid-") {
+		if !strings.Contains(filepath.Base(path), ".invalid-") {
 			return nil
 		}
 		t.Run(path, func(t *testing.T) {
@@ -1858,8 +1862,9 @@ import (
 
 // Validator validates protocol messages against JSON Schemas.
 type Validator struct {
-	compiler *jsonschema.Compiler
-	schemas  map[string]*jsonschema.Schema
+	compiler   *jsonschema.Compiler
+	schemas    map[string]*jsonschema.Schema
+	schemasDir string
 }
 
 // NewValidator creates a validator from the contract schemas directory.
@@ -1867,8 +1872,9 @@ func NewValidator(schemasDir string) (*Validator, error) {
 	c := jsonschema.NewCompiler()
 
 	v := &Validator{
-		compiler: c,
-		schemas:  make(map[string]*jsonschema.Schema),
+		compiler:   c,
+		schemas:    make(map[string]*jsonschema.Schema),
+		schemasDir: schemasDir,
 	}
 
 	// Load envelope schema
@@ -1908,7 +1914,7 @@ func (v *Validator) ValidateEnvelope(data []byte) error {
 	// Validate payload against type-specific schema
 	schemaPath := typeToSchemaPath(env.Type)
 	if schemaPath != "" {
-		payloadSchema, err := v.compiler.Compile(schemaPath)
+		payloadSchema, err := v.compiler.Compile(v.schemasDir + "/" + schemaPath)
 		if err != nil {
 			return fmt.Errorf("compile payload schema %s: %w", schemaPath, err)
 		}
@@ -1944,7 +1950,10 @@ func typeToSchemaPath(msgType string) string {
 }
 ```
 
-Note: The exact validation implementation may need adjustment based on the `santhosh-tekuri/jsonschema` API for loading schemas from directories with `$ref` support. The implementer should check the library docs for proper file-based schema loading.
+**Important implementation notes:**
+- The `santhosh-tekuri/jsonschema` library needs proper filesystem-based `$ref` resolution. Use `c.AddResource()` to register schema files by their `$id`, or use `file://` URIs so that relative `$ref` paths like `../types/project.json` resolve correctly from the schemas directory root.
+- Consult the library docs for `jsonschema.Compiler` file loading — you may need to walk the schemas directory and register all schemas upfront in `NewValidator`.
+- Add `"strings"` to the import block for `strings.SplitN` and `strings.ReplaceAll`.
 
 - [ ] **Step 5: Run tests**
 
