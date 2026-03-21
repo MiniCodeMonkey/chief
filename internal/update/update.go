@@ -37,8 +37,8 @@ type Asset struct {
 
 // CheckResult contains the result of a version check.
 type CheckResult struct {
-	CurrentVersion string
-	LatestVersion  string
+	CurrentVersion  string
+	LatestVersion   string
 	UpdateAvailable bool
 }
 

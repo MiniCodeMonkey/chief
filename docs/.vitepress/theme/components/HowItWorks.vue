@@ -6,7 +6,7 @@
   <section class="how-it-works">
     <div class="how-it-works-container">
       <h2 class="section-title">How It Works</h2>
-      <p class="section-subtitle">You watch, Claude works</p>
+      <p class="section-subtitle">You watch, Chief works</p>
 
       <div class="steps-grid">
         <!-- Step 1: Describe Your Project -->
@@ -35,7 +35,7 @@
           </svg>
         </div>
 
-        <!-- Step 2: Chief Runs Claude -->
+        <!-- Step 2: Chief Runs the Loop -->
         <div class="step">
           <div class="step-icon step-icon-accent">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -44,9 +44,9 @@
             </svg>
           </div>
           <div class="step-number">2</div>
-          <h3 class="step-title">Chief Runs Claude</h3>
+          <h3 class="step-title">Chief Runs the Loop</h3>
           <p class="step-description">
-            Chief runs Claude in a loop, working through each task until it's done.
+            Chief runs your agent in a loop, working through each task until it's done.
           </p>
         </div>
 

@@ -1,102 +1,119 @@
 ---
-description: Complete prd.json schema reference for Chief. TypeScript interfaces, field types, and validation rules for PRD files.
+description: Complete prd.md format reference for Chief. Heading structure, field types, status values, and validation rules.
 ---
 
-# PRD Schema Reference
+# PRD Format Reference
 
-Complete schema documentation for `prd.json`.
+Complete format documentation for `prd.md`.
 
-## Top-Level Schema
+## Story Heading Format
 
-```typescript
-interface PRD {
-  project: string;          // Project name
-  description: string;      // Brief description
-  userStories: UserStory[]; // Array of user stories
-}
+Each user story is defined by a level-3 markdown heading with an ID and title:
+
+```markdown
+### ID: Title
 ```
 
-## UserStory Object
-
-```typescript
-interface UserStory {
-  id: string;                    // Unique identifier
-  title: string;                 // Short title
-  description: string;           // Full description
-  acceptanceCriteria: string[];  // What must be true
-  priority: number;              // Lower = higher priority
-  passes: boolean;               // Is this complete?
-  inProgress: boolean;           // Being worked on?
-}
+**Examples:**
+```markdown
+### US-001: User Registration
+### AUTH-003: Password Reset Flow
+### BUG-012: Fix Login Redirect
 ```
+
+## Story Fields
+
+Below each story heading, Chief recognizes these bold-label fields:
+
+| Field | Format | Required | Default | Description |
+|-------|--------|----------|---------|-------------|
+| Status | `**Status:** value` | No | `todo` | Current state: `done`, `in-progress`, or `todo` |
+| Priority | `**Priority:** N` | No | Document order | Execution order (lower = higher priority) |
+| Description | `**Description:** text` | No | — | Story description (or use freeform prose) |
+
+## Acceptance Criteria
+
+Acceptance criteria use markdown checkboxes:
+
+```markdown
+- [ ] Criterion not yet met
+- [x] Criterion completed
+```
+
+Chief reads checkbox state to track progress. The agent checks boxes as it completes each criterion.
+
+## Status Values
+
+| Value | Meaning |
+|-------|---------|
+| `done` | Story is complete — Chief skips it |
+| `in-progress` | Agent is actively working on this story |
+| `todo` | Story is pending (also the default if Status is absent) |
 
 ## Full Example
 
-```json
-{
-  "project": "User Authentication",
-  "description": "Complete auth system with login, registration, and password reset",
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "User Registration",
-      "description": "As a new user, I want to register an account so that I can access the application.",
-      "acceptanceCriteria": [
-        "Registration form with email and password fields",
-        "Email format validation",
-        "Password minimum 8 characters",
-        "Confirmation email sent on registration",
-        "User redirected to login after registration"
-      ],
-      "priority": 1,
-      "passes": false,
-      "inProgress": false
-    },
-    {
-      "id": "US-002",
-      "title": "User Login",
-      "description": "As a registered user, I want to log in so that I can access my account.",
-      "acceptanceCriteria": [
-        "Login form with email and password fields",
-        "Error message for invalid credentials",
-        "Remember me checkbox",
-        "Redirect to dashboard on success"
-      ],
-      "priority": 2,
-      "passes": false,
-      "inProgress": false
-    }
-  ]
-}
+```markdown
+# User Authentication
+
+## Overview
+Complete auth system with login, registration, and password reset.
+
+## Technical Context
+- Backend: Express.js with TypeScript
+- Database: PostgreSQL with Prisma ORM
+- Auth: JWT tokens in httpOnly cookies
+
+## User Stories
+
+### US-001: User Registration
+
+**Status:** done
+**Priority:** 1
+**Description:** As a new user, I want to register an account so that I can access the application.
+
+- [x] Registration form with email and password fields
+- [x] Email format validation
+- [x] Password minimum 8 characters
+- [x] Confirmation email sent on registration
+- [x] User redirected to login after registration
+
+### US-002: User Login
+
+**Status:** todo
+**Priority:** 2
+**Description:** As a registered user, I want to log in so that I can access my account.
+
+- [ ] Login form with email and password fields
+- [ ] Error message for invalid credentials
+- [ ] Remember me checkbox
+- [ ] Redirect to dashboard on success
 ```
 
 ## Field Details
 
-### id
+### id (from heading)
 
-A unique identifier for the story. Appears in commit messages.
+Parsed from the story heading: `### US-001: Title` → id is `US-001`.
 
-**Format:** Any string, but `US-XXX` pattern recommended.
+**Format:** Any string before the colon, but `US-XXX` pattern recommended.
 
-**Example:** `"US-001"`, `"US-042"`, `"AUTH-001"`
+**Example:** `US-001`, `US-042`, `AUTH-001`
 
-### title
+### title (from heading)
 
-Short, descriptive title. Should fit in a commit message.
+Parsed from the story heading: `### US-001: User Registration` → title is `User Registration`.
 
-**Length:** Keep under 50 characters
-
-**Example:** `"User Registration"`, `"Password Reset Flow"`
+**Length:** Keep under 50 characters for clean commit messages.
 
 ### description
 
-Full description of the story. User story format recommended but not required.
+The text after `**Description:**`, or freeform prose between the heading and the first checkbox list.
 
-**Format:** `"As a [user], I want [feature] so that [benefit]."`
+**Format:** `"As a [user], I want [feature] so that [benefit]."` recommended but not required.
 
-### acceptanceCriteria
+### acceptanceCriteria (checkboxes)
 
-Array of strings, each describing a requirement. Claude uses these to know when the story is complete.
+The `- [ ]` / `- [x]` items under each story heading. The agent uses these to know when the story is complete.
 
 **Guidelines:**
 - Specific and testable
@@ -105,29 +122,23 @@ Array of strings, each describing a requirement. Claude uses these to know when 
 
 ### priority
 
-Lower numbers = higher priority. Chief always picks the incomplete story with the lowest priority number first.
+Lower numbers = higher priority. Chief always picks the incomplete story with the lowest priority number first. If omitted, stories are selected in document order.
 
 **Range:** Positive integers, typically 1-100
 
-### passes
+### status
 
-Boolean indicating if the story is complete. Chief updates this automatically.
+Tracked by Chief. Set to `in-progress` when work begins, `done` when the agent outputs `<chief-done/>`.
 
-**Default:** `false`
-
-### inProgress
-
-Boolean indicating if Claude is currently working on this story.
-
-**Default:** `false`
+**Values:** `done`, `in-progress`, `todo` (default if absent)
 
 ## Validation
 
-Chief validates `prd.json` on startup:
+Chief validates `prd.md` on startup by parsing the markdown structure:
 
-- All required fields must be present
-- `userStories` must be non-empty
-- Each story must have unique `id`
-- `priority` must be a positive number
+- At least one story heading (`### ID: Title`) must be present
+- Each story must have a unique ID
+- Priority values (if present) must be positive numbers
+- Status values (if present) must be `done`, `in-progress`, or `todo`
 
-Invalid PRDs cause Chief to exit with an error message.
+Invalid PRDs cause Chief to exit with an error message describing the parsing issue.

@@ -8,7 +8,9 @@ Chief is distributed as a single binary with no runtime dependencies. Choose you
 
 ## Prerequisites
 
-Before installing Chief, ensure you have **Claude Code CLI** installed and authenticated:
+Chief needs an agent CLI: **Claude Code** (default), **Codex**, or **OpenCode**. Install at least one and authenticate.
+
+### Option A: Claude Code CLI (default)
 
 ::: code-group
 
@@ -27,9 +29,30 @@ npx @anthropic-ai/claude-code login
 
 :::
 
-::: tip Verify Claude Code Installation
-Run `claude --version` to confirm Claude Code is installed. Chief will not work without it.
-:::
+### Option B: Codex CLI
+
+To use [OpenAI Codex CLI](https://developers.openai.com/codex/cli/reference) instead of Claude:
+
+1. Install Codex per the [official reference](https://developers.openai.com/codex/cli/reference).
+2. Ensure `codex` is on your PATH, or set `agent.cliPath` in `.chief/config.yaml` (see [Configuration](/reference/configuration#agent)).
+3. Run Chief with `chief --agent codex` or set `CHIEF_AGENT=codex`, or set `agent.provider: codex` in `.chief/config.yaml`.
+
+### Option C: OpenCode CLI
+
+To use [OpenCode CLI](https://opencode.ai) as an alternative:
+
+1. Install OpenCode per the [official docs](https://opencode.ai/docs/).
+2. Ensure `opencode` is on your PATH, or set `agent.cliPath` in `.chief/config.yaml` (see [Configuration](/reference/configuration#agent)).
+3. Run Chief with `chief --agent opencode` or set `CHIEF_AGENT=opencode`, or set `agent.provider: opencode` in `.chief/config.yaml`.
+
+### Option D: Cursor CLI
+
+To use [Cursor CLI](https://cursor.com/docs/cli/overview) as the agent:
+
+1. Install Cursor CLI per the [official docs](https://cursor.com/docs/cli/overview)
+2. Ensure `agent` is on your PATH, or set `agent.cliPath` in `.chief/config.yaml`.
+3. Run `agent login` for authentication.
+4. Run Chief with `chief --agent cursor` or set `CHIEF_AGENT=cursor`, or set `agent.provider: cursor` in `.chief/config.yaml`.
 
 ### Optional: GitHub CLI (`gh`)
 
@@ -238,11 +261,12 @@ chief --version
 # View help
 chief --help
 
-# Check that Claude Code is accessible
+# Check that your agent CLI is accessible (Claude default, or codex if configured)
 claude --version
+# or: codex --version
 ```
 
-Expected output:
+Expected output (example with Claude):
 
 ```
 $ chief --version

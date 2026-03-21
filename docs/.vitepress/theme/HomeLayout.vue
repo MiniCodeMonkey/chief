@@ -2,6 +2,7 @@
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import Hero from './components/Hero.vue'
+import AgentSupport from './components/AgentSupport.vue'
 import HowItWorks from './components/HowItWorks.vue'
 import Features from './components/Features.vue'
 import Footer from './components/Footer.vue'
@@ -15,6 +16,7 @@ const { frontmatter } = useData()
   <Layout>
     <template #home-hero-before>
       <Hero />
+      <AgentSupport />
       <HowItWorks />
       <Features />
       <Footer />

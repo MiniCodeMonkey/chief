@@ -13,6 +13,9 @@ Chief stores project-level settings in `.chief/config.yaml`. This file is create
 ### Format
 
 ```yaml
+agent:
+  provider: claude   # or "codex", "opencode", or "cursor"
+  cliPath: ""        # optional path to CLI binary
 worktree:
   setup: "npm install"
 onComplete:
@@ -24,6 +27,8 @@ onComplete:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, `opencode`, or `cursor` |
+| `agent.cliPath` | string | `""` | Optional path to the agent binary (e.g. `/usr/local/bin/opencode`). If empty, Chief uses the provider name from PATH. |
 | `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
 | `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
 | `onComplete.createPR` | bool | `false` | Automatically create a pull request when a PRD completes (requires `gh` CLI) |
@@ -73,7 +78,7 @@ When you launch Chief for the first time in a project, you'll be prompted to con
 2. **Worktree setup command** — A shell command to run in new worktrees (e.g., installing dependencies)
 
 For the setup command, you can:
-- **Let Claude figure it out** (Recommended) — Claude analyzes your project and suggests appropriate setup commands
+- **Auto-detect** (Recommended) — The agent analyzes your project and suggests appropriate setup commands
 - **Enter manually** — Type a custom command
 - **Skip** — Leave it empty
 
@@ -83,17 +88,27 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 
 | Flag | Description | Default |
 |------|-------------|---------|
+| `--agent <provider>` | Agent CLI to use: `claude`, `codex`, `opencode`, or `cursor` | From config / env / `claude` |
+| `--agent-path <path>` | Custom path to the agent CLI binary | From config / env |
 | `--max-iterations <n>`, `-n` | Loop iteration limit | Dynamic |
-| `--no-retry` | Disable auto-retry on Claude crashes | `false` |
-| `--verbose` | Show raw Claude output in log | `false` |
-| `--merge` | Auto-merge progress on conversion conflicts | `false` |
-| `--force` | Auto-overwrite on conversion conflicts | `false` |
+| `--no-retry` | Disable auto-retry on agent crashes | `false` |
+| `--verbose` | Show raw agent output in log | `false` |
+
+Agent resolution order: `--agent` / `--agent-path` → `CHIEF_AGENT` / `CHIEF_AGENT_PATH` env vars → `agent.provider` / `agent.cliPath` in `.chief/config.yaml` → default `claude`.
 
 When `--max-iterations` is not specified, Chief calculates a dynamic limit based on the number of remaining stories plus a buffer. You can also adjust the limit at runtime with `+`/`-` in the TUI.
 
-## Claude Code Configuration
+## Agent
 
-Chief invokes Claude Code under the hood. Claude Code has its own configuration:
+Chief can use **Claude Code** (default), **Codex CLI**, **OpenCode CLI**, or **Cursor CLI** as the agent. Choose via:
+
+- **Config:** `agent.provider: opencode` and optionally `agent.cliPath: /path/to/opencode` in `.chief/config.yaml`
+- **Environment:** `CHIEF_AGENT=opencode`, `CHIEF_AGENT_PATH=/path/to/opencode`
+- **CLI:** `chief --agent opencode --agent-path /path/to/opencode`
+
+## Agent-Specific Configuration
+
+Each agent has its own configuration. For example, when using Claude Code:
 
 ```bash
 # Authentication
@@ -105,12 +120,21 @@ claude config set model claude-3-opus-20240229
 
 See [Claude Code documentation](https://github.com/anthropics/claude-code) for details.
 
+When using Cursor CLI:
+
+```bash
+# Authentication (or set CURSOR_API_KEY for headless)
+agent login
+```
+
+Chief runs Cursor in headless mode with `--trust` and `--force` so it can modify files without prompts. See [Cursor CLI documentation](https://cursor.com/docs/cli/overview) for details.
+
 ## Permission Handling
 
-By default, Claude Code asks for permission before executing bash commands, writing files, and making network requests. Chief automatically disables these prompts when invoking Claude to enable autonomous operation.
+Some agents (like Claude Code) ask for permission before executing bash commands, writing files, and making network requests. Chief automatically configures the agent for autonomous operation by disabling these prompts.
 
 ::: warning
-Chief runs Claude with full permissions to modify your codebase. Only run Chief on PRDs you trust.
+Chief runs the agent with full permissions to modify your codebase. Only run Chief on PRDs you trust.
 
 For additional isolation, consider using [Claude Code's sandbox mode](https://docs.anthropic.com/en/docs/claude-code/sandboxing) or running Chief in a Docker container.
 :::
