@@ -394,6 +394,119 @@ cached_diffs (id, project_id, story_id?, diffs encrypted, fetched_at, created_at
 /servers/{id}                    → Server management
 /settings                        → User settings
 /settings/team                   → Team management (invite, roles)
+/activate                        → Device code approval page (team selector if multi-team)
+```
+
+### Device Approval Page (`/activate`)
+
+When a user runs `chief login` and visits `/activate`:
+
+1. User enters the displayed code (e.g., "ABCD-1234")
+2. Page shows device name and asks for confirmation
+3. If user belongs to multiple teams, a team selector dropdown appears (defaults to their primary team)
+4. User clicks "Approve" → device is assigned to the selected team
+5. Chief CLI polls and receives tokens
+
+For single-team users (the common case), no team selector is shown — device joins their only team automatically.
+
+## Local Development
+
+### Docker Compose Setup
+
+Local development mirrors production. A `docker-compose.yml` provides all services:
+
+```yaml
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"       # Octane/FrankenPHP
+      - "8080:8080"       # Reverb WebSocket
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - mariadb
+      - redis
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - DB_HOST=mariadb
+      - REDIS_HOST=redis
+      - REVERB_HOST=0.0.0.0
+
+  mariadb:
+    image: mariadb:11
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_DATABASE=uplink
+      - MYSQL_USER=uplink
+      - MYSQL_PASSWORD=secret
+      - MYSQL_ROOT_PASSWORD=secret
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"       # SMTP
+      - "8025:8025"       # Web UI
+
+volumes:
+  mariadb_data:
+```
+
+**Dockerfile:** Multi-stage build based on `dunglas/frankenphp`. Installs PHP extensions (pdo_mysql, redis, pcntl), Node.js for asset compilation, and Composer dependencies.
+
+**Development workflow:**
+- `docker compose up -d` — start all services
+- `docker compose exec app php artisan migrate` — run migrations
+- `docker compose exec app php artisan db:seed` — seed test data
+- `npm run dev` — Vite dev server with HMR (runs on host, proxies to container)
+- `docker compose exec app php artisan reverb:start` — start Reverb WebSocket server
+- Mailpit at http://localhost:8025 for email testing
+
+**Testing in Docker:**
+- `docker compose exec app php artisan test` — run Pest tests
+- `npx playwright test` — run browser tests against http://localhost:8000
+
+### Environment Variables
+
+Key `.env` variables for local development:
+
+```
+APP_NAME="Chief Uplink"
+APP_ENV=local
+APP_DEBUG=true
+APP_URL=http://localhost:8000
+
+DB_CONNECTION=mysql
+DB_HOST=mariadb
+DB_PORT=3306
+DB_DATABASE=uplink
+DB_USERNAME=uplink
+DB_PASSWORD=secret
+
+REDIS_HOST=redis
+
+REVERB_APP_ID=uplink-local
+REVERB_APP_KEY=local-key
+REVERB_APP_SECRET=local-secret
+REVERB_HOST=0.0.0.0
+REVERB_PORT=8080
+
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_REDIRECT_URI=http://localhost:8000/auth/github/callback
+
+MAIL_MAILER=smtp
+MAIL_HOST=mailpit
+MAIL_PORT=1025
 ```
 
 ## README & Self-Hosting
@@ -402,10 +515,43 @@ The project README should cover:
 - What Uplink is (brief description)
 - Screenshots of key screens
 - Quick start for the hosted version (sign up, install chief, connect)
-- Self-hosting instructions: Docker Compose setup, environment variables, database setup, Reverb configuration, reverse proxy (Caddy/nginx)
-- Development setup: clone, install, migrate, seed, run
+- Development setup: Docker Compose (see above)
 - Contributing guidelines
 - License
+
+### Self-Hosting Guide
+
+A dedicated `docs/self-hosting.md` covering:
+
+**Requirements:**
+- Server with Docker and Docker Compose
+- Domain with DNS pointing to the server
+- SSL certificate (Let's Encrypt via Caddy recommended)
+
+**Deployment:**
+- Clone repo, copy `.env.example` to `.env`
+- Configure `APP_KEY` (critical — used for encrypting PRD content, diffs, credentials)
+- Configure database, Redis, domain
+- `docker compose -f docker-compose.prod.yml up -d`
+- `docker compose exec app php artisan migrate`
+
+**Reverse proxy (Caddy):**
+- Standard HTTP proxy to port 8000
+- WebSocket upgrade handling for `/ws/device` (device protocol) and Reverb port
+- Automatic SSL via Let's Encrypt
+
+**Required environment variables:**
+- `APP_KEY` — encryption key (generate with `php artisan key:generate`)
+- `APP_URL` — public URL
+- `DB_*` — database connection
+- `REDIS_HOST` — required for Reverb and queue
+- `REVERB_*` — WebSocket server config
+- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` — for GitHub OAuth (optional, email auth works without)
+
+**Maintenance:**
+- Database backups: MariaDB dump via cron
+- Updates: `git pull && docker compose build && docker compose up -d && php artisan migrate`
+- Logs: `docker compose logs -f app`
 
 ## Out of Scope (Separate Projects)
 

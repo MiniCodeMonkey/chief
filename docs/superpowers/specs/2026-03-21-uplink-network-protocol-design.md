@@ -64,10 +64,10 @@ Every message between chief and the server uses the same JSON envelope:
 
 | Type | Description | Storage |
 |------|-------------|---------|
-| `state.sync` | Full state snapshot (sent on connect and periodically) | Replaces entire device cache |
+| `state.sync` | Full state snapshot (sent on connect). Includes: device info, all projects (with git status), all PRDs (with content, progress, chat_history, session_id), all active/recent runs. | Replaces entire device cache |
 | `state.projects.updated` | Project list changed; includes per-project git status (branch, clean/dirty, last commit) | Cached |
-| `state.prd.created` | New PRD created (includes full content and chat history) | Cached (content encrypted) |
-| `state.prd.updated` | PRD content, progress, or chat history changed | Cached (content encrypted) |
+| `state.prd.created` | New PRD created (includes full content, chat history, and session_id) | Cached (content encrypted) |
+| `state.prd.updated` | PRD content, progress, chat history, or session_id changed | Cached (content encrypted) |
 | `state.prd.deleted` | PRD removed | Deletes from cache |
 | `state.prd.chat.output` | Streaming PRD chat response (agent thinking/writing) | Ephemeral (relay only) |
 | `state.run.started` | Ralph loop began | Cached |
@@ -119,6 +119,9 @@ Every message between chief and the server uses the same JSON envelope:
 3. Ephemeral messages (`state.run.output`, `state.log.output`, `state.prd.chat.output`, `state.project.clone.progress`) are relayed to Reverb if a browser is listening, otherwise dropped. Never stored in DB.
 4. The `state.sync` snapshot on connect replaces the server's entire cache for that device — no delta tracking or "catch up" logic needed.
 5. No message batching — send each state change as it happens over the persistent connection.
+6. Commands that produce async data responses (e.g., `cmd.diffs.get` → `state.diffs.response`) follow a two-phase pattern: immediate `ack` (command received), then a data response message with `ref_id` set to the original command's `id` for correlation.
+7. Chief must send `state.run.stopped` or `state.run.completed` whenever a run ends, regardless of whether it was triggered via uplink or locally. This ensures the web app always reflects the current run state.
+8. File paths in `cmd.files.list` and `cmd.file.get` are relative to the project root. Chief must validate paths to prevent directory traversal beyond the project boundary.
 
 ## Connection Lifecycle & Authentication
 
@@ -169,8 +172,29 @@ uplink:
 
 - Each `chief serve` process gets its own device ID during OAuth
 - Each process is independent — user runs `chief serve` in each project directory
-- Server tracks connections per device, grouped by user
+- Server tracks connections per device, grouped by team
 - Browser shows all connected devices and their projects
+
+### Team Scoping
+
+The protocol has no team concept — team assignment is purely server-side. When a device authenticates, the server resolves team membership from the device record in the database. The flow:
+
+1. User registers → a default team is created for them (Owner role)
+2. User approves a device code at `/activate` → device joins their default team (or user selects a team if they belong to multiple)
+3. All protocol messages use `device_id` only — the server maps device → team internally
+4. Team members see all devices belonging to their team in the browser
+
+### Provisioned Server Authentication
+
+When the web app provisions a VPS, it bypasses the interactive device code flow:
+
+1. Web app calls internal `POST /api/auth/device/provision` with `team_id` and `server_name`
+2. Server creates a device record and generates an `access_token` + `refresh_token` directly
+3. Provisioning script receives the tokens and writes `~/.chief/credentials.yaml` on the VPS
+4. `chief serve` starts and connects using these credentials — no user interaction needed
+5. The device appears in the team's device list immediately
+
+This endpoint is internal-only (not exposed to external clients).
 
 ## Server-Side Architecture (Laravel)
 
@@ -184,11 +208,11 @@ uplink:
 ### Database Schema
 
 ```
-devices        → id, user_id, name, os, arch, chief_version, last_seen_at, connected
-projects       → id, device_id, path, name, git_remote, git_branch, git_status, last_commit_hash, last_commit_message, last_commit_at
-prds           → id, project_id, device_id, title, status, content (encrypted), progress (encrypted), chat_history (encrypted)
-runs           → id, prd_id, device_id, status, result, error_message, started_at, completed_at, story_index
-pending_commands → id, device_id, type, payload, status (pending/delivered/failed), created_at, delivered_at
+devices          → id, team_id, name, os, arch, chief_version, access_token (hashed), refresh_token (encrypted), last_seen_at, connected
+projects         → id, device_id, path, name, git_remote, git_branch, git_status, last_commit_hash, last_commit_message, last_commit_at
+prds             → id, project_id, device_id, title, status, content (encrypted), progress (encrypted), chat_history (encrypted), session_id
+runs             → id, prd_id, device_id, status, result, error_message, started_at, completed_at, story_index
+pending_commands → id, device_id, type, payload (encrypted), status (pending/delivered/failed), created_at, delivered_at
 ```
 
 - Content fields (PRD body, progress, chat history, diffs) encrypted at rest using Laravel's built-in encryption (AES-256-CBC)
