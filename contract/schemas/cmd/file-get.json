@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd/file-get.json",
+  "title": "File Get Command",
+  "description": "Command to retrieve the contents of a specific file",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "file-get"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the project containing the file"
+        },
+        "path": {
+          "type": "string",
+          "description": "Relative file path within the project"
+        }
+      },
+      "required": ["project_id", "path"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd/project-clone.json",
+  "title": "Project Clone Command",
+  "description": "Command to clone a git repository into the workspace",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "project-clone"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "git_url": {
+          "type": "string",
+          "description": "Git repository URL to clone"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Branch to checkout after cloning"
+        }
+      },
+      "required": ["git_url"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

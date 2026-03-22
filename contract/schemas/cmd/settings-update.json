@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd/settings-update.json",
+  "title": "Settings Update Command",
+  "description": "Command to update device settings",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "settings-update"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "description": "Key-value settings to update"
+        }
+      },
+      "required": ["settings"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

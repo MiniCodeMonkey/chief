@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd/prd-message.json",
+  "title": "PRD Message Command",
+  "description": "Command to send a chat message to a PRD session",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "prd-message"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "prd_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the PRD to message"
+        },
+        "message": {
+          "type": "string",
+          "description": "The chat message content"
+        }
+      },
+      "required": ["prd_id", "message"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

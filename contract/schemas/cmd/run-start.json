@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd/run-start.json",
+  "title": "Run Start Command",
+  "description": "Command to start a new run for a PRD",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "run-start"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "prd_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the PRD to run"
+        },
+        "run_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Pre-assigned run ID from the server"
+        }
+      },
+      "required": ["prd_id", "run_id"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

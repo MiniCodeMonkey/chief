@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd/prd-delete.json",
+  "title": "PRD Delete Command",
+  "description": "Command to delete an existing PRD",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "prd-delete"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "prd_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the PRD to delete"
+        }
+      },
+      "required": ["prd_id"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

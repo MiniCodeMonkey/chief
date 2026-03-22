@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd/prd-update.json",
+  "title": "PRD Update Command",
+  "description": "Command to update an existing PRD",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "prd-update"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "prd_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the PRD to update"
+        },
+        "title": {
+          "type": "string",
+          "description": "Updated title"
+        },
+        "content": {
+          "type": "string",
+          "description": "Updated content"
+        }
+      },
+      "required": ["prd_id"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

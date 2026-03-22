@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd/files-list.json",
+  "title": "Files List Command",
+  "description": "Command to list files in a project directory",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "files-list"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the project to list files for"
+        },
+        "path": {
+          "type": "string",
+          "description": "Relative directory path within the project"
+        }
+      },
+      "required": ["project_id"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

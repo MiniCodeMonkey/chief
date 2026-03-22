@@ -1,0 +1,10 @@
+{
+  "type": "prd-create",
+  "id": "550e8400-e29b-41d4-a716-446655440031",
+  "device_id": "device-abc-123",
+  "timestamp": "2026-03-22T14:05:00Z",
+  "payload": {
+    "project_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "content": "Implement OAuth2 login flow with Google and GitHub providers"
+  }
+}
