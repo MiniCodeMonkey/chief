@@ -697,6 +697,297 @@ func (p *noopProvider) LoopCommand(ctx context.Context, prompt, workDir string) 
 	return exec.CommandContext(ctx, "echo", "noop")
 }
 
+// TestIntegrationFullServeFlow verifies the full connect → sync → command → response
+// flow using a mock WebSocket server, with no external dependencies.
+func TestIntegrationFullServeFlow(t *testing.T) {
+	// 1. Set up workspace with a git project.
+	workspace := t.TempDir()
+	projectDir := filepath.Join(workspace, "myproject")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initTestGitRepo(t, projectDir)
+
+	// Write a file so files-list has something to return.
+	os.WriteFile(filepath.Join(projectDir, "README.md"), []byte("# My Project"), 0o644)
+	gitRun := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = projectDir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=Test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	gitRun("add", "README.md")
+	gitRun("commit", "-m", "add readme")
+
+	const chiefVersion = "1.2.3-test"
+	const deviceID = "device-integ"
+
+	// 2. Start mock WebSocket server.
+	// The server sends welcome, captures all client messages, and can send
+	// commands back to the client.
+	var mu sync.Mutex
+	var received []protocol.Envelope
+	serverReady := make(chan struct{})
+	cmdSent := make(chan struct{})
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		// Send welcome message.
+		welcome := protocol.NewEnvelope(protocol.TypeWelcome, "server")
+		welcomePayload, _ := json.Marshal(protocol.Welcome{
+			ServerVersion: "0.1.0",
+			ConnectionID:  "sess-integration",
+		})
+		welcome.Payload = welcomePayload
+		data, _ := welcome.Marshal()
+		conn.WriteMessage(websocket.TextMessage, data)
+
+		// Signal that server is ready to read.
+		close(serverReady)
+
+		// Read first message — should be state.sync.
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Logf("read sync error: %v", err)
+			return
+		}
+		env, err := protocol.ParseEnvelope(msg)
+		if err != nil {
+			t.Logf("parse sync error: %v", err)
+			return
+		}
+		mu.Lock()
+		received = append(received, env)
+		mu.Unlock()
+
+		// Send a files-list command to the client.
+		var syncPayload protocol.StateSync
+		json.Unmarshal(env.Payload, &syncPayload)
+
+		projectID := ""
+		if len(syncPayload.Projects) > 0 {
+			projectID = syncPayload.Projects[0].ID
+		}
+
+		cmdEnv := protocol.NewEnvelope(protocol.TypeFilesList, "server")
+		cmdPayload, _ := json.Marshal(protocol.CmdFilesList{
+			ProjectID: projectID,
+		})
+		cmdEnv.Payload = cmdPayload
+		cmdData, _ := cmdEnv.Marshal()
+		conn.WriteMessage(websocket.TextMessage, cmdData)
+		close(cmdSent)
+
+		// Read the response(s).
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			env, err := protocol.ParseEnvelope(msg)
+			if err != nil {
+				continue
+			}
+			mu.Lock()
+			received = append(received, env)
+			mu.Unlock()
+		}
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+	// 3. Set up client, handler, and state collector (same wiring as RunServe).
+	collector := uplink.NewStateCollector(workspace, chiefVersion)
+	syncPayload, err := collector.Collect()
+	if err != nil {
+		t.Fatalf("collect state: %v", err)
+	}
+
+	// Build project lookup.
+	projectPaths := make(map[string]string)
+	for _, p := range syncPayload.Projects {
+		projectPaths[p.ID] = p.Path
+	}
+
+	client := uplink.NewClient(wsURL, "test-token")
+	handler := uplink.NewHandler(deviceID)
+
+	// Register files-list handler (like RunServe does).
+	handler.OnFilesList(func(cmd protocol.CmdFilesList) error {
+		pDir, ok := projectPaths[cmd.ProjectID]
+		if !ok {
+			return fmt.Errorf("unknown project: %s", cmd.ProjectID)
+		}
+
+		entries, err := os.ReadDir(pDir)
+		if err != nil {
+			return fmt.Errorf("read directory: %w", err)
+		}
+
+		var files []protocol.FileEntry
+		for _, e := range entries {
+			if e.Name() == ".git" {
+				continue
+			}
+			fe := protocol.FileEntry{Name: e.Name(), IsDir: e.IsDir()}
+			if !e.IsDir() {
+				if info, err := e.Info(); err == nil {
+					size := int(info.Size())
+					fe.Size = &size
+				}
+			}
+			files = append(files, fe)
+		}
+
+		resp := protocol.NewEnvelope(protocol.TypeFilesList, deviceID)
+		payload, _ := json.Marshal(protocol.StateFilesList{
+			ProjectID: cmd.ProjectID,
+			Path:      "",
+			Files:     files,
+		})
+		resp.Payload = payload
+		return client.Send(resp)
+	})
+
+	// Wire message handling (command dispatch + response).
+	client.OnMessage(func(env protocol.Envelope) {
+		if env.Type == protocol.TypeWelcome || env.Type == protocol.TypeAck || env.Type == protocol.TypeError {
+			return
+		}
+		resp := handler.Handle(env)
+		client.Send(resp)
+	})
+
+	// 4. Connect and send state.sync on ready.
+	if err := client.Connect(); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer client.Close()
+
+	select {
+	case <-client.Ready():
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for welcome")
+	}
+
+	// Send state.sync (like onConnect in RunServe).
+	syncEnv := protocol.NewEnvelope(protocol.TypeSync, deviceID)
+	syncData, _ := json.Marshal(syncPayload)
+	syncEnv.Payload = syncData
+	if err := client.Send(syncEnv); err != nil {
+		t.Fatalf("send sync: %v", err)
+	}
+
+	// Wait for the server to send the command and the client to respond.
+	select {
+	case <-cmdSent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for server to send command")
+	}
+
+	// Give responses time to propagate.
+	time.Sleep(200 * time.Millisecond)
+
+	// 5. Verify results.
+	mu.Lock()
+	defer mu.Unlock()
+
+	// --- Verify state.sync was received ---
+	var foundSync *protocol.StateSync
+	for _, env := range received {
+		if env.Type == protocol.TypeSync {
+			var s protocol.StateSync
+			if err := json.Unmarshal(env.Payload, &s); err != nil {
+				t.Fatalf("unmarshal sync: %v", err)
+			}
+			foundSync = &s
+			break
+		}
+	}
+	if foundSync == nil {
+		t.Fatal("server did not receive state.sync message")
+	}
+
+	// AC: sync payload contains device info
+	if foundSync.Device == nil {
+		t.Fatal("sync payload missing device info")
+	}
+	if foundSync.Device.DeviceID == "" {
+		t.Error("device info missing device_id")
+	}
+	if foundSync.Device.Platform == "" {
+		t.Error("device info missing platform")
+	}
+
+	// AC: sync payload contains chief version
+	if foundSync.Device.Version != chiefVersion {
+		t.Errorf("expected chief version %q in sync, got %q", chiefVersion, foundSync.Device.Version)
+	}
+
+	// Verify projects were included.
+	if len(foundSync.Projects) == 0 {
+		t.Error("sync payload contains no projects")
+	} else {
+		proj := foundSync.Projects[0]
+		if proj.Name != "myproject" {
+			t.Errorf("expected project name 'myproject', got %q", proj.Name)
+		}
+		if proj.GitBranch == "" {
+			t.Error("project missing git branch")
+		}
+	}
+
+	// --- Verify command response (ack + files-list) ---
+	var foundAck bool
+	var foundFilesList bool
+	for _, env := range received {
+		if env.Type == protocol.TypeAck {
+			foundAck = true
+		}
+		if env.Type == protocol.TypeFilesList {
+			var fl protocol.StateFilesList
+			if err := json.Unmarshal(env.Payload, &fl); err != nil {
+				t.Fatalf("unmarshal files-list: %v", err)
+			}
+			foundFilesList = true
+			// Should contain at least hello.txt and README.md (from git repo setup).
+			if len(fl.Files) == 0 {
+				t.Error("files-list response has no files")
+			}
+			var hasReadme bool
+			for _, f := range fl.Files {
+				if f.Name == "README.md" {
+					hasReadme = true
+				}
+			}
+			if !hasReadme {
+				t.Error("files-list response missing README.md")
+			}
+		}
+	}
+	if !foundAck {
+		t.Error("server did not receive ack response to command")
+	}
+	if !foundFilesList {
+		t.Error("server did not receive files-list response")
+	}
+}
+
 // initTestGitRepo creates a minimal git repo for testing.
 func initTestGitRepo(t *testing.T, dir string) {
 	t.Helper()
