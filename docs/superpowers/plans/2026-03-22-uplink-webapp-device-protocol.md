@@ -79,13 +79,13 @@ tests/
 Schema::create('devices', function (Blueprint $table) {
     $table->id();
     $table->foreignId('team_id')->constrained()->cascadeOnDelete();
-    $table->foreignId('managed_server_id')->nullable()->constrained()->nullOnDelete();
+    $table->unsignedBigInteger('managed_server_id')->nullable(); // FK added in Plan 3d after managed_servers table exists
     $table->string('name');
     $table->string('os')->nullable();
     $table->string('arch')->nullable();
     $table->string('chief_version')->nullable();
     $table->string('access_token', 64)->unique();
-    $table->text('refresh_token');
+    $table->string('refresh_token_hash', 64)->unique();
     $table->timestamp('token_expires_at');
     $table->timestamp('last_seen_at')->nullable();
     $table->boolean('connected')->default(false);
@@ -231,14 +231,13 @@ class Device extends Model
 {
     protected $fillable = [
         'team_id', 'managed_server_id', 'name', 'os', 'arch',
-        'chief_version', 'access_token', 'refresh_token',
+        'chief_version', 'access_token', 'refresh_token_hash',
         'token_expires_at', 'last_seen_at', 'connected',
     ];
 
     protected function casts(): array
     {
         return [
-            'refresh_token' => 'encrypted',
             'token_expires_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'connected' => 'boolean',
@@ -469,6 +468,7 @@ class DeviceAuthController extends Controller
         DB::table('device_codes')->insert([
             'device_code' => $deviceCode,
             'user_code' => $userCode,
+            'device_name' => $request->device_name,
             'expires_at' => now()->addMinutes(15),
             'created_at' => now(),
             'updated_at' => now(),
@@ -505,9 +505,9 @@ class DeviceAuthController extends Controller
 
         $device = Device::create([
             'team_id' => $code->team_id,
-            'name' => $request->input('device_name', 'unknown'),
+            'name' => $code->device_name ?? 'unknown',
             'access_token' => hash('sha256', $accessToken),
-            'refresh_token' => $refreshToken,
+            'refresh_token_hash' => hash('sha256', $refreshToken),
             'token_expires_at' => now()->addDays(30),
         ]);
 
@@ -542,7 +542,7 @@ class DeviceAuthController extends Controller
             'team_id' => $team->id,
             'name' => $request->server_name,
             'access_token' => hash('sha256', $accessToken),
-            'refresh_token' => $refreshToken,
+            'refresh_token_hash' => hash('sha256', $refreshToken),
             'token_expires_at' => now()->addDays(90),
         ]);
 
@@ -558,15 +558,18 @@ class DeviceAuthController extends Controller
     {
         $request->validate(['refresh_token' => ['required', 'string']]);
 
-        $device = Device::where('refresh_token', $request->refresh_token)->first();
+        // Refresh tokens are hashed like access tokens for DB lookup
+        $device = Device::where('refresh_token_hash', hash('sha256', $request->refresh_token))->first();
 
         if (! $device) {
             return response()->json(['error' => 'invalid_token'], 401);
         }
 
         $newAccessToken = Str::random(64);
+        $newRefreshToken = Str::random(64);
         $device->update([
             'access_token' => hash('sha256', $newAccessToken),
+            'refresh_token_hash' => hash('sha256', $newRefreshToken),
             'token_expires_at' => now()->addDays(30),
         ]);
 
@@ -929,6 +932,37 @@ class StateHandler
         DeviceStateUpdated::dispatch($device);
     }
 
+    public function handleProjectsUpdated(Device $device, array $payload): void
+    {
+        DB::transaction(function () use ($device, $payload) {
+            // Only update projects — do NOT touch PRDs or runs
+            $existingIds = $device->projects()->pluck('external_id')->all();
+            $newIds = collect($payload['projects'] ?? [])->pluck('id')->all();
+
+            // Delete removed projects (cascades to their PRDs/runs via FK)
+            $device->projects()->whereNotIn('external_id', $newIds)->delete();
+
+            // Upsert projects
+            foreach ($payload['projects'] ?? [] as $proj) {
+                $device->projects()->updateOrCreate(
+                    ['external_id' => $proj['id']],
+                    [
+                        'path' => $proj['path'],
+                        'name' => $proj['name'],
+                        'git_remote' => $proj['git_remote'] ?? null,
+                        'git_branch' => $proj['git_branch'] ?? null,
+                        'git_status' => $proj['git_status'] ?? null,
+                        'last_commit_hash' => $proj['last_commit']['hash'] ?? null,
+                        'last_commit_message' => $proj['last_commit']['message'] ?? null,
+                        'last_commit_at' => $proj['last_commit']['timestamp'] ?? null,
+                    ]
+                );
+            }
+        });
+
+        DeviceStateUpdated::dispatch($device);
+    }
+
     public function handleRunProgress(Device $device, array $payload): void
     {
         $run = $device->runs()->where('external_id', $payload['run']['id'])->first();
@@ -1034,11 +1068,7 @@ class MessageRouter
             str_starts_with($type, 'state.prd.updated') => $this->stateHandler->handlePrdUpdated($device, $payload),
             str_starts_with($type, 'state.prd.deleted') => $device->prds()->where('external_id', $payload['prd_id'] ?? '')->delete(),
             str_starts_with($type, 'state.run.') => $this->stateHandler->handleRunProgress($device, $payload),
-            str_starts_with($type, 'state.projects.updated') => $this->stateHandler->handleSync($device, array_merge(
-                ['device' => ['name' => $device->name, 'os' => $device->os, 'arch' => $device->arch, 'chief_version' => $device->chief_version]],
-                $payload,
-                ['prds' => [], 'runs' => []]
-            )),
+            str_starts_with($type, 'state.projects.updated') => $this->stateHandler->handleProjectsUpdated($device, $payload),
             $type === 'state.device.heartbeat' => $device->update(['last_seen_at' => now()]),
 
             // Ephemeral messages — relay to Reverb, don't store

@@ -103,6 +103,11 @@ Schema::create('ssh_keys', function (Blueprint $table) {
     $table->text('public_key');
     $table->timestamps();
 });
+
+// Add FK to devices table now that managed_servers exists
+Schema::table('devices', function (Blueprint $table) {
+    $table->foreign('managed_server_id')->references('id')->on('managed_servers')->nullOnDelete();
+});
 ```
 
 - [ ] **Step 2: Create models**
@@ -656,40 +661,36 @@ class ServerProvisioner
 
     private function runProvisioningScript(string $ip, string $deviceToken): void
     {
+        // Uses phpseclib for SSH (composer require phpseclib/phpseclib)
+        $ssh = new \phpseclib3\Net\SSH2($ip);
+
+        // Hetzner/DO provision with root + SSH key — key is already on server from createServer()
+        // For key-based auth, use the team's SSH private key or a temporary provisioning key
+        if (! $ssh->login('root')) {
+            throw new \RuntimeException("SSH authentication failed for {$ip}");
+        }
+
         $script = file_get_contents(base_path('scripts/provision-debian.sh'));
         $uplinkUrl = config('app.url');
 
-        // SSH and run script (using phpseclib or shell exec)
-        // This is simplified — production should use phpseclib for SSH
-        $command = sprintf(
-            'ssh -o StrictHostKeyChecking=no root@%s "bash -s" -- %s %s <<< %s',
-            escapeshellarg($ip),
-            escapeshellarg($deviceToken),
-            escapeshellarg($uplinkUrl),
-            escapeshellarg($script),
-        );
-
-        exec($command, $output, $exitCode);
+        // Run provisioning script with arguments
+        $output = $ssh->exec("bash -s -- " . escapeshellarg($deviceToken) . " " . escapeshellarg($uplinkUrl), $script);
+        $exitCode = $ssh->getExitStatus();
 
         if ($exitCode !== 0) {
-            throw new \RuntimeException('Provisioning script failed: ' . implode("\n", $output));
+            throw new \RuntimeException("Provisioning script failed (exit {$exitCode}): " . $output);
         }
 
         // Read deploy key from server
-        $pubKey = trim(shell_exec(sprintf(
-            'ssh -o StrictHostKeyChecking=no root@%s "cat /home/chief/.ssh/chief_deploy_key.pub"',
-            escapeshellarg($ip),
-        )));
-
-        $privKey = trim(shell_exec(sprintf(
-            'ssh -o StrictHostKeyChecking=no root@%s "cat /home/chief/.ssh/chief_deploy_key"',
-            escapeshellarg($ip),
-        )));
+        $pubKey = trim($ssh->exec('cat /home/chief/.ssh/chief_deploy_key.pub'));
+        $privKey = trim($ssh->exec('cat /home/chief/.ssh/chief_deploy_key'));
 
         $this->server->update([
             'deploy_public_key' => $pubKey,
             'deploy_private_key' => $privKey,
         ]);
+
+        $ssh->disconnect();
     }
 
     private function waitForDeviceConnection(): void
@@ -711,7 +712,7 @@ class ServerProvisioner
 }
 ```
 
-Note: The SSH implementation above is simplified. Production should use `phpseclib/phpseclib` for proper SSH key-based authentication. Install with `composer require phpseclib/phpseclib`.
+Note: SSH uses `phpseclib/phpseclib`. Install with `composer require phpseclib/phpseclib`. The SSH key-based auth for the provisioning connection needs to use the team's provisioning key or a temporary key generated during server creation.
 
 - [ ] **Step 4: Commit**
 

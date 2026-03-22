@@ -2009,6 +2009,7 @@ Schema::create('device_codes', function (Blueprint $table) {
     $table->id();
     $table->string('device_code', 64)->unique();
     $table->string('user_code', 10)->unique();
+    $table->string('device_name')->nullable();
     $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
     $table->foreignId('team_id')->nullable()->constrained()->nullOnDelete();
     $table->timestamp('expires_at');

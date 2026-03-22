@@ -416,6 +416,7 @@ class PrdController extends Controller
 
         return Inertia::render('Prds/Chat', [
             'prd' => $prd,
+            'project' => $prd->project,
             'chatHistory' => $prd->chat_history ?? [],
             'device' => $prd->device,
         ]);
@@ -446,6 +447,7 @@ import ChatInput from '@/Components/ChatInput.vue';
 
 const props = defineProps({
     prd: Object,
+    project: Object,
     chatHistory: Array,
     device: Object,
 });
@@ -484,7 +486,7 @@ async function sendMessage(text) {
     const type = props.prd.session_id ? 'cmd.prd.message' : 'cmd.prd.create';
     const payload = props.prd.session_id
         ? { prd_id: props.prd.external_id, message: text }
-        : { project_id: props.prd.project_id, message: text };
+        : { project_id: props.project.external_id, message: text };
 
     await fetch(`/api/devices/${props.device.id}/commands`, {
         method: 'POST',
@@ -839,10 +841,13 @@ useDeviceChannel(props.device.id, {
 onMounted(async () => {
     await fetch(`/api/devices/${props.device.id}/commands`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+        },
         body: JSON.stringify({
             type: 'cmd.diffs.get',
-            payload: { project_id: props.prd.project_id },
+            payload: { project_id: props.prd.project?.external_id },
         }),
     });
 });
