@@ -62,13 +62,14 @@ func Exists(baseDir string) bool {
 
 // Load reads the config from .chief/config.yaml.
 // Returns Default() when the file doesn't exist (no error).
+// Environment variables override file values (e.g. CHIEF_UPLINK_URL).
 func Load(baseDir string) (*Config, error) {
 	path := configPath(baseDir)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Default(), nil
+			return applyEnv(Default()), nil
 		}
 		return nil, err
 	}
@@ -78,7 +79,15 @@ func Load(baseDir string) (*Config, error) {
 		return nil, err
 	}
 
-	return cfg, nil
+	return applyEnv(cfg), nil
+}
+
+// applyEnv overrides config values with environment variables when set.
+func applyEnv(cfg *Config) *Config {
+	if v := os.Getenv("CHIEF_UPLINK_URL"); v != "" {
+		cfg.Uplink.URL = v
+	}
+	return cfg
 }
 
 // Save writes the config to .chief/config.yaml.

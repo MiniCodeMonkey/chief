@@ -119,6 +119,41 @@ func TestLoadUplinkDefaults(t *testing.T) {
 	}
 }
 
+func TestEnvOverridesConfigURL(t *testing.T) {
+	dir := t.TempDir()
+	chiefDir := filepath.Join(dir, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	yamlContent := []byte("uplink:\n  url: https://custom.example.com\n")
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), yamlContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CHIEF_UPLINK_URL", "http://localhost:8000")
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Uplink.URL != "http://localhost:8000" {
+		t.Errorf("expected env override URL, got %q", cfg.Uplink.URL)
+	}
+}
+
+func TestEnvOverridesDefaultURL(t *testing.T) {
+	t.Setenv("CHIEF_UPLINK_URL", "http://localhost:8000")
+
+	cfg, err := Load(t.TempDir())
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Uplink.URL != "http://localhost:8000" {
+		t.Errorf("expected env override URL, got %q", cfg.Uplink.URL)
+	}
+}
+
 func TestExists(t *testing.T) {
 	dir := t.TempDir()
 
