@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/minicodemonkey/chief/internal/auth"
+	"github.com/minicodemonkey/chief/internal/loop"
 	"github.com/minicodemonkey/chief/internal/protocol"
 	"github.com/minicodemonkey/chief/internal/session"
 	"github.com/minicodemonkey/chief/internal/uplink"
@@ -21,9 +22,11 @@ import (
 
 // ServeOptions configures the serve command.
 type ServeOptions struct {
-	WorkspaceDir string // defaults to current directory
-	HomeDir      string // for testing — empty uses real home dir
-	Version      string // chief CLI version
+	WorkspaceDir  string        // defaults to current directory
+	HomeDir       string        // for testing — empty uses real home dir
+	Version       string        // chief CLI version
+	Provider      loop.Provider // agent provider for running loops (nil = no run support)
+	MaxIterations int           // max iterations per run (0 = default 50)
 }
 
 // RunServe starts the persistent daemon that discovers projects, connects to
@@ -62,6 +65,31 @@ func RunServe(opts ServeOptions) error {
 	for _, p := range syncPayload.Projects {
 		projectPaths[p.ID] = p.Path
 	}
+
+	// Build PRD lookup: prd_id -> prd path, and prd_id -> project_id.
+	prdPaths := make(map[string]string)    // prd_id -> filesystem path to prd.md
+	prdProjects := make(map[string]string) // prd_id -> project_id
+	for _, p := range syncPayload.PRDs {
+		projectDir, ok := projectPaths[p.ProjectID]
+		if !ok {
+			continue
+		}
+		prdPath := filepath.Join(projectDir, ".chief", "prds", p.Title, "prd.md")
+		prdPaths[p.ID] = prdPath
+		prdProjects[p.ID] = p.ProjectID
+	}
+
+	// Set up loop manager for running PRDs.
+	maxIter := opts.MaxIterations
+	if maxIter <= 0 {
+		maxIter = 50
+	}
+	manager := loop.NewManager(maxIter, opts.Provider)
+	manager.SetBaseDir(opts.WorkspaceDir)
+
+	// Run tracking: runID -> prdID, so cmd.run.stop can find the right loop.
+	var runMu sync.Mutex
+	activeRuns := make(map[string]string) // run_id -> prd_id
 
 	// Build WebSocket URL from credentials.
 	wsURL := buildWSURL(creds.UplinkURL)
@@ -226,6 +254,74 @@ func RunServe(opts ServeOptions) error {
 		return client.Send(resp)
 	})
 
+	// Run management: start
+	handler.OnRunStart(func(cmd protocol.CmdRunStart) error {
+		if opts.Provider == nil {
+			return fmt.Errorf("no agent provider configured")
+		}
+
+		prdPath, ok := prdPaths[cmd.PRDID]
+		if !ok {
+			return fmt.Errorf("unknown PRD: %s", cmd.PRDID)
+		}
+
+		// Register and start the loop.
+		_ = manager.Register(cmd.PRDID, prdPath)
+		if err := manager.Start(cmd.PRDID); err != nil {
+			return fmt.Errorf("start run: %w", err)
+		}
+
+		// Track run_id -> prd_id mapping.
+		runMu.Lock()
+		activeRuns[cmd.RunID] = cmd.PRDID
+		runMu.Unlock()
+
+		// Send state.run-started envelope.
+		now := time.Now().UTC().Format(time.RFC3339)
+		env := protocol.NewEnvelope(protocol.TypeRunStarted, creds.DeviceID)
+		payload, _ := json.Marshal(protocol.StateRunStarted{
+			Run: protocol.Run{
+				ID:        cmd.RunID,
+				PRDID:     cmd.PRDID,
+				Status:    "running",
+				StartedAt: now,
+			},
+		})
+		env.Payload = payload
+		return client.Send(env)
+	})
+
+	// Run management: stop
+	handler.OnRunStop(func(cmd protocol.CmdRunStop) error {
+		runMu.Lock()
+		prdID, ok := activeRuns[cmd.RunID]
+		if ok {
+			delete(activeRuns, cmd.RunID)
+		}
+		runMu.Unlock()
+
+		if !ok {
+			return fmt.Errorf("unknown run: %s", cmd.RunID)
+		}
+
+		if err := manager.Stop(prdID); err != nil {
+			return fmt.Errorf("stop run: %w", err)
+		}
+
+		// Unregister so the PRD can be started again later.
+		_ = manager.Unregister(prdID)
+
+		// Send state.run-stopped envelope.
+		env := protocol.NewEnvelope(protocol.TypeRunStopped, creds.DeviceID)
+		payload, _ := json.Marshal(protocol.StateRunStopped{
+			RunID:  cmd.RunID,
+			PRDID:  prdID,
+			Reason: "stopped by user",
+		})
+		env.Payload = payload
+		return client.Send(env)
+	})
+
 	// Wire up message handling.
 	client.OnMessage(func(env protocol.Envelope) {
 		// Skip control messages.
@@ -248,8 +344,11 @@ func RunServe(opts ServeOptions) error {
 
 	// Start background loops.
 	startTime := time.Now()
-	go heartbeatLoop(ctx, client, creds.DeviceID, startTime)
+	go heartbeatLoopWithRunCount(ctx, client, creds.DeviceID, startTime, 30*time.Second, manager)
 	go refreshLoop(ctx, opts.HomeDir, client, creds)
+
+	// Forward manager events as state envelopes.
+	go forwardManagerEvents(ctx, manager, client, creds.DeviceID, &runMu, activeRuns)
 
 	// Connect with auto-reconnect.
 	onConnect := func() {
@@ -289,6 +388,10 @@ func RunServe(opts ServeOptions) error {
 	}
 
 	cancel()
+
+	// Stop all running loops before closing.
+	manager.StopAll()
+
 	if err := client.Close(); err != nil {
 		fmt.Printf("  Error closing connection: %v\n", err)
 	}
@@ -372,13 +475,23 @@ func refreshLoop(ctx context.Context, homeDir string, client *uplink.Client, cre
 	}
 }
 
+// runCounter provides the active run count for heartbeats.
+type runCounter interface {
+	GetRunningCount() int
+}
+
 // heartbeatLoop sends a device heartbeat every 30 seconds until the context is cancelled.
 func heartbeatLoop(ctx context.Context, client *uplink.Client, deviceID string, startTime time.Time) {
-	heartbeatLoopWithInterval(ctx, client, deviceID, startTime, 30*time.Second)
+	heartbeatLoopWithRunCount(ctx, client, deviceID, startTime, 30*time.Second, nil)
 }
 
 // heartbeatLoopWithInterval is the internal implementation with a configurable interval for testing.
 func heartbeatLoopWithInterval(ctx context.Context, client *uplink.Client, deviceID string, startTime time.Time, interval time.Duration) {
+	heartbeatLoopWithRunCount(ctx, client, deviceID, startTime, interval, nil)
+}
+
+// heartbeatLoopWithRunCount sends heartbeats with the actual active run count from the manager.
+func heartbeatLoopWithRunCount(ctx context.Context, client *uplink.Client, deviceID string, startTime time.Time, interval time.Duration, counter runCounter) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -387,16 +500,185 @@ func heartbeatLoopWithInterval(ctx context.Context, client *uplink.Client, devic
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			activeRuns := 0
+			if counter != nil {
+				activeRuns = counter.GetRunningCount()
+			}
 			uptime := int(time.Since(startTime).Seconds())
 			env := protocol.NewEnvelope(protocol.TypeDeviceHeartbeat, deviceID)
 			payload, _ := json.Marshal(protocol.StateDeviceHeartbeat{
 				UptimeSeconds: uptime,
-				ActiveRuns:    0,
+				ActiveRuns:    activeRuns,
 			})
 			env.Payload = payload
 
 			if err := client.Send(env); err != nil {
 				fmt.Printf("  Warning: heartbeat send failed: %v\n", err)
+			}
+		}
+	}
+}
+
+// forwardManagerEvents consumes loop.Manager events and sends corresponding
+// state envelopes (run-progress, run-output, run-completed) to the server.
+func forwardManagerEvents(ctx context.Context, manager *loop.Manager, client *uplink.Client, deviceID string, runMu *sync.Mutex, activeRuns map[string]string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case mEvent, ok := <-manager.Events():
+			if !ok {
+				return
+			}
+			prdID := mEvent.PRDName // We use prdID as the manager key.
+
+			// Look up the run_id for this prdID.
+			runMu.Lock()
+			var runID string
+			for rid, pid := range activeRuns {
+				if pid == prdID {
+					runID = rid
+					break
+				}
+			}
+			runMu.Unlock()
+
+			if runID == "" {
+				continue // No active run tracking for this PRD.
+			}
+
+			switch mEvent.Event.Type {
+			case loop.EventIterationStart:
+				env := protocol.NewEnvelope(protocol.TypeRunProgress, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunProgress{
+					RunID:   runID,
+					PRDID:   prdID,
+					Message: fmt.Sprintf("Iteration %d started (story: %s)", mEvent.Event.Iteration, mEvent.Event.StoryID),
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+			case loop.EventAssistantText:
+				env := protocol.NewEnvelope(protocol.TypeRunOutput, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunOutput{
+					RunID:  runID,
+					Stream: "stdout",
+					Data:   mEvent.Event.Text,
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+			case loop.EventToolStart:
+				env := protocol.NewEnvelope(protocol.TypeRunOutput, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunOutput{
+					RunID:  runID,
+					Stream: "tool",
+					Data:   fmt.Sprintf("Tool: %s", mEvent.Event.Tool),
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+			case loop.EventToolResult:
+				env := protocol.NewEnvelope(protocol.TypeRunOutput, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunOutput{
+					RunID:  runID,
+					Stream: "tool_result",
+					Data:   mEvent.Event.Text,
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+			case loop.EventStoryDone:
+				env := protocol.NewEnvelope(protocol.TypeRunProgress, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunProgress{
+					RunID:   runID,
+					PRDID:   prdID,
+					Message: fmt.Sprintf("Story %s completed", mEvent.Event.StoryID),
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+			case loop.EventComplete:
+				now := time.Now().UTC().Format(time.RFC3339)
+				env := protocol.NewEnvelope(protocol.TypeRunCompleted, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunCompleted{
+					RunID:      runID,
+					PRDID:      prdID,
+					Status:     "completed",
+					Result:     "success",
+					FinishedAt: now,
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+				// Clean up run tracking.
+				runMu.Lock()
+				delete(activeRuns, runID)
+				runMu.Unlock()
+				_ = manager.Unregister(prdID)
+
+			case loop.EventError:
+				now := time.Now().UTC().Format(time.RFC3339)
+				errMsg := ""
+				if mEvent.Event.Err != nil {
+					errMsg = mEvent.Event.Err.Error()
+				}
+				env := protocol.NewEnvelope(protocol.TypeRunCompleted, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunCompleted{
+					RunID:      runID,
+					PRDID:      prdID,
+					Status:     "completed",
+					Result:     "error",
+					Error:      errMsg,
+					FinishedAt: now,
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+				// Clean up run tracking.
+				runMu.Lock()
+				delete(activeRuns, runID)
+				runMu.Unlock()
+				_ = manager.Unregister(prdID)
+
+			case loop.EventMaxIterationsReached:
+				now := time.Now().UTC().Format(time.RFC3339)
+				env := protocol.NewEnvelope(protocol.TypeRunCompleted, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunCompleted{
+					RunID:      runID,
+					PRDID:      prdID,
+					Status:     "completed",
+					Result:     "error",
+					Error:      "max iterations reached",
+					FinishedAt: now,
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+				runMu.Lock()
+				delete(activeRuns, runID)
+				runMu.Unlock()
+				_ = manager.Unregister(prdID)
+
+			case loop.EventRetrying:
+				env := protocol.NewEnvelope(protocol.TypeRunProgress, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunProgress{
+					RunID:   runID,
+					PRDID:   prdID,
+					Message: mEvent.Event.Text,
+				})
+				env.Payload = payload
+				_ = client.Send(env)
+
+			case loop.EventWatchdogTimeout:
+				env := protocol.NewEnvelope(protocol.TypeRunProgress, deviceID)
+				payload, _ := json.Marshal(protocol.StateRunProgress{
+					RunID:   runID,
+					PRDID:   prdID,
+					Message: mEvent.Event.Text,
+				})
+				env.Payload = payload
+				_ = client.Send(env)
 			}
 		}
 	}
