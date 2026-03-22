@@ -1,0 +1,11 @@
+{
+  "type": "error",
+  "id": "550e8400-e29b-41d4-a716-446655440030",
+  "device_id": "device-abc-123",
+  "timestamp": "2026-03-22T12:00:00Z",
+  "payload": {
+    "code": 4001,
+    "message": "Invalid message format",
+    "ref_id": "550e8400-e29b-41d4-a716-446655440000"
+  }
+}

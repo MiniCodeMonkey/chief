@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope.json",
+  "title": "Message Envelope",
+  "description": "Outer message format for CLI-server communication",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "description": "Message type identifier"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique message identifier"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Device identifier"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Optional message payload"
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp"],
+  "additionalProperties": false
+}

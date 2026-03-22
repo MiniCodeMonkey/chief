@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "control/ack.json",
+  "title": "Acknowledgement Message",
+  "description": "Acknowledgement of a previously received message",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "ack"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "ref_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the message being acknowledged"
+        }
+      },
+      "required": ["ref_id"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "control/welcome.json",
+  "title": "Welcome Message",
+  "description": "Server welcome message sent after successful connection",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "welcome"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "server_version": {
+          "type": "string",
+          "description": "Server protocol version"
+        },
+        "connection_id": {
+          "type": "string",
+          "description": "Unique connection identifier"
+        }
+      },
+      "required": ["server_version", "connection_id"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}

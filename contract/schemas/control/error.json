@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "control/error.json",
+  "title": "Error Message",
+  "description": "Error response message",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "error"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "description": "Error code"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable error description"
+        },
+        "ref_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of the message that caused the error, if applicable"
+        }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["type", "id", "device_id", "timestamp", "payload"],
+  "additionalProperties": false
+}
