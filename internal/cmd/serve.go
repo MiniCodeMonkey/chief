@@ -246,7 +246,9 @@ func RunServe(opts ServeOptions) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start token refresh goroutine.
+	// Start background loops.
+	startTime := time.Now()
+	go heartbeatLoop(ctx, client, creds.DeviceID, startTime)
 	go refreshLoop(ctx, opts.HomeDir, client, creds)
 
 	// Connect with auto-reconnect.
@@ -365,6 +367,36 @@ func refreshLoop(ctx context.Context, homeDir string, client *uplink.Client, cre
 				// Update in-memory credentials.
 				*creds = *refreshed
 				fmt.Println("  Token refreshed successfully.")
+			}
+		}
+	}
+}
+
+// heartbeatLoop sends a device heartbeat every 30 seconds until the context is cancelled.
+func heartbeatLoop(ctx context.Context, client *uplink.Client, deviceID string, startTime time.Time) {
+	heartbeatLoopWithInterval(ctx, client, deviceID, startTime, 30*time.Second)
+}
+
+// heartbeatLoopWithInterval is the internal implementation with a configurable interval for testing.
+func heartbeatLoopWithInterval(ctx context.Context, client *uplink.Client, deviceID string, startTime time.Time, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			uptime := int(time.Since(startTime).Seconds())
+			env := protocol.NewEnvelope(protocol.TypeDeviceHeartbeat, deviceID)
+			payload, _ := json.Marshal(protocol.StateDeviceHeartbeat{
+				UptimeSeconds: uptime,
+				ActiveRuns:    0,
+			})
+			env.Payload = payload
+
+			if err := client.Send(env); err != nil {
+				fmt.Printf("  Warning: heartbeat send failed: %v\n", err)
 			}
 		}
 	}
