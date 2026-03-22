@@ -17,6 +17,12 @@ func TestDefault(t *testing.T) {
 	if cfg.OnComplete.CreatePR {
 		t.Error("expected CreatePR to be false")
 	}
+	if cfg.Uplink.Enabled {
+		t.Error("expected Uplink.Enabled to be false")
+	}
+	if cfg.Uplink.URL != "https://uplink.chiefloop.com" {
+		t.Errorf("expected default Uplink.URL %q, got %q", "https://uplink.chiefloop.com", cfg.Uplink.URL)
+	}
 }
 
 func TestLoadNonExistent(t *testing.T) {
@@ -26,6 +32,9 @@ func TestLoadNonExistent(t *testing.T) {
 	}
 	if cfg.Worktree.Setup != "" {
 		t.Errorf("expected empty setup, got %q", cfg.Worktree.Setup)
+	}
+	if cfg.Uplink.URL != "https://uplink.chiefloop.com" {
+		t.Errorf("expected default Uplink.URL, got %q", cfg.Uplink.URL)
 	}
 }
 
@@ -59,6 +68,54 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 	if !loaded.OnComplete.CreatePR {
 		t.Error("expected CreatePR to be true")
+	}
+}
+
+func TestLoadUplinkFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	chiefDir := filepath.Join(dir, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	yamlContent := []byte("uplink:\n  enabled: true\n  url: https://custom.example.com\n")
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), yamlContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Uplink.Enabled {
+		t.Error("expected Uplink.Enabled to be true")
+	}
+	if cfg.Uplink.URL != "https://custom.example.com" {
+		t.Errorf("expected custom URL, got %q", cfg.Uplink.URL)
+	}
+}
+
+func TestLoadUplinkDefaults(t *testing.T) {
+	dir := t.TempDir()
+	chiefDir := filepath.Join(dir, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Empty config file — uplink section omitted
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Uplink.Enabled {
+		t.Error("expected Uplink.Enabled to be false by default")
+	}
+	if cfg.Uplink.URL != "https://uplink.chiefloop.com" {
+		t.Errorf("expected default URL, got %q", cfg.Uplink.URL)
 	}
 }
 

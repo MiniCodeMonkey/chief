@@ -14,6 +14,13 @@ type Config struct {
 	Worktree   WorktreeConfig   `yaml:"worktree"`
 	OnComplete OnCompleteConfig `yaml:"onComplete"`
 	Agent      AgentConfig      `yaml:"agent"`
+	Uplink     UplinkConfig     `yaml:"uplink"`
+}
+
+// UplinkConfig holds uplink connection settings.
+type UplinkConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	URL     string `yaml:"url"`
 }
 
 // AgentConfig holds agent CLI settings (Claude, Codex, OpenCode, or Cursor).
@@ -33,9 +40,13 @@ type OnCompleteConfig struct {
 	CreatePR bool `yaml:"createPR"`
 }
 
-// Default returns a Config with zero-value defaults.
+// Default returns a Config with sensible defaults.
 func Default() *Config {
-	return &Config{}
+	return &Config{
+		Uplink: UplinkConfig{
+			URL: "https://uplink.chiefloop.com",
+		},
+	}
 }
 
 // configPath returns the full path to the config file.
