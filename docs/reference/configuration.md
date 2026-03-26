@@ -100,7 +100,7 @@ When `--max-iterations` is not specified, Chief calculates a dynamic limit based
 
 ## Agent
 
-Chief can use **Claude Code** (default), **Codex CLI**, **OpenCode CLI**, or **Cursor CLI** as the agent. Choose via:
+Chief can use **Claude Code** (default), **Codex CLI**, **OpenCode CLI**, **Cursor CLI**, or **Gemini CLI** as the agent. Choose via:
 
 - **Config:** `agent.provider: opencode` and optionally `agent.cliPath: /path/to/opencode` in `.chief/config.yaml`
 - **Environment:** `CHIEF_AGENT=opencode`, `CHIEF_AGENT_PATH=/path/to/opencode`

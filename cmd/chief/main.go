@@ -134,7 +134,7 @@ func parseAgentFlags(args []string, startIdx int) (agentName, agentPath string, 
 				i++
 				agentName = args[i]
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, opencode, or cursor)\n")
+				fmt.Fprintf(os.Stderr, "Error: --agent requires a value (claude, codex, opencode, cursor or gemini)\n")
 				os.Exit(1)
 			}
 		case strings.HasPrefix(arg, "--agent="):
@@ -514,7 +514,7 @@ Commands:
   help                      Show this help message
 
 Global Options:
-  --agent <provider>        Agent CLI to use: claude (default), codex, opencode, or cursor
+  --agent <provider>        Agent CLI to use: claude (default), codex, opencode, cursor, or gemini
   --agent-path <path>       Custom path to agent CLI binary
   --max-iterations N, -n N  Set maximum iterations (default: dynamic)
   --no-retry                Disable auto-retry on agent crashes

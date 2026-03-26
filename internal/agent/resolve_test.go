@@ -150,6 +150,34 @@ func TestResolve_cursor(t *testing.T) {
 	}
 }
 
+func TestResolve_gemini(t *testing.T) {
+	got := mustResolve(t, "gemini", "", nil)
+	if got.Name() != "Gemini" {
+		t.Errorf("Resolve(gemini) name = %q, want Gemini", got.Name())
+	}
+	if got.CLIPath() != "gemini" {
+		t.Errorf("Resolve(gemini) CLIPath = %q, want gemini", got.CLIPath())
+	}
+
+	// Custom path
+	got = mustResolve(t, "gemini", "/usr/local/bin/gemini", nil)
+	if got.CLIPath() != "/usr/local/bin/gemini" {
+		t.Errorf("Resolve(gemini, /usr/local/bin/gemini) CLIPath = %q, want /usr/local/bin/gemini", got.CLIPath())
+	}
+
+	// From config
+	cfg := &config.Config{}
+	cfg.Agent.Provider = "gemini"
+	cfg.Agent.CLIPath = "/opt/gemini"
+	got = mustResolve(t, "", "", cfg)
+	if got.Name() != "Gemini" {
+		t.Errorf("Resolve(_, _, config gemini) name = %q, want Gemini", got.Name())
+	}
+	if got.CLIPath() != "/opt/gemini" {
+		t.Errorf("Resolve(_, _, config gemini) CLIPath = %q, want /opt/gemini", got.CLIPath())
+	}
+}
+
 func TestResolve_unknownProvider(t *testing.T) {
 	_, err := Resolve("typo", "", nil)
 	if err == nil {
@@ -157,6 +185,9 @@ func TestResolve_unknownProvider(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "typo") {
 		t.Errorf("error should mention the bad provider name: %v", err)
+	}
+	if !strings.Contains(err.Error(), "gemini") {
+		t.Errorf("error should mention gemini as a valid option: %v", err)
 	}
 }
 
