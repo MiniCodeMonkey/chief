@@ -360,8 +360,8 @@ func runTUIWithOptions(opts *TUIOptions) {
 
 	// If no PRD specified, try to find one
 	if prdPath == "" {
-		// Try "main" first
-		mainPath := ".chief/prds/main/prd.md"
+		// Try "default" first
+		mainPath := ".chief/prds/default/prd.md"
 		if _, err := os.Stat(mainPath); err == nil {
 			prdPath = mainPath
 		} else {
@@ -508,7 +508,7 @@ Usage:
 Commands:
   new [name] [context]      Create a new PRD interactively
   edit [name] [options]     Edit an existing PRD interactively
-  status [name]             Show progress for a PRD (default: main)
+  status [name]             Show progress for a PRD (default: default)
   list                      List all PRDs with progress
   update                    Update Chief to the latest version
   help                      Show this help message
@@ -533,7 +533,7 @@ Positional Arguments:
   <path/to/prd.md>        Direct path to a prd.md file
 
 Examples:
-  chief                     Launch TUI with default PRD (.chief/prds/main/)
+  chief                     Launch TUI with default PRD (.chief/prds/default/)
   chief auth                Launch TUI with named PRD (.chief/prds/auth/)
   chief ./my-prd.md       Launch TUI with specific PRD file
   chief -n 20               Launch with 20 max iterations
@@ -542,11 +542,11 @@ Examples:
   chief --verbose           Launch with raw agent output visible
   chief --agent codex       Use Codex CLI instead of Claude
   chief --agent cursor      Use Cursor CLI as agent
-  chief new                 Create PRD in .chief/prds/main/
+  chief new                 Create PRD in .chief/prds/default/
   chief new auth            Create PRD in .chief/prds/auth/
   chief new auth "JWT authentication for REST API"
                             Create PRD with context hint
-  chief edit                Edit PRD in .chief/prds/main/
+  chief edit                Edit PRD in .chief/prds/default/
   chief edit auth           Edit PRD in .chief/prds/auth/
   chief edit auth --merge   Edit and auto-merge progress
   chief status              Show progress for default PRD
