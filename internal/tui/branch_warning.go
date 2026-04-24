@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -29,6 +31,8 @@ const (
 	DialogNoConflicts
 )
 
+const maxBranchNameLength = 255
+
 // dialogOption represents a single option in the dialog.
 type dialogOption struct {
 	label       string              // Display label
@@ -45,30 +49,50 @@ type BranchWarning struct {
 	prdName       string
 	worktreePath  string // Relative worktree path (e.g., ".chief/worktrees/auth/")
 	selectedIndex int
-	editMode      bool   // Whether we're editing the branch name
-	branchName    string // The current branch name (editable)
+	editMode      bool // Whether we're editing the branch name
+	ti            textinput.Model
 	context       DialogContext
 	options       []dialogOption
 }
 
 // NewBranchWarning creates a new branch warning dialog.
 func NewBranchWarning() *BranchWarning {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.CharLimit = maxBranchNameLength
+	ti.Width = branchWarningInputWidth(0)
+
 	return &BranchWarning{
 		selectedIndex: 0,
+		ti:            ti,
 	}
+}
+
+// branchWarningInputWidth returns the textinput width for the branch-name field
+// based on the current terminal width. Kept in one place so the textinput stays
+// in parity with the surrounding lipgloss box (see renderBranchName).
+func branchWarningInputWidth(terminalWidth int) int {
+	modalWidth := min(65, terminalWidth-10)
+	if modalWidth < 40 {
+		modalWidth = 40
+	}
+	// modalWidth - 6 (border + padding on both sides) - 8 ("Branch: " prefix)
+	return modalWidth - 14
 }
 
 // SetSize sets the dialog dimensions.
 func (b *BranchWarning) SetSize(width, height int) {
 	b.width = width
 	b.height = height
+	b.ti.Width = branchWarningInputWidth(width)
 }
 
 // SetContext sets the branch, PRD context, and worktree path for the warning.
 func (b *BranchWarning) SetContext(currentBranch, prdName, worktreePath string) {
 	b.currentBranch = currentBranch
 	b.prdName = prdName
-	b.branchName = fmt.Sprintf("chief/%s", prdName)
+	b.ti.SetValue(fmt.Sprintf("chief/%s", prdName))
+	b.ti.CursorEnd()
 	b.worktreePath = worktreePath
 }
 
@@ -145,7 +169,7 @@ func (b *BranchWarning) buildOptions() {
 
 // GetSuggestedBranch returns the branch name (may be edited by user).
 func (b *BranchWarning) GetSuggestedBranch() string {
-	return b.branchName
+	return b.ti.Value()
 }
 
 // MoveUp moves selection up.
@@ -179,7 +203,9 @@ func (b *BranchWarning) GetDialogContext() DialogContext {
 func (b *BranchWarning) Reset() {
 	b.selectedIndex = 0
 	b.editMode = false
-	b.branchName = fmt.Sprintf("chief/%s", b.prdName)
+	b.ti.Blur()
+	b.ti.SetValue(fmt.Sprintf("chief/%s", b.prdName))
+	b.ti.CursorEnd()
 }
 
 // IsEditMode returns true if the branch name is being edited.
@@ -188,29 +214,50 @@ func (b *BranchWarning) IsEditMode() bool {
 }
 
 // StartEditMode enters edit mode for the branch name.
-func (b *BranchWarning) StartEditMode() {
+func (b *BranchWarning) StartEditMode() tea.Cmd {
 	b.editMode = true
+	b.ti.Focus()
+	// CursorEnd on re-entry is intentional (PRD US-008 AC): the value itself
+	// is preserved across e/esc/e toggles, but the caret jumps to the end of
+	// the (possibly edited) string rather than restoring its prior position.
+	b.ti.CursorEnd()
+	return textinput.Blink
 }
 
 // CancelEditMode exits edit mode.
 func (b *BranchWarning) CancelEditMode() {
 	b.editMode = false
+	b.ti.Blur()
 }
 
-// AddInputChar adds a character to the branch name.
-func (b *BranchWarning) AddInputChar(ch rune) {
-	// Only allow valid git branch name characters
-	if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-		(ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '/' {
-		b.branchName += string(ch)
+// UpdateInput forwards a tea.KeyMsg to the branch-name textinput, applying the
+// branch-name charset filter to rune input and overriding Ctrl+Left/Right (and
+// their Alt-variants) to treat '-', '_', and '/' as word separators.
+//
+// Callers MUST have already matched edit-mode control keys (esc, enter,
+// ctrl+c) before forwarding here (see FR-9 in
+// .chief/prds/extend-cursor-keys-to-tui-dialogs/prd.md).
+func (b *BranchWarning) UpdateInput(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "ctrl+left", "alt+left", "alt+b":
+		b.ti.SetCursor(wordBackward([]rune(b.ti.Value()), b.ti.Position(), branchNameSeparators))
+		return nil
+	case "ctrl+right", "alt+right", "alt+f":
+		b.ti.SetCursor(wordForward([]rune(b.ti.Value()), b.ti.Position(), branchNameSeparators))
+		return nil
 	}
-}
 
-// DeleteInputChar removes the last character from the branch name.
-func (b *BranchWarning) DeleteInputChar() {
-	if len(b.branchName) > 0 {
-		b.branchName = b.branchName[:len(b.branchName)-1]
+	if isTextualKey(msg) {
+		if isPasteLike(msg) {
+			msg.Runes = normalizePastedRunes(msg.Runes, isAllowedBranchNameRune)
+		} else {
+			msg.Runes = filterBranchNameRunes(msg.Runes)
+		}
 	}
+
+	var cmd tea.Cmd
+	b.ti, cmd = b.ti.Update(msg)
+	return cmd
 }
 
 // selectedOptionHasBranch returns true if the currently selected option involves branch creation.
@@ -251,7 +298,7 @@ func (b *BranchWarning) Render() string {
 
 	footerStyle := lipgloss.NewStyle().Foreground(MutedColor)
 	if b.editMode {
-		content.WriteString(footerStyle.Render("Enter: confirm  Esc: cancel edit"))
+		content.WriteString(footerStyle.Render("Enter: confirm  Esc: cancel edit  Ctrl+C: quit"))
 	} else {
 		content.WriteString(footerStyle.Render("↑/↓: Navigate  Enter: Select  e: Edit branch  Esc: Cancel"))
 	}
@@ -325,12 +372,10 @@ func (b *BranchWarning) renderBranchName(content *strings.Builder) {
 		inputStyle := lipgloss.NewStyle().
 			Foreground(TextBrightColor).
 			Background(lipgloss.Color("237"))
-		cursorStyle := lipgloss.NewStyle().Foreground(PrimaryColor).Blink(true)
-		content.WriteString(inputStyle.Render(b.branchName))
-		content.WriteString(cursorStyle.Render("▌"))
+		content.WriteString(inputStyle.Render(b.ti.View()))
 		content.WriteString("\n\n")
 	} else {
-		content.WriteString(branchLabelStyle.Render(fmt.Sprintf("Branch: %s", b.branchName)))
+		content.WriteString(branchLabelStyle.Render(fmt.Sprintf("Branch: %s", b.ti.Value())))
 		content.WriteString("\n\n")
 	}
 }

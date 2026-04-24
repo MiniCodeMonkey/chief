@@ -2,6 +2,8 @@ package tui
 
 import (
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestBranchWarningProtectedBranch(t *testing.T) {
@@ -174,23 +176,23 @@ func TestBranchWarningBranchEdit(t *testing.T) {
 	}
 
 	// Delete and add chars
-	bw.DeleteInputChar()
-	bw.DeleteInputChar()
-	bw.DeleteInputChar()
-	bw.DeleteInputChar()
-	bw.AddInputChar('m')
-	bw.AddInputChar('y')
-	bw.AddInputChar('-')
-	bw.AddInputChar('p')
-	bw.AddInputChar('r')
-	bw.AddInputChar('d')
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyBackspace})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyBackspace})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyBackspace})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyBackspace})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	if bw.GetSuggestedBranch() != "chief/my-prd" {
 		t.Errorf("expected 'chief/my-prd', got %q", bw.GetSuggestedBranch())
 	}
 
 	// Invalid characters should be rejected
-	bw.AddInputChar(' ')
-	bw.AddInputChar('!')
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+	bw.UpdateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
 	if bw.GetSuggestedBranch() != "chief/my-prd" {
 		t.Errorf("expected 'chief/my-prd' (unchanged), got %q", bw.GetSuggestedBranch())
 	}

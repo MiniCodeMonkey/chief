@@ -469,6 +469,25 @@ func (m *Manager) GetInstance(name string) *LoopInstance {
 	}
 }
 
+// SetInstanceState forces the state of a registered instance. Intended for
+// tests that need to exercise state-conditional code paths without actually
+// starting a loop (which requires a Provider). Returns false if no instance
+// is registered under name.
+func (m *Manager) SetInstanceState(name string, state LoopState) bool {
+	m.mu.RLock()
+	instance, exists := m.instances[name]
+	m.mu.RUnlock()
+
+	if !exists {
+		return false
+	}
+
+	instance.mu.Lock()
+	instance.State = state
+	instance.mu.Unlock()
+	return true
+}
+
 // GetAllInstances returns a snapshot of all loop instances.
 func (m *Manager) GetAllInstances() []*LoopInstance {
 	m.mu.RLock()

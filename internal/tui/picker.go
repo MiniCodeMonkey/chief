@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/minicodemonkey/chief/internal/git"
 	"github.com/minicodemonkey/chief/internal/loop"
@@ -68,7 +70,7 @@ type PRDPicker struct {
 	basePath          string             // Base path where .chief/prds/ is located
 	currentPRD        string             // Name of the currently active PRD
 	inputMode         bool               // Whether we're in input mode for new PRD name
-	inputValue        string             // The current input value for new PRD name
+	ti                textinput.Model    // Bubbles textinput for the new-PRD-name field
 	manager           *loop.Manager      // Reference to the loop manager for status updates
 	mergeResult       *MergeResult       // Result of the last merge operation (nil = none)
 	cleanConfirmation *CleanConfirmation // Active clean confirmation dialog (nil = none)
@@ -77,17 +79,35 @@ type PRDPicker struct {
 
 // NewPRDPicker creates a new PRD picker.
 func NewPRDPicker(basePath string, currentPRDName string, manager *loop.Manager) *PRDPicker {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.Placeholder = "(type a name...)"
+	ti.CharLimit = maxPRDNameLength
+	ti.Width = pickerInputWidth(0)
+
 	p := &PRDPicker{
 		entries:       make([]PRDEntry, 0),
 		selectedIndex: 0,
 		basePath:      basePath,
 		currentPRD:    currentPRDName,
 		inputMode:     false,
-		inputValue:    "",
+		ti:            ti,
 		manager:       manager,
 	}
 	p.Refresh()
 	return p
+}
+
+// pickerInputWidth returns the textinput width for the new-PRD-name field based
+// on the current modal width. Kept in one place so the textinput stays in
+// parity with the surrounding lipgloss box (see renderInputMode).
+func pickerInputWidth(terminalWidth int) int {
+	modalWidth := min(60, terminalWidth-10)
+	if modalWidth < 30 {
+		modalWidth = 30
+	}
+	// matches (modalWidth - 4) outer - 4 inner border/padding in renderInputMode
+	return modalWidth - 8
 }
 
 // SetManager sets the loop manager reference.
@@ -236,6 +256,7 @@ func (p *PRDPicker) loadPRDEntry(name, prdPath string) PRDEntry {
 func (p *PRDPicker) SetSize(width, height int) {
 	p.width = width
 	p.height = height
+	p.ti.Width = pickerInputWidth(width)
 }
 
 // MoveUp moves the selection up.
@@ -276,37 +297,57 @@ func (p *PRDPicker) IsInputMode() bool {
 	return p.inputMode
 }
 
-// StartInputMode enters input mode for creating a new PRD.
-func (p *PRDPicker) StartInputMode() {
+// StartInputMode enters input mode for creating a new PRD. Returns the blink
+// cmd the containing tea program must propagate so the textinput's caret
+// renders visibly (FR-10).
+func (p *PRDPicker) StartInputMode() tea.Cmd {
 	p.inputMode = true
-	p.inputValue = ""
+	p.ti.SetValue("")
+	p.ti.Focus()
+	return textinput.Blink
 }
 
 // CancelInputMode exits input mode without creating a PRD.
 func (p *PRDPicker) CancelInputMode() {
 	p.inputMode = false
-	p.inputValue = ""
+	p.ti.SetValue("")
+	p.ti.Blur()
 }
 
 // GetInputValue returns the current input value.
 func (p *PRDPicker) GetInputValue() string {
-	return p.inputValue
+	return p.ti.Value()
 }
 
-// AddInputChar adds a character to the input.
-func (p *PRDPicker) AddInputChar(ch rune) {
-	// Only allow valid directory name characters
-	if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-		(ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
-		p.inputValue += string(ch)
+// UpdateInput forwards a tea.KeyMsg to the new-PRD-name textinput, applying
+// the PRD-name charset filter to rune input and overriding Ctrl+Left/Right
+// (and their Alt-variants) to treat `-` and `_` as word separators. Non-rune
+// keys (arrows, backspace, Home/End, etc.) pass through unchanged.
+//
+// Callers MUST have already matched input-mode control keys (esc, enter,
+// ctrl+c) before forwarding here (see FR-9 in
+// .chief/prds/extend-cursor-keys-to-tui-dialogs/prd.md).
+func (p *PRDPicker) UpdateInput(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "ctrl+left", "alt+left", "alt+b":
+		p.ti.SetCursor(wordBackward([]rune(p.ti.Value()), p.ti.Position(), prdNameSeparators))
+		return nil
+	case "ctrl+right", "alt+right", "alt+f":
+		p.ti.SetCursor(wordForward([]rune(p.ti.Value()), p.ti.Position(), prdNameSeparators))
+		return nil
 	}
-}
 
-// DeleteInputChar removes the last character from the input.
-func (p *PRDPicker) DeleteInputChar() {
-	if len(p.inputValue) > 0 {
-		p.inputValue = p.inputValue[:len(p.inputValue)-1]
+	if isTextualKey(msg) {
+		if isPasteLike(msg) {
+			msg.Runes = normalizePastedRunes(msg.Runes, isAllowedPRDNameRune)
+		} else {
+			msg.Runes = filterPRDNameRunes(msg.Runes)
+		}
 	}
+
+	var cmd tea.Cmd
+	p.ti, cmd = p.ti.Update(msg)
+	return cmd
 }
 
 // SetCurrentPRD sets the current PRD name for highlighting.
@@ -504,7 +545,7 @@ func (p *PRDPicker) Render() string {
 
 	var shortcuts string
 	if p.inputMode {
-		shortcuts = "Enter: create  │  Esc: cancel"
+		shortcuts = "Enter: create  │  Esc: cancel  │  Ctrl+C: quit"
 	} else {
 		// Build context-sensitive shortcuts based on selected entry's state
 		shortcuts = p.buildFooterShortcuts()
@@ -714,22 +755,14 @@ func (p *PRDPicker) renderInputMode(width int) string {
 	content.WriteString(labelStyle.Render("New PRD name:"))
 	content.WriteString("\n\n")
 
-	// Input field
+	// Input field — bubbles' textinput renders its own placeholder and caret.
 	inputStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(PrimaryColor).
 		Padding(0, 1).
 		Width(width - 4)
 
-	inputValue := p.inputValue
-	if inputValue == "" {
-		inputValue = lipgloss.NewStyle().Foreground(MutedColor).Render("(type a name...)")
-	}
-	// Add cursor
-	cursorStyle := lipgloss.NewStyle().Foreground(PrimaryColor).Blink(true)
-	inputValue += cursorStyle.Render("▌")
-
-	content.WriteString(inputStyle.Render(inputValue))
+	content.WriteString(inputStyle.Render(p.ti.View()))
 	content.WriteString("\n\n")
 
 	hintStyle := lipgloss.NewStyle().Foreground(MutedColor)

@@ -5,10 +5,26 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/minicodemonkey/chief/internal/git"
 )
+
+// maxPRDNameLength caps the PRD name input in the first-time-setup TUI.
+// TUI-only guard; the CLI in cmd/new.go does not enforce a length.
+const maxPRDNameLength = 64
+
+// prdNameModalWidth computes the PRD-name modal's content width from the
+// terminal width. The formula is kept in one place so the textinput's Width
+// stays in parity with the surrounding lipgloss box.
+func prdNameModalWidth(terminalWidth int) int {
+	modalWidth := min(60, terminalWidth-10)
+	if modalWidth < 45 {
+		modalWidth = 45
+	}
+	return modalWidth
+}
 
 // ghCheckResultMsg is sent when the gh CLI check completes.
 type ghCheckResultMsg struct {
@@ -48,7 +64,7 @@ type FirstTimeSetup struct {
 	gitignoreSelected int // 0 = Yes, 1 = No
 
 	// PRD name step
-	prdName      string
+	ti           textinput.Model
 	prdNameError string
 
 	// Post-completion config step
@@ -72,12 +88,22 @@ func NewFirstTimeSetup(baseDir string, showGitignore bool) *FirstTimeSetup {
 	if showGitignore {
 		step = StepGitignore
 	}
+
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.Placeholder = ""
+	ti.CharLimit = maxPRDNameLength
+	ti.Width = prdNameModalWidth(0) - 8
+	ti.SetValue("main")
+	ti.CursorEnd()
+	ti.Focus()
+
 	return &FirstTimeSetup{
 		baseDir:           baseDir,
 		showGitignore:     showGitignore,
 		step:              step,
 		gitignoreSelected: 0, // Default to "Yes"
-		prdName:           "main",
+		ti:                ti,
 		pushSelected:      0, // Default to "Yes"
 		createPRSelected:  0, // Default to "Yes"
 	}
@@ -85,7 +111,10 @@ func NewFirstTimeSetup(baseDir string, showGitignore bool) *FirstTimeSetup {
 
 // Init initializes the model.
 func (f FirstTimeSetup) Init() tea.Cmd {
-	return tea.EnterAltScreen
+	if f.showGitignore {
+		return tea.EnterAltScreen
+	}
+	return tea.Batch(tea.EnterAltScreen, textinput.Blink)
 }
 
 // Update handles messages.
@@ -94,6 +123,7 @@ func (f FirstTimeSetup) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		f.width = msg.Width
 		f.height = msg.Height
+		f.ti.Width = prdNameModalWidth(f.width) - 8
 		return f, nil
 
 	case ghCheckResultMsg:
@@ -157,7 +187,10 @@ func (f FirstTimeSetup) confirmGitignore() (tea.Model, tea.Cmd) {
 		}
 	}
 	f.step = StepPRDName
-	return f, nil
+	if !f.ti.Focused() {
+		f.ti.Focus()
+	}
+	return f, textinput.Blink
 }
 
 func (f FirstTimeSetup) handlePRDNameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -178,7 +211,7 @@ func (f FirstTimeSetup) handlePRDNameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		// Validate PRD name
-		name := strings.TrimSpace(f.prdName)
+		name := strings.TrimSpace(f.ti.Value())
 		if name == "" {
 			f.prdNameError = "Name cannot be empty"
 			return f, nil
@@ -191,26 +224,39 @@ func (f FirstTimeSetup) handlePRDNameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		f.step = StepPostCompletion
 		return f, nil
 
-	case "backspace":
-		if len(f.prdName) > 0 {
-			f.prdName = f.prdName[:len(f.prdName)-1]
-			f.prdNameError = ""
-		}
+	// Override bubbles' whitespace-only word jump so `-` and `_` act as word
+	// separators — useful for PRD names like `foo-bar` where bubbles' default
+	// would treat the whole identifier as one word and collapse Ctrl+Left/Right
+	// to Home/End.
+	case "ctrl+left", "alt+left", "alt+b":
+		f.ti.SetCursor(wordBackward([]rune(f.ti.Value()), f.ti.Position(), prdNameSeparators))
 		return f, nil
 
-	default:
-		// Handle character input
-		if len(msg.String()) == 1 {
-			r := rune(msg.String()[0])
-			// Only allow valid characters
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-				(r >= '0' && r <= '9') || r == '-' || r == '_' {
-				f.prdName += string(r)
-				f.prdNameError = ""
-			}
-		}
+	case "ctrl+right", "alt+right", "alt+f":
+		f.ti.SetCursor(wordForward([]rune(f.ti.Value()), f.ti.Position(), prdNameSeparators))
 		return f, nil
 	}
+
+	// Filter rune input against the allowed character set before forwarding to
+	// the textinput. Non-rune keys (arrows, backspace, Home/End, Ctrl+arrows,
+	// Alt+Backspace, etc.) pass through unchanged so the bubbles default key
+	// bindings keep working. See isTextualKey for the KeySpace rationale and
+	// isPasteLike for the paste-vs-typing distinction.
+	if isTextualKey(msg) {
+		if isPasteLike(msg) {
+			msg.Runes = normalizePastedRunes(msg.Runes, isAllowedPRDNameRune)
+		} else {
+			msg.Runes = filterPRDNameRunes(msg.Runes)
+		}
+	}
+
+	before := f.ti.Value()
+	var cmd tea.Cmd
+	f.ti, cmd = f.ti.Update(msg)
+	if f.ti.Value() != before {
+		f.prdNameError = ""
+	}
+	return f, cmd
 }
 
 // isValidPRDName checks if a name is valid for a PRD.
@@ -466,10 +512,7 @@ func (f FirstTimeSetup) renderGitignoreStep() string {
 }
 
 func (f FirstTimeSetup) renderPRDNameStep() string {
-	modalWidth := min(60, f.width-10)
-	if modalWidth < 45 {
-		modalWidth = 45
-	}
+	modalWidth := prdNameModalWidth(f.width)
 
 	var content strings.Builder
 
@@ -500,11 +543,7 @@ func (f FirstTimeSetup) renderPRDNameStep() string {
 		Padding(0, 1).
 		Width(modalWidth - 8)
 
-	displayName := f.prdName
-	if displayName == "" {
-		displayName = " " // Show cursor position
-	}
-	content.WriteString(inputStyle.Render(displayName + "█"))
+	content.WriteString(inputStyle.Render(f.ti.View()))
 	content.WriteString("\n")
 
 	// Error message
@@ -517,7 +556,7 @@ func (f FirstTimeSetup) renderPRDNameStep() string {
 	// Hint
 	content.WriteString("\n")
 	hintStyle := lipgloss.NewStyle().Foreground(MutedColor)
-	content.WriteString(hintStyle.Render("PRD will be created at: .chief/prds/" + f.prdName + "/"))
+	content.WriteString(hintStyle.Render("PRD will be created at: .chief/prds/" + f.ti.Value() + "/"))
 
 	// Footer
 	content.WriteString("\n\n")
