@@ -11,15 +11,8 @@ import (
 var confettiChars = []string{"✦", "★", "●", "◆", "♦", "▲", "■", "♥", "✧", "⬥"}
 
 // confettiColors are the colors used for confetti particles.
-var confettiColors = []lipgloss.Color{
-	SuccessColor,
-	PrimaryColor,
-	WarningColor,
-	ErrorColor,
-	lipgloss.Color("#FF6AC1"), // Pink
-	lipgloss.Color("#FFD700"), // Gold
-	lipgloss.Color("#FF8C00"), // Dark orange
-}
+// Populated by InitStyles() so they reflect the active theme.
+var confettiColors []lipgloss.Color
 
 // Particle represents a single confetti particle.
 type Particle struct {
@@ -45,6 +38,9 @@ func (c *Confetti) SetSize(width, height int) {
 
 // NewConfetti creates a new confetti system with particles spread across the screen.
 func NewConfetti(width, height int) *Confetti {
+	if len(confettiColors) == 0 {
+		InitStyles()
+	}
 	c := &Confetti{
 		width:  width,
 		height: height,

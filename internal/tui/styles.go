@@ -8,193 +8,112 @@ import "github.com/charmbracelet/lipgloss"
 // Color palette - consistent colors used throughout the TUI
 var (
 	// Primary colors
-	PrimaryColor = lipgloss.Color("#00D7FF") // Cyan - primary brand, in-progress states
-	SuccessColor = lipgloss.Color("#5AF78E") // Green - passed, complete states
-	WarningColor = lipgloss.Color("#F3F99D") // Yellow - paused, warning states
-	ErrorColor   = lipgloss.Color("#FF5C57") // Red - failed, error states
-	MutedColor   = lipgloss.Color("#6C7086") // Gray - pending, muted text
-	BorderColor  = lipgloss.Color("#45475A") // Dark gray - borders, dividers
+	PrimaryColor lipgloss.Color
+	SuccessColor lipgloss.Color
+	WarningColor lipgloss.Color
+	ErrorColor   lipgloss.Color
+	MutedColor   lipgloss.Color
+	BorderColor  lipgloss.Color
 
 	// Text colors
-	TextColor       = lipgloss.Color("#CDD6F4") // Light gray - primary text
-	TextMutedColor  = lipgloss.Color("#6C7086") // Muted text
-	TextBrightColor = lipgloss.Color("#FFFFFF") // Bright white - emphasis
+	TextColor       lipgloss.Color
+	TextMutedColor  lipgloss.Color
+	TextBrightColor lipgloss.Color
 
 	// Background colors
-	BgColor          = lipgloss.Color("#1E1E2E") // Dark background
-	BgSelectedColor  = lipgloss.Color("#313244") // Selected item background
-	BgHighlightColor = lipgloss.Color("#45475A") // Highlight background
+	BgColor          lipgloss.Color
+	BgSelectedColor  lipgloss.Color
+	BgHighlightColor lipgloss.Color
 )
 
 // Aliases for backward compatibility with existing code
 var (
-	primaryColor = PrimaryColor
-	successColor = SuccessColor
-	warningColor = WarningColor
-	errorColor   = ErrorColor
-	mutedColor   = MutedColor
-	borderColor  = BorderColor
+	primaryColor lipgloss.Color
+	successColor lipgloss.Color
+	warningColor lipgloss.Color
+	errorColor   lipgloss.Color
+	mutedColor   lipgloss.Color
+	borderColor  lipgloss.Color
 )
 
 // Header styles
 var (
-	// Main header style with branding
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(PrimaryColor).
-			Padding(0, 1)
-
-	// Header border/divider
-	HeaderBorderStyle = lipgloss.NewStyle().
-				Foreground(BorderColor)
+	headerStyle       lipgloss.Style
+	HeaderBorderStyle lipgloss.Style
 )
 
 // Footer styles
 var (
-	footerStyle = lipgloss.NewStyle().
-			Foreground(MutedColor).
-			Padding(0, 1)
-
-	// Shortcut key style
-	ShortcutKeyStyle = lipgloss.NewStyle().
-				Foreground(PrimaryColor).
-				Bold(true)
-
-	// Shortcut description style
-	ShortcutDescStyle = lipgloss.NewStyle().
-				Foreground(MutedColor)
+	footerStyle       lipgloss.Style
+	ShortcutKeyStyle  lipgloss.Style
+	ShortcutDescStyle lipgloss.Style
 )
 
 // Panel styles
 var (
-	panelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(BorderColor).
-			Padding(0, 1)
-
-	// Panel with focus/active state
-	PanelActiveStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(PrimaryColor).
-				Padding(0, 1)
-
-	// Panel title style
-	PanelTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(PrimaryColor)
+	panelStyle      lipgloss.Style
+	PanelActiveStyle lipgloss.Style
+	PanelTitleStyle  lipgloss.Style
 )
 
 // Selection styles
 var (
-	selectedStyle = lipgloss.NewStyle().
-			Background(BgSelectedColor).
-			Foreground(TextColor)
-
-	// Unselected/normal item style
-	UnselectedStyle = lipgloss.NewStyle().
-			Foreground(TextColor)
+	selectedStyle   lipgloss.Style
+	UnselectedStyle lipgloss.Style
 )
 
 // Status badge styles - colored badges for state indicators
 var (
-	// Story status styles
-	statusPassedStyle     = lipgloss.NewStyle().Foreground(SuccessColor)
-	statusInProgressStyle = lipgloss.NewStyle().Foreground(PrimaryColor)
-	statusPendingStyle    = lipgloss.NewStyle().Foreground(MutedColor)
-	statusFailedStyle     = lipgloss.NewStyle().Foreground(ErrorColor)
-	statusPausedStyle     = lipgloss.NewStyle().Foreground(WarningColor)
+	statusPassedStyle     lipgloss.Style
+	statusInProgressStyle lipgloss.Style
+	statusPendingStyle    lipgloss.Style
+	statusFailedStyle     lipgloss.Style
+	statusPausedStyle     lipgloss.Style
 
-	// State badge styles (with bold for headers)
-	StateReadyStyle    = lipgloss.NewStyle().Bold(true).Foreground(MutedColor)
-	StateRunningStyle  = lipgloss.NewStyle().Bold(true).Foreground(PrimaryColor)
-	StatePausedStyle   = lipgloss.NewStyle().Bold(true).Foreground(WarningColor)
-	StateStoppedStyle  = lipgloss.NewStyle().Bold(true).Foreground(MutedColor)
-	StateCompleteStyle = lipgloss.NewStyle().Bold(true).Foreground(SuccessColor)
-	StateErrorStyle    = lipgloss.NewStyle().Bold(true).Foreground(ErrorColor)
+	StateReadyStyle    lipgloss.Style
+	StateRunningStyle  lipgloss.Style
+	StatePausedStyle   lipgloss.Style
+	StateStoppedStyle  lipgloss.Style
+	StateCompleteStyle lipgloss.Style
+	StateErrorStyle    lipgloss.Style
 )
 
 // Title and label styles
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(TextColor)
-
-	labelStyle = lipgloss.NewStyle().
-			Foreground(PrimaryColor).
-			Bold(true)
-
-	// Subtitle style
-	SubtitleStyle = lipgloss.NewStyle().
-			Foreground(MutedColor)
-
-	// Description text style
-	DescriptionStyle = lipgloss.NewStyle().
-				Foreground(TextColor)
+	titleStyle       lipgloss.Style
+	labelStyle       lipgloss.Style
+	SubtitleStyle    lipgloss.Style
+	DescriptionStyle lipgloss.Style
 )
 
 // Progress bar styles
 var (
-	progressBarFillStyle  = lipgloss.NewStyle().Foreground(SuccessColor)
-	progressBarEmptyStyle = lipgloss.NewStyle().Foreground(MutedColor)
-
-	// Progress percentage style
-	ProgressPercentStyle = lipgloss.NewStyle().
-				Foreground(MutedColor)
+	progressBarFillStyle  lipgloss.Style
+	progressBarEmptyStyle lipgloss.Style
+	ProgressPercentStyle  lipgloss.Style
 )
 
 // Activity line styles
 var (
-	ActivityRunningStyle  = lipgloss.NewStyle().Foreground(PrimaryColor).Padding(0, 1)
-	ActivityErrorStyle    = lipgloss.NewStyle().Foreground(ErrorColor).Padding(0, 1)
-	ActivityCompleteStyle = lipgloss.NewStyle().Foreground(SuccessColor).Padding(0, 1)
-	ActivityMutedStyle    = lipgloss.NewStyle().Foreground(MutedColor).Padding(0, 1)
+	ActivityRunningStyle  lipgloss.Style
+	ActivityErrorStyle    lipgloss.Style
+	ActivityCompleteStyle lipgloss.Style
+	ActivityMutedStyle    lipgloss.Style
 )
 
 // Divider styles
 var (
-	DividerStyle = lipgloss.NewStyle().
-			Foreground(BorderColor)
-
-	// Thick divider (for section separators)
-	ThickDividerStyle = lipgloss.NewStyle().
-				Foreground(BorderColor).
-				Bold(true)
+	DividerStyle      lipgloss.Style
+	ThickDividerStyle lipgloss.Style
 )
 
 // Tab bar styles
 var (
-	// TabStyle - inactive tab with rounded border
-	TabStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(BorderColor).
-			Padding(0, 1)
-
-	// TabActiveStyle - active/viewed tab with primary color border and background
-	TabActiveStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(PrimaryColor).
-			Background(BgSelectedColor).
-			Bold(true).
-			Padding(0, 1)
-
-	// TabRunningStyle - running state with primary color border
-	TabRunningStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(PrimaryColor).
-			Padding(0, 1)
-
-	// TabErrorStyle - error state with error color border
-	TabErrorStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ErrorColor).
-			Padding(0, 1)
-
-	// TabNewStyle - "+ New" button with muted styling
-	TabNewStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(MutedColor).
-			Foreground(MutedColor).
-			Padding(0, 1)
+	TabStyle        lipgloss.Style
+	TabActiveStyle  lipgloss.Style
+	TabRunningStyle lipgloss.Style
+	TabErrorStyle   lipgloss.Style
+	TabNewStyle     lipgloss.Style
 )
 
 // Status icons
@@ -213,6 +132,164 @@ const (
 	iconPending    = IconPending
 	iconFailed     = IconFailed
 )
+
+// InitStyles rebuilds all lipgloss styles from ActiveTheme.
+// Call this once after setting ActiveTheme, before rendering any TUI component.
+func InitStyles() {
+	// Update color vars
+	PrimaryColor = ActiveTheme.PrimaryColor
+	SuccessColor = ActiveTheme.SuccessColor
+	WarningColor = ActiveTheme.WarningColor
+	ErrorColor = ActiveTheme.ErrorColor
+	MutedColor = ActiveTheme.MutedColor
+	BorderColor = ActiveTheme.BorderColor
+	TextColor = ActiveTheme.TextColor
+	TextMutedColor = ActiveTheme.TextMutedColor
+	TextBrightColor = ActiveTheme.TextBrightColor
+	BgColor = ActiveTheme.BgColor
+	BgSelectedColor = ActiveTheme.BgSelectedColor
+	BgHighlightColor = ActiveTheme.BgHighlightColor
+
+	primaryColor = PrimaryColor
+	successColor = SuccessColor
+	warningColor = WarningColor
+	errorColor = ErrorColor
+	mutedColor = MutedColor
+	borderColor = BorderColor
+
+	// Header styles
+	headerStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ActiveTheme.PrimaryColor).
+		Padding(0, 1)
+
+	HeaderBorderStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.BorderColor)
+
+	// Footer styles
+	footerStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.MutedColor).
+		Padding(0, 1)
+
+	ShortcutKeyStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.PrimaryColor).
+		Bold(true)
+
+	ShortcutDescStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.MutedColor)
+
+	// Panel styles
+	panelStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ActiveTheme.BorderColor).
+		Padding(0, 1)
+
+	PanelActiveStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ActiveTheme.PrimaryColor).
+		Padding(0, 1)
+
+	PanelTitleStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ActiveTheme.PrimaryColor)
+
+	// Selection styles
+	selectedStyle = lipgloss.NewStyle().
+		Background(ActiveTheme.BgSelectedColor).
+		Foreground(ActiveTheme.TextColor)
+
+	UnselectedStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.TextColor)
+
+	// Status badge styles
+	statusPassedStyle = lipgloss.NewStyle().Foreground(ActiveTheme.SuccessColor)
+	statusInProgressStyle = lipgloss.NewStyle().Foreground(ActiveTheme.PrimaryColor)
+	statusPendingStyle = lipgloss.NewStyle().Foreground(ActiveTheme.MutedColor)
+	statusFailedStyle = lipgloss.NewStyle().Foreground(ActiveTheme.ErrorColor)
+	statusPausedStyle = lipgloss.NewStyle().Foreground(ActiveTheme.WarningColor)
+
+	StateReadyStyle = lipgloss.NewStyle().Bold(true).Foreground(ActiveTheme.MutedColor)
+	StateRunningStyle = lipgloss.NewStyle().Bold(true).Foreground(ActiveTheme.PrimaryColor)
+	StatePausedStyle = lipgloss.NewStyle().Bold(true).Foreground(ActiveTheme.WarningColor)
+	StateStoppedStyle = lipgloss.NewStyle().Bold(true).Foreground(ActiveTheme.MutedColor)
+	StateCompleteStyle = lipgloss.NewStyle().Bold(true).Foreground(ActiveTheme.SuccessColor)
+	StateErrorStyle = lipgloss.NewStyle().Bold(true).Foreground(ActiveTheme.ErrorColor)
+
+	// Title and label styles
+	titleStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ActiveTheme.TextColor)
+
+	labelStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.PrimaryColor).
+		Bold(true)
+
+	SubtitleStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.MutedColor)
+
+	DescriptionStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.TextColor)
+
+	// Progress bar styles
+	progressBarFillStyle = lipgloss.NewStyle().Foreground(ActiveTheme.SuccessColor)
+	progressBarEmptyStyle = lipgloss.NewStyle().Foreground(ActiveTheme.MutedColor)
+
+	ProgressPercentStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.MutedColor)
+
+	// Activity line styles
+	ActivityRunningStyle = lipgloss.NewStyle().Foreground(ActiveTheme.PrimaryColor).Padding(0, 1)
+	ActivityErrorStyle = lipgloss.NewStyle().Foreground(ActiveTheme.ErrorColor).Padding(0, 1)
+	ActivityCompleteStyle = lipgloss.NewStyle().Foreground(ActiveTheme.SuccessColor).Padding(0, 1)
+	ActivityMutedStyle = lipgloss.NewStyle().Foreground(ActiveTheme.MutedColor).Padding(0, 1)
+
+	// Divider styles
+	DividerStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.BorderColor)
+
+	ThickDividerStyle = lipgloss.NewStyle().
+		Foreground(ActiveTheme.BorderColor).
+		Bold(true)
+
+	// Tab bar styles
+	TabStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ActiveTheme.BorderColor).
+		Padding(0, 1)
+
+	TabActiveStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ActiveTheme.PrimaryColor).
+		Background(ActiveTheme.BgSelectedColor).
+		Bold(true).
+		Padding(0, 1)
+
+	TabRunningStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ActiveTheme.PrimaryColor).
+		Padding(0, 1)
+
+	TabErrorStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ActiveTheme.ErrorColor).
+		Padding(0, 1)
+
+	TabNewStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ActiveTheme.MutedColor).
+		Foreground(ActiveTheme.MutedColor).
+		Padding(0, 1)
+
+	// Confetti uses theme palette colors
+	confettiColors = []lipgloss.Color{
+		SuccessColor,
+		PrimaryColor,
+		WarningColor,
+		ErrorColor,
+		TextBrightColor,
+		TextColor,
+	}
+}
 
 // GetStatusIcon returns the appropriate icon for a story's status.
 func GetStatusIcon(passed, inProgress bool) string {

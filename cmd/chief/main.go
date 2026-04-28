@@ -354,6 +354,18 @@ func resolveProvider(flagAgent, flagPath string) loop.Provider {
 }
 
 func runTUIWithOptions(opts *TUIOptions) {
+	cwd, err := os.Getwd()
+	if err == nil {
+		if cfg, err := config.Load(cwd); err == nil && cfg.Theme != "" {
+			theme, ok := tui.ThemeByName(cfg.Theme)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "Warning: unknown theme %q, falling back to \"catppuccin-mocha\"\n", cfg.Theme)
+			}
+			tui.ActiveTheme = theme
+		}
+	}
+	tui.InitStyles()
+
 	provider := resolveProvider(opts.Agent, opts.AgentPath)
 
 	prdPath := opts.PRDPath
