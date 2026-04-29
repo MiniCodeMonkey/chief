@@ -266,8 +266,8 @@ func TestCheckWritePermission_Success(t *testing.T) {
 
 func TestCheckWritePermission_Fail(t *testing.T) {
 	dir := t.TempDir()
-	os.Chmod(dir, 0o555)
-	defer os.Chmod(dir, 0o755) // restore for cleanup
+	os.Chmod(dir, 0555)
+	defer os.Chmod(dir, 0755) // restore for cleanup
 
 	if err := checkWritePermission(dir); err == nil {
 		t.Error("expected write permission check to fail")
@@ -320,7 +320,7 @@ func TestVerifyChecksum(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "binary")
 	content := []byte("test binary content")
-	os.WriteFile(filePath, content, 0o644)
+	os.WriteFile(filePath, content, 0644)
 
 	// Calculate expected hash
 	h := sha256.Sum256(content)
@@ -340,7 +340,7 @@ func TestVerifyChecksum(t *testing.T) {
 func TestVerifyChecksum_Mismatch(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "binary")
-	os.WriteFile(filePath, []byte("content"), 0o644)
+	os.WriteFile(filePath, []byte("content"), 0644)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "0000000000000000000000000000000000000000000000000000000000000000  binary\n")
@@ -372,7 +372,7 @@ func TestPerformUpdate_FullFlow(t *testing.T) {
 	// Create a fake "current binary"
 	dir := t.TempDir()
 	binaryPath := filepath.Join(dir, "chief")
-	os.WriteFile(binaryPath, []byte("old binary"), 0o755)
+	os.WriteFile(binaryPath, []byte("old binary"), 0755)
 
 	// New binary content
 	newContent := []byte("new binary v0.6.0")

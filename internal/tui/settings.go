@@ -37,6 +37,7 @@ type SettingsOverlay struct {
 	// Inline text editing
 	editing    bool
 	editBuffer string
+	editError  string // shown under the edit buffer when ConfirmEdit rejects input
 
 	// GH CLI validation error
 	ghError     string
@@ -58,12 +59,15 @@ func (s *SettingsOverlay) SetSize(width, height int) {
 func (s *SettingsOverlay) LoadFromConfig(cfg *config.Config) {
 	s.items = []SettingsItem{
 		{Section: "Worktree", Label: "Setup command", Key: "worktree.setup", Type: SettingsItemString, StringVal: cfg.Worktree.Setup},
+		{Section: "Worktree", Label: "Always prompt for worktree", Key: "worktree.alwaysPrompt", Type: SettingsItemBool, BoolVal: cfg.Worktree.AlwaysPrompt},
+		{Section: "Worktree", Label: "Prompt branch pattern", Key: "worktree.promptBranchPattern", Type: SettingsItemString, StringVal: cfg.Worktree.PromptBranchPattern},
 		{Section: "On Complete", Label: "Push to remote", Key: "onComplete.push", Type: SettingsItemBool, BoolVal: cfg.OnComplete.Push},
 		{Section: "On Complete", Label: "Create pull request", Key: "onComplete.createPR", Type: SettingsItemBool, BoolVal: cfg.OnComplete.CreatePR},
 	}
 	s.selectedIndex = 0
 	s.editing = false
 	s.editBuffer = ""
+	s.editError = ""
 	s.ghError = ""
 	s.showGHError = false
 }
@@ -74,6 +78,10 @@ func (s *SettingsOverlay) ApplyToConfig(cfg *config.Config) {
 		switch item.Key {
 		case "worktree.setup":
 			cfg.Worktree.Setup = item.StringVal
+		case "worktree.alwaysPrompt":
+			cfg.Worktree.AlwaysPrompt = item.BoolVal
+		case "worktree.promptBranchPattern":
+			cfg.Worktree.PromptBranchPattern = item.StringVal
 		case "onComplete.push":
 			cfg.OnComplete.Push = item.BoolVal
 		case "onComplete.createPR":
@@ -106,27 +114,42 @@ func (s *SettingsOverlay) StartEditing() {
 	if s.selectedIndex < len(s.items) && s.items[s.selectedIndex].Type == SettingsItemString {
 		s.editing = true
 		s.editBuffer = s.items[s.selectedIndex].StringVal
+		s.editError = ""
 	}
 }
 
-// ConfirmEdit saves the edit buffer to the selected item.
-func (s *SettingsOverlay) ConfirmEdit() {
-	if s.editing && s.selectedIndex < len(s.items) {
-		s.items[s.selectedIndex].StringVal = s.editBuffer
-		s.editing = false
-		s.editBuffer = ""
+// ConfirmEdit validates the edit buffer and, on success, writes it to the
+// selected item and exits edit mode. On failure, returns the validation error
+// and stays in edit mode so the user can fix the value without losing it.
+func (s *SettingsOverlay) ConfirmEdit() error {
+	if !s.editing || s.selectedIndex >= len(s.items) {
+		return nil
 	}
+	item := &s.items[s.selectedIndex]
+	if item.Key == "worktree.promptBranchPattern" {
+		if _, err := config.ValidateBranchPattern(s.editBuffer); err != nil {
+			s.editError = fmt.Sprintf("invalid regex: %v", err)
+			return err
+		}
+	}
+	item.StringVal = s.editBuffer
+	s.editing = false
+	s.editBuffer = ""
+	s.editError = ""
+	return nil
 }
 
 // CancelEdit discards the edit buffer.
 func (s *SettingsOverlay) CancelEdit() {
 	s.editing = false
 	s.editBuffer = ""
+	s.editError = ""
 }
 
 // AddEditChar adds a character to the edit buffer.
 func (s *SettingsOverlay) AddEditChar(ch rune) {
 	s.editBuffer += string(ch)
+	s.editError = ""
 }
 
 // DeleteEditChar removes the last character from the edit buffer.
@@ -135,6 +158,7 @@ func (s *SettingsOverlay) DeleteEditChar() {
 		runes := []rune(s.editBuffer)
 		s.editBuffer = string(runes[:len(runes)-1])
 	}
+	s.editError = ""
 }
 
 // ToggleBool toggles the selected boolean value.
@@ -349,6 +373,14 @@ func (s *SettingsOverlay) renderItems(modalWidth int) string {
 		result.WriteString(strings.Repeat(" ", padding))
 		result.WriteString(valueStr)
 		result.WriteString("\n")
+
+		// Inline edit error directly under the editing item.
+		if isSelected && s.editing && s.editError != "" {
+			errStyle := lipgloss.NewStyle().Foreground(ErrorColor)
+			result.WriteString("    ")
+			result.WriteString(errStyle.Render(s.editError))
+			result.WriteString("\n")
+		}
 	}
 
 	return result.String()

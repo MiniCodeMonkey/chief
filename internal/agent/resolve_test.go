@@ -188,7 +188,7 @@ func TestCheckInstalled_found(t *testing.T) {
 func TestResolve_configFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".chief", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0755); err != nil {
 		t.Fatal(err)
 	}
 	const yamlContent = `
@@ -196,7 +196,7 @@ agent:
   provider: codex
   cliPath: /usr/local/bin/codex
 `
-	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(dir)

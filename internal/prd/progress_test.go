@@ -263,3 +263,23 @@ func TestProgressPath(t *testing.T) {
 		t.Errorf("ProgressPath() = %q, want %q", got, want)
 	}
 }
+
+func TestProgressWatcherStopWithoutStart(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := filepath.Join(tmpDir, "prd.json")
+
+	w, err := NewProgressWatcher(prdPath)
+	if err != nil {
+		t.Fatalf("NewProgressWatcher failed: %v", err)
+	}
+
+	// Stop must release the underlying fsnotify watcher even when Start was
+	// never called (otherwise the inotify FD leaks). A subsequent Add to the
+	// closed fsnotify watcher should fail, proving Close ran.
+	w.Stop()
+	w.Stop() // idempotent
+
+	if err := w.watcher.Add(tmpDir); err == nil {
+		t.Error("expected fsnotify.Add to fail after Stop, but it succeeded")
+	}
+}

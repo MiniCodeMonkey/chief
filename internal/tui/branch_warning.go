@@ -21,11 +21,11 @@ const (
 type DialogContext int
 
 const (
-	// DialogProtectedBranch: on a protected branch (main/master)
-	DialogProtectedBranch DialogContext = iota
+	// DialogWorktreePrompt: branch matches the worktree-prompt policy (default branches or configured pattern)
+	DialogWorktreePrompt DialogContext = iota
 	// DialogAnotherPRDRunning: another PRD is already running in the same directory
 	DialogAnotherPRDRunning
-	// DialogNoConflicts: not protected, nothing else running in same dir
+	// DialogNoConflicts: worktree prompt policy doesn't apply and nothing else is running in the same dir
 	DialogNoConflicts
 )
 
@@ -81,7 +81,7 @@ func (b *BranchWarning) SetDialogContext(ctx DialogContext) {
 // buildOptions creates the option list based on the dialog context.
 func (b *BranchWarning) buildOptions() {
 	switch b.context {
-	case DialogProtectedBranch:
+	case DialogWorktreePrompt:
 		b.options = []dialogOption{
 			{
 				label:       "Create branch only",
@@ -256,9 +256,9 @@ func (b *BranchWarning) Render() string {
 		content.WriteString(footerStyle.Render("↑/↓: Navigate  Enter: Select  e: Edit branch  Esc: Cancel"))
 	}
 
-	// Modal box style - use warning color for protected branch, primary for others
+	// Modal box style - use warning color for the worktree prompt, primary for others
 	borderColor := PrimaryColor
-	if b.context == DialogProtectedBranch {
+	if b.context == DialogWorktreePrompt {
 		borderColor = WarningColor
 	}
 
@@ -280,8 +280,8 @@ func (b *BranchWarning) renderHeader(content *strings.Builder, modalWidth int) {
 	titleStyle := lipgloss.NewStyle().Bold(true)
 
 	switch b.context {
-	case DialogProtectedBranch:
-		content.WriteString(titleStyle.Foreground(WarningColor).Render("⚠️  Protected Branch Warning"))
+	case DialogWorktreePrompt:
+		content.WriteString(titleStyle.Foreground(WarningColor).Render("⚠️  Worktree Recommended"))
 		content.WriteString("\n")
 		content.WriteString(DividerStyle.Render(strings.Repeat("─", modalWidth-4)))
 		content.WriteString("\n\n")

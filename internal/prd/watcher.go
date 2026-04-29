@@ -21,6 +21,7 @@ type Watcher struct {
 	done    chan struct{}
 	mu      sync.Mutex
 	running bool
+	closed  bool
 	lastPRD *PRD
 }
 
@@ -71,17 +72,23 @@ func (w *Watcher) Start() error {
 	return nil
 }
 
-// Stop stops watching the PRD file.
+// Stop stops watching the PRD file and releases resources held by the
+// underlying fsnotify watcher. Safe to call before Start (no goroutine to
+// signal) and idempotent across repeated calls.
 func (w *Watcher) Stop() {
 	w.mu.Lock()
-	if !w.running {
+	if w.closed {
 		w.mu.Unlock()
 		return
 	}
+	w.closed = true
+	wasRunning := w.running
 	w.running = false
 	w.mu.Unlock()
 
-	close(w.done)
+	if wasRunning {
+		close(w.done)
+	}
 	w.watcher.Close()
 }
 

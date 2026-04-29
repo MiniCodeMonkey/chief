@@ -129,7 +129,7 @@ func TestAddChiefToGitignore(t *testing.T) {
 	})
 }
 
-func TestIsProtectedBranch(t *testing.T) {
+func TestIsDefaultBranchName(t *testing.T) {
 	tests := []struct {
 		branch   string
 		expected bool
@@ -143,9 +143,9 @@ func TestIsProtectedBranch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.branch, func(t *testing.T) {
-			result := IsProtectedBranch(tt.branch)
+			result := isDefaultBranchName(tt.branch)
 			if result != tt.expected {
-				t.Errorf("IsProtectedBranch(%q) = %v, want %v", tt.branch, result, tt.expected)
+				t.Errorf("isDefaultBranchName(%q) = %v, want %v", tt.branch, result, tt.expected)
 			}
 		})
 	}

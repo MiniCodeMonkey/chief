@@ -277,6 +277,12 @@ func NewAppWithOptions(prdPath string, maxIter int, provider loop.Provider) (*Ap
 	if err != nil {
 		return nil, err
 	}
+	appReady := false
+	defer func() {
+		if !appReady {
+			watcher.Stop()
+		}
+	}()
 
 	// Determine base directory for PRD picker
 	// If path contains .chief/prds/, go up to the project root (4 levels up from prd.json)
@@ -290,7 +296,7 @@ func NewAppWithOptions(prdPath string, maxIter int, provider loop.Provider) (*Ap
 	// Load project config
 	cfg, err := config.Load(baseDir)
 	if err != nil {
-		cfg = config.Default()
+		return nil, fmt.Errorf("failed to load .chief/config.yaml: %w", err)
 	}
 
 	// Prune stale worktrees on startup (clean git's internal tracking)
@@ -316,6 +322,7 @@ func NewAppWithOptions(prdPath string, maxIter int, provider loop.Provider) (*Ap
 	// Create picker with manager reference (for creating new PRDs)
 	picker := NewPRDPicker(baseDir, prdName, manager)
 
+	appReady = true
 	return &App{
 		prd:              p,
 		prdPath:          prdPath,
@@ -740,22 +747,22 @@ func (a App) startLoopForPRD(prdName string) (tea.Model, tea.Cmd) {
 	relWorktreePath := fmt.Sprintf(".chief/worktrees/%s/", prdName)
 
 	// Determine dialog context
-	isProtected := git.IsProtectedBranch(branch)
+	shouldPromptWorktree := a.config.ShouldPromptForWorktree(branch)
 	anotherRunningInSameDir := a.isAnotherPRDRunningInSameDir(prdName)
 
-	if !isProtected && !anotherRunningInSameDir {
+	if !shouldPromptWorktree && !anotherRunningInSameDir {
 		// No conflicts: skip the dialog entirely and start the loop directly
 		return a.doStartLoop(prdName, prdDir)
 	}
 
 	var dialogCtx DialogContext
-	if isProtected {
-		dialogCtx = DialogProtectedBranch
+	if shouldPromptWorktree {
+		dialogCtx = DialogWorktreePrompt
 	} else {
 		dialogCtx = DialogAnotherPRDRunning
 	}
 
-	// Show the dialog only for protected branch or another PRD running
+	// Show the dialog when worktree-prompt policy triggers or another PRD is running.
 	a.branchWarning.SetSize(a.width, a.height)
 	a.branchWarning.SetContext(branch, prdName, relWorktreePath)
 	a.branchWarning.SetDialogContext(dialogCtx)
@@ -1454,7 +1461,11 @@ func (a App) handleSettingsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.settingsOverlay.IsEditing() {
 		switch msg.String() {
 		case "enter":
-			a.settingsOverlay.ConfirmEdit()
+			if err := a.settingsOverlay.ConfirmEdit(); err != nil {
+				// Validation rejected the value; stay in edit mode so the
+				// user can fix it. The overlay renders the error inline.
+				return a, nil
+			}
 			a.settingsOverlay.ApplyToConfig(a.config)
 			_ = config.Save(a.baseDir, a.config)
 			return a, nil

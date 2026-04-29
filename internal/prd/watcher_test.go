@@ -193,6 +193,28 @@ func TestWatcherStop(t *testing.T) {
 	watcher.Stop() // Should be safe
 }
 
+func TestWatcherStopWithoutStart(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRDMd(t, tmpDir, []UserStory{
+		{ID: "US-001", Title: "Test Story", Passes: false},
+	})
+
+	watcher, err := NewWatcher(prdPath)
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+
+	// Stop must release the underlying fsnotify watcher even when Start was
+	// never called (otherwise the inotify FD leaks). A second Add to the
+	// closed fsnotify watcher should fail, proving Close ran.
+	watcher.Stop()
+	watcher.Stop() // idempotent
+
+	if err := watcher.watcher.Add(prdPath); err == nil {
+		t.Error("expected fsnotify.Add to fail after Stop, but it succeeded")
+	}
+}
+
 func TestHasStatusChanged(t *testing.T) {
 	tests := []struct {
 		name     string

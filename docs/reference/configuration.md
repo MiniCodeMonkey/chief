@@ -18,6 +18,8 @@ agent:
   cliPath: ""        # optional path to CLI binary
 worktree:
   setup: "npm install"
+  alwaysPrompt: false
+  promptBranchPattern: "^(main|master)$"
 onComplete:
   push: true
   createPR: true
@@ -30,8 +32,12 @@ onComplete:
 | `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, `opencode`, or `cursor` |
 | `agent.cliPath` | string | `""` | Optional path to the agent binary (e.g. `/usr/local/bin/opencode`). If empty, Chief uses the provider name from PATH. |
 | `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
+| `worktree.alwaysPrompt` | bool | `false` | When true, Chief always prompts about creating a git worktree before starting a loop, regardless of the current branch name. Overrides `promptBranchPattern`. |
+| `worktree.promptBranchPattern` | string (regex) | `"^(main\|master)$"` | Regular expression matched against the current branch name. When it matches, Chief prompts about creating a git worktree. Empty string disables matching. Ignored when `alwaysPrompt` is true. Invalid regex causes Chief to fail at startup with an error naming the offending field. Patterns use Go's RE2 syntax — lookarounds and backreferences are not supported. |
 | `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
 | `onComplete.createPR` | bool | `false` | Automatically create a pull request when a PRD completes (requires `gh` CLI) |
+
+If you write `promptBranchPattern: ""` explicitly, Chief skips branch-name matching entirely; only `alwaysPrompt` will trigger the prompt. Default regex: `^(main|master)$`. The `\|` shown in the default column above is Markdown escaping for the table separator; the actual regex value uses an unescaped `|`.
 
 ### Example Configurations
 
@@ -55,13 +61,27 @@ onComplete:
   createPR: true
 ```
 
+**Prompt for worktree on main, master, or any release branch:**
+
+```yaml
+worktree:
+  promptBranchPattern: "^(main|master|release/.*)$"
+```
+
+**Always prompt for a worktree:**
+
+```yaml
+worktree:
+  alwaysPrompt: true
+```
+
 ## Settings TUI
 
-Press `,` from any view in the TUI to open the Settings overlay. This provides an interactive way to view and edit all config values.
+Press `,` from any view in the TUI to open the Settings overlay. This provides an interactive way to view and edit a subset of common config values.
 
 Settings are organized by section:
 
-- **Worktree** — Setup command (string, editable inline)
+- **Worktree** — Setup command (string, editable inline), Always prompt for worktree (toggle), Prompt branch pattern (regex, editable inline; invalid regex is rejected with an inline error so the editor stays open)
 - **On Complete** — Push to remote (toggle), Create pull request (toggle)
 
 Changes are saved immediately to `.chief/config.yaml` on every edit.

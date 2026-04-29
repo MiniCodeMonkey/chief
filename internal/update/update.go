@@ -160,7 +160,7 @@ func PerformUpdate(currentVersion string, opts Options) (*CheckResult, error) {
 	}
 
 	// Make the new binary executable
-	if err := os.Chmod(tmpFile, 0o755); err != nil {
+	if err := os.Chmod(tmpFile, 0755); err != nil {
 		return nil, fmt.Errorf("setting permissions on new binary: %w", err)
 	}
 

@@ -18,8 +18,8 @@ func GetCurrentBranch(dir string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// IsProtectedBranch returns true if the branch name is main or master.
-func IsProtectedBranch(branch string) bool {
+// isDefaultBranchName returns true if the branch name is main or master.
+func isDefaultBranchName(branch string) bool {
 	return branch == "main" || branch == "master"
 }
 
@@ -79,7 +79,7 @@ func GetDiff(dir string) (string, error) {
 	}
 
 	// If on a feature branch, diff against merge-base with main/master
-	if !IsProtectedBranch(branch) {
+	if !isDefaultBranchName(branch) {
 		baseBranch, err := GetDefaultBranch(dir)
 		if err == nil && baseBranch != "" {
 			mergeBase, err := getMergeBase(dir, baseBranch, "HEAD")
@@ -100,7 +100,7 @@ func GetDiffStats(dir string) (string, error) {
 		return "", err
 	}
 
-	if !IsProtectedBranch(branch) {
+	if !isDefaultBranchName(branch) {
 		baseBranch, err := GetDefaultBranch(dir)
 		if err == nil && baseBranch != "" {
 			mergeBase, err := getMergeBase(dir, baseBranch, "HEAD")
