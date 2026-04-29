@@ -240,6 +240,142 @@ func TestManagerStartRequiresProvider(t *testing.T) {
 	}
 }
 
+// TestWatchdogDefaultsAreInSync guards the cross-package invariant documented
+// on both DefaultWatchdogTimeout and config.DefaultAgentWatchdogTimeout: a
+// fresh Loop with no config applied must use the same default as a Loop
+// configured via Manager with config.AgentWatchdogTimeout's fallback. If
+// someone bumps one constant without the other, behaviour silently diverges
+// based on whether SetConfig was called.
+func TestWatchdogDefaultsAreInSync(t *testing.T) {
+	if DefaultWatchdogTimeout != config.DefaultAgentWatchdogTimeout {
+		t.Errorf("loop.DefaultWatchdogTimeout (%v) != config.DefaultAgentWatchdogTimeout (%v); update both or behaviour drifts depending on whether Manager.SetConfig is called",
+			DefaultWatchdogTimeout, config.DefaultAgentWatchdogTimeout)
+	}
+}
+
+// liveLoopFor reaches into the manager's internal instances map to return the
+// live Loop pointer for name. Manager.GetInstance returns a snapshot copy
+// that intentionally omits Loop, which is fine for callers but unhelpful
+// when a test wants to assert on Loop state set by Start.
+func liveLoopFor(t *testing.T, m *Manager, name string) *Loop {
+	t.Helper()
+	m.mu.RLock()
+	instance, ok := m.instances[name]
+	m.mu.RUnlock()
+	if !ok {
+		t.Fatalf("instance %q not registered", name)
+	}
+	instance.mu.Lock()
+	loop := instance.Loop
+	instance.mu.Unlock()
+	if loop == nil {
+		t.Fatalf("instance %q has no Loop after Start", name)
+	}
+	return loop
+}
+
+// TestGetInstanceOmitsRuntimeFields pins the contract documented on
+// Manager.GetInstance: the returned snapshot must not expose the live Loop
+// pointer (or ctx / cancel) so callers can't mutate runtime state from
+// outside the manager. If a future change "helpfully" populates Loop on the
+// snapshot, liveLoopFor becomes redundant and external callers gain a way
+// to bypass the manager API — fix the doc and the helper at the same time.
+func TestGetInstanceOmitsRuntimeFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")
+
+	m := NewManager(10, testProvider)
+	if err := m.Register("test-prd", prdPath); err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+	if err := m.Start("test-prd"); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop("test-prd")
+
+	snapshot := m.GetInstance("test-prd")
+	if snapshot == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if snapshot.Loop != nil {
+		t.Error("GetInstance leaked live Loop pointer; runtime state should be hidden")
+	}
+	if snapshot.ctx != nil {
+		t.Error("GetInstance leaked ctx; runtime state should be hidden")
+	}
+	if snapshot.cancel != nil {
+		t.Error("GetInstance leaked cancel; runtime state should be hidden")
+	}
+
+	// Sanity: the live instance held by the manager *does* have the Loop,
+	// confirming the omission is on the snapshot, not on the underlying state.
+	if liveLoopFor(t, m, "test-prd") == nil {
+		t.Fatal("live instance unexpectedly missing Loop")
+	}
+}
+
+func TestManagerStartAppliesWatchdogTimeoutFromConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")
+
+	m := NewManager(10, testProvider)
+	m.SetConfig(&config.Config{
+		Agent: config.AgentConfig{WatchdogTimeout: "20m"},
+	})
+	if err := m.Register("test-prd", prdPath); err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+	if err := m.Start("test-prd"); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop("test-prd")
+
+	if got := liveLoopFor(t, m, "test-prd").WatchdogTimeout(); got != 20*time.Minute {
+		t.Errorf("expected watchdog timeout 20m, got %v", got)
+	}
+}
+
+func TestManagerStartDisablesWatchdogWhenConfigured(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")
+
+	m := NewManager(10, testProvider)
+	m.SetConfig(&config.Config{
+		Agent: config.AgentConfig{WatchdogTimeout: "0s"},
+	})
+	if err := m.Register("test-prd", prdPath); err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+	if err := m.Start("test-prd"); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop("test-prd")
+
+	if got := liveLoopFor(t, m, "test-prd").WatchdogTimeout(); got != 0 {
+		t.Errorf("expected watchdog disabled (0), got %v", got)
+	}
+}
+
+func TestManagerStartUsesDefaultWatchdogWhenConfigUnset(t *testing.T) {
+	tmpDir := t.TempDir()
+	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")
+
+	m := NewManager(10, testProvider)
+	// No SetConfig: m.config remains nil. Loop should keep its built-in
+	// DefaultWatchdogTimeout rather than getting overwritten with 0.
+	if err := m.Register("test-prd", prdPath); err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+	if err := m.Start("test-prd"); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	defer m.Stop("test-prd")
+
+	if got := liveLoopFor(t, m, "test-prd").WatchdogTimeout(); got != DefaultWatchdogTimeout {
+		t.Errorf("expected default watchdog %v, got %v", DefaultWatchdogTimeout, got)
+	}
+}
+
 func TestManagerConcurrentAccess(t *testing.T) {
 	tmpDir := t.TempDir()
 	prdPath := createTestPRDWithName(t, tmpDir, "test-prd")

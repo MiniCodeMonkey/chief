@@ -14,10 +14,13 @@ Chief stores project-level settings in `.chief/config.yaml`. This file is create
 
 ```yaml
 agent:
-  provider: claude   # or "codex", "opencode", or "cursor"
-  cliPath: ""        # optional path to CLI binary
+  provider: claude          # or "codex", "opencode", or "cursor"
+  cliPath: ""               # optional path to CLI binary
+  watchdogTimeout: "20m"    # silence threshold before Chief kills a hung agent
 worktree:
   setup: "npm install"
+bash:
+  timeout: ""               # empty = no timeout (default)
 onComplete:
   push: true
   createPR: true
@@ -29,7 +32,9 @@ onComplete:
 |-----|------|---------|-------------|
 | `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, `opencode`, or `cursor` |
 | `agent.cliPath` | string | `""` | Optional path to the agent binary (e.g. `/usr/local/bin/opencode`). If empty, Chief uses the provider name from PATH. |
+| `agent.watchdogTimeout` | string | `5m` | How long Chief will wait without **any** output from the agent before killing it as hung. Go duration string (e.g. `"5m"`, `"30m"`). Bump this if your acceptance criteria run long, quiet commands such as integration tests that produce no stdout for several minutes — the historical 5 minute default is what cuts those runs short. Set `"0s"` to disable the watchdog. Unparseable values fall back to the default. |
 | `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
+| `bash.timeout` | string | `""` (no timeout) | Maximum runtime for external bash commands invoked by Chief (currently `worktree.setup`), as a Go duration (e.g. `"30s"`, `"5m"`). Empty means no timeout — setup commands can run as long as needed. Unparseable or negative values are also treated as "no timeout" but surface a warning in the worktree spinner so a typo is not silently masked. |
 | `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
 | `onComplete.createPR` | bool | `false` | Automatically create a pull request when a PRD completes (requires `gh` CLI) |
 
@@ -55,18 +60,40 @@ onComplete:
   createPR: true
 ```
 
+**Cap a flaky setup that occasionally hangs:**
+
+```yaml
+worktree:
+  setup: "npm install && docker compose build"
+bash:
+  timeout: "30m"   # kill the setup if it runs longer than 30 minutes
+```
+
+**Long-running test suites in acceptance criteria:**
+
+```yaml
+agent:
+  watchdogTimeout: "30m"  # allow up to 30 minutes of silence (e.g. for slow integration tests)
+```
+
+> **Migration note:** the agent watchdog default is unchanged (5 minutes of silence kills the agent), but it is now configurable. If your acceptance tests run quietly for more than 5 minutes, raise `agent.watchdogTimeout`. The new `bash.timeout` is opt-in; setup commands have no timeout by default.
+
 ## Settings TUI
 
 Press `,` from any view in the TUI to open the Settings overlay. This provides an interactive way to view and edit all config values.
 
 Settings are organized by section:
 
+- **Agent** — Watchdog timeout (string, editable inline; Go duration like `20m`)
 - **Worktree** — Setup command (string, editable inline)
+- **Bash** — Command timeout (string, editable inline; Go duration like `30s`, `5m`)
 - **On Complete** — Push to remote (toggle), Create pull request (toggle)
 
 Changes are saved immediately to `.chief/config.yaml` on every edit.
 
 When toggling "Create pull request" to Yes, Chief validates that the `gh` CLI is installed and authenticated. If validation fails, the toggle reverts and an error message is shown with installation instructions.
+
+When editing **Agent → Watchdog timeout** or **Bash → Command timeout**, the value is validated as a Go duration on save. Invalid or negative values are rejected inline (the editor stays open with an error message) so a typo cannot silently disable or fall back to the default. If a project's `config.yaml` is hand-edited with an invalid value, Chief uses the field's fallback (for `agent.watchdogTimeout`: 5 minutes; for `bash.timeout`: no timeout). For `bash.timeout`, the fallback also surfaces a one-line warning in the worktree spinner.
 
 Navigate with `j`/`k` or arrow keys. Press `Enter` to toggle booleans or edit strings. Press `Esc` to close.
 

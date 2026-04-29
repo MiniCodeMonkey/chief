@@ -240,6 +240,9 @@ func (m *Manager) Start(name string) error {
 	instance.Loop.buildPrompt = promptBuilderForPRD(instance.PRDPath)
 	m.mu.RLock()
 	instance.Loop.SetRetryConfig(m.retryConfig)
+	if m.config != nil {
+		instance.Loop.SetWatchdogTimeout(m.config.AgentWatchdogTimeout())
+	}
 	m.mu.RUnlock()
 	instance.ctx, instance.cancel = context.WithCancel(context.Background())
 	instance.State = LoopStateRunning
@@ -443,7 +446,12 @@ func (m *Manager) GetState(name string) (LoopState, int, error) {
 	return instance.State, instance.Iteration, instance.Error
 }
 
-// GetInstance returns a copy of the loop instance data for a specific PRD.
+// GetInstance returns a snapshot copy of the loop instance data for a
+// specific PRD. The returned struct deliberately omits the Loop, ctx, and
+// cancel fields so callers cannot mutate runtime state from outside the
+// manager — use Pause/Stop/Start and the event channel for runtime queries
+// and control. Tests that need the live *Loop should access m.instances
+// directly under m.mu; see liveLoopFor in manager_test.go.
 func (m *Manager) GetInstance(name string) *LoopInstance {
 	m.mu.RLock()
 	instance, exists := m.instances[name]

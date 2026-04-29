@@ -216,3 +216,31 @@ func TestWorktreeSpinnerRenderError(t *testing.T) {
 		t.Error("rendered error state should contain cleanup hint")
 	}
 }
+
+func TestWorktreeSpinnerWarning(t *testing.T) {
+	s := NewWorktreeSpinner()
+	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "npm install")
+	s.SetSize(80, 24)
+
+	if s.Warning() != "" {
+		t.Fatalf("expected no warning initially, got %q", s.Warning())
+	}
+
+	const msg = `bash.timeout "5minutes" is not a valid duration; ignoring (no timeout)`
+	s.SetWarning(msg)
+	if s.Warning() != msg {
+		t.Errorf("expected warning to be set, got %q", s.Warning())
+	}
+
+	rendered := s.Render()
+	if !strings.Contains(rendered, "5minutes") {
+		t.Error("rendered output should contain warning text")
+	}
+
+	// Reconfigure should reset the warning so a previous run does not bleed
+	// into the next one.
+	s.Configure("auth", "chief/auth", "main", ".chief/worktrees/auth/", "npm install")
+	if s.Warning() != "" {
+		t.Errorf("expected warning cleared after Configure, got %q", s.Warning())
+	}
+}

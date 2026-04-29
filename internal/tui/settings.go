@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/minicodemonkey/chief/internal/config"
@@ -37,6 +38,10 @@ type SettingsOverlay struct {
 	// Inline text editing
 	editing    bool
 	editBuffer string
+	// editError is set when ConfirmEdit rejects the buffer (e.g. invalid
+	// duration for bash.timeout). Cleared on next StartEditing/CancelEdit
+	// or on a successful ConfirmEdit.
+	editError string
 
 	// GH CLI validation error
 	ghError     string
@@ -57,13 +62,16 @@ func (s *SettingsOverlay) SetSize(width, height int) {
 // LoadFromConfig populates settings items from a config.
 func (s *SettingsOverlay) LoadFromConfig(cfg *config.Config) {
 	s.items = []SettingsItem{
+		{Section: "Agent", Label: "Watchdog timeout", Key: "agent.watchdogTimeout", Type: SettingsItemString, StringVal: cfg.Agent.WatchdogTimeout},
 		{Section: "Worktree", Label: "Setup command", Key: "worktree.setup", Type: SettingsItemString, StringVal: cfg.Worktree.Setup},
+		{Section: "Bash", Label: "Command timeout", Key: "bash.timeout", Type: SettingsItemString, StringVal: cfg.Bash.Timeout},
 		{Section: "On Complete", Label: "Push to remote", Key: "onComplete.push", Type: SettingsItemBool, BoolVal: cfg.OnComplete.Push},
 		{Section: "On Complete", Label: "Create pull request", Key: "onComplete.createPR", Type: SettingsItemBool, BoolVal: cfg.OnComplete.CreatePR},
 	}
 	s.selectedIndex = 0
 	s.editing = false
 	s.editBuffer = ""
+	s.editError = ""
 	s.ghError = ""
 	s.showGHError = false
 }
@@ -74,6 +82,10 @@ func (s *SettingsOverlay) ApplyToConfig(cfg *config.Config) {
 		switch item.Key {
 		case "worktree.setup":
 			cfg.Worktree.Setup = item.StringVal
+		case "bash.timeout":
+			cfg.Bash.Timeout = item.StringVal
+		case "agent.watchdogTimeout":
+			cfg.Agent.WatchdogTimeout = item.StringVal
 		case "onComplete.push":
 			cfg.OnComplete.Push = item.BoolVal
 		case "onComplete.createPR":
@@ -106,27 +118,74 @@ func (s *SettingsOverlay) StartEditing() {
 	if s.selectedIndex < len(s.items) && s.items[s.selectedIndex].Type == SettingsItemString {
 		s.editing = true
 		s.editBuffer = s.items[s.selectedIndex].StringVal
+		s.editError = ""
 	}
 }
 
-// ConfirmEdit saves the edit buffer to the selected item.
+// ConfirmEdit saves the edit buffer to the selected item. If the buffer fails
+// per-key validation (e.g. an unparseable duration for bash.timeout), the
+// edit is rejected: editing stays active, editError is set, and the buffer is
+// preserved so the user can correct it.
 func (s *SettingsOverlay) ConfirmEdit() {
-	if s.editing && s.selectedIndex < len(s.items) {
-		s.items[s.selectedIndex].StringVal = s.editBuffer
-		s.editing = false
-		s.editBuffer = ""
+	if !s.editing || s.selectedIndex >= len(s.items) {
+		return
 	}
+	item := &s.items[s.selectedIndex]
+	value := s.editBuffer
+	if msg := validateSetting(item.Key, value); msg != "" {
+		s.editError = msg
+		return
+	}
+	if isDurationKey(item.Key) {
+		value = strings.TrimSpace(value)
+	}
+	item.StringVal = value
+	s.editing = false
+	s.editBuffer = ""
+	s.editError = ""
+}
+
+// isDurationKey reports whether key holds a Go duration string subject to
+// the validateSetting parsing rules.
+func isDurationKey(key string) bool {
+	switch key {
+	case "bash.timeout", "agent.watchdogTimeout":
+		return true
+	}
+	return false
+}
+
+// validateSetting returns an empty string when value is acceptable for key,
+// or a human-readable error message otherwise.
+func validateSetting(key, value string) string {
+	if !isDurationKey(key) {
+		return ""
+	}
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	d, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return fmt.Sprintf("invalid duration %q (use e.g. 30s, 5m)", value)
+	}
+	if d < 0 {
+		return fmt.Sprintf("duration must not be negative: %q", value)
+	}
+	return ""
 }
 
 // CancelEdit discards the edit buffer.
 func (s *SettingsOverlay) CancelEdit() {
 	s.editing = false
 	s.editBuffer = ""
+	s.editError = ""
 }
 
 // AddEditChar adds a character to the edit buffer.
 func (s *SettingsOverlay) AddEditChar(ch rune) {
 	s.editBuffer += string(ch)
+	s.editError = ""
 }
 
 // DeleteEditChar removes the last character from the edit buffer.
@@ -135,6 +194,7 @@ func (s *SettingsOverlay) DeleteEditChar() {
 		runes := []rune(s.editBuffer)
 		s.editBuffer = string(runes[:len(runes)-1])
 	}
+	s.editError = ""
 }
 
 // ToggleBool toggles the selected boolean value.
@@ -349,6 +409,14 @@ func (s *SettingsOverlay) renderItems(modalWidth int) string {
 		result.WriteString(strings.Repeat(" ", padding))
 		result.WriteString(valueStr)
 		result.WriteString("\n")
+
+		// Inline edit error (e.g. invalid duration for bash.timeout)
+		if isSelected && s.editing && s.editError != "" {
+			errStyle := lipgloss.NewStyle().Foreground(ErrorColor)
+			result.WriteString("    ")
+			result.WriteString(errStyle.Render(s.editError))
+			result.WriteString("\n")
+		}
 	}
 
 	return result.String()

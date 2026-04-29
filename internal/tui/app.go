@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -1158,6 +1157,12 @@ func (a App) handleBranchWarningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			// Configure and show the spinner
 			a.worktreeSpinner.Configure(prdName, branchName, defaultBranch, relWorktreePath, a.config.Worktree.Setup)
+			// Only surface a bash.timeout warning when the setup step will
+			// actually run; otherwise the timeout doesn't apply to anything
+			// visible in this flow.
+			if a.config.Worktree.Setup != "" {
+				a.worktreeSpinner.SetWarning(a.config.BashTimeoutWarning())
+			}
 			a.worktreeSpinner.SetSize(a.width, a.height)
 			a.pendingStartPRD = prdName
 			a.pendingWorktreePath = worktreePath
@@ -1637,14 +1642,11 @@ func (a *App) runWorktreeStep(step WorktreeSpinnerStep, baseDir, worktreePath, b
 
 	case SpinnerStepRunSetup:
 		setupCmd := a.config.Worktree.Setup
+		timeout := a.config.BashTimeout()
+		timeoutLabel := strings.TrimSpace(a.config.Bash.Timeout)
 		return func() tea.Msg {
-			cmd := exec.Command("sh", "-c", setupCmd)
-			cmd.Dir = worktreePath
-			if out, err := cmd.CombinedOutput(); err != nil {
-				return worktreeStepResultMsg{
-					step: SpinnerStepRunSetup,
-					err:  fmt.Errorf("%s\n%s", err.Error(), strings.TrimSpace(string(out))),
-				}
+			if err := runSetupCommand(setupCmd, worktreePath, timeout, timeoutLabel); err != nil {
+				return worktreeStepResultMsg{step: SpinnerStepRunSetup, err: err}
 			}
 			return worktreeStepResultMsg{step: SpinnerStepRunSetup}
 		}

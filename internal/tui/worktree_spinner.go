@@ -40,6 +40,7 @@ type WorktreeSpinner struct {
 	spinnerFrame int
 	steps        []stepInfo
 	errMsg       string // Overall error message
+	warningMsg   string // Non-fatal warning (e.g. invalid bash.timeout fallback)
 	cancelled    bool
 }
 
@@ -58,6 +59,7 @@ func (w *WorktreeSpinner) Configure(prdName, branchName, defaultBranch, worktree
 	w.currentStep = SpinnerStepCreateBranch
 	w.spinnerFrame = 0
 	w.errMsg = ""
+	w.warningMsg = ""
 	w.cancelled = false
 
 	// Build steps list
@@ -100,6 +102,17 @@ func (w *WorktreeSpinner) AdvanceStep() {
 	if nextIdx < len(w.steps) {
 		w.steps[nextIdx].active = true
 	}
+}
+
+// SetWarning sets a non-fatal warning to display alongside the spinner.
+// Passing an empty string clears any existing warning.
+func (w *WorktreeSpinner) SetWarning(msg string) {
+	w.warningMsg = msg
+}
+
+// Warning returns the current warning message (empty when none).
+func (w *WorktreeSpinner) Warning() string {
+	return w.warningMsg
 }
 
 // SetError sets an error on the current step.
@@ -215,6 +228,14 @@ func (w *WorktreeSpinner) Render() string {
 	if w.IsDone() {
 		content.WriteString("\n")
 		content.WriteString(checkStyle.Render("Starting loop..."))
+	}
+
+	// Non-fatal warning (e.g. bash.timeout fallback)
+	if w.warningMsg != "" {
+		warningStyle := lipgloss.NewStyle().Foreground(WarningColor)
+		content.WriteString("\n")
+		content.WriteString(warningStyle.Render("⚠ " + w.warningMsg))
+		content.WriteString("\n")
 	}
 
 	// Footer

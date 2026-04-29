@@ -27,7 +27,11 @@ type RetryConfig struct {
 	Enabled     bool            // Whether retry is enabled (default: true)
 }
 
-// DefaultWatchdogTimeout is the default duration of silence before the watchdog kills a hung process.
+// DefaultWatchdogTimeout is the default duration of silence before the
+// watchdog kills a hung process. Kept in sync with
+// config.DefaultAgentWatchdogTimeout — both must move together so behaviour
+// is identical whether or not the manager was given a config (callers can
+// override at runtime via Loop.SetWatchdogTimeout).
 const DefaultWatchdogTimeout = 5 * time.Minute
 
 // DefaultRetryConfig returns the default retry configuration.
