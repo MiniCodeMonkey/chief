@@ -77,11 +77,8 @@ func TestParseLineOpenCode_text(t *testing.T) {
 func TestParseLineOpenCode_stepFinishStop(t *testing.T) {
 	line := `{"type":"step_finish","timestamp":1767036064273,"sessionID":"ses_494719016ffe85dkDMj0FPRbHK","part":{"id":"prt_b6b8e9209001ojZ4ECN1geZISm","sessionID":"ses_494719016ffe85dkDMj0FPRbHK","messageID":"msg_b6b8e8627001yM4qKJCXdC7W1L","type":"step-finish","reason":"stop","snapshot":"09dd05d11a4ac013136c1df10932efc0ad9116e8","cost":0.001,"tokens":{"input":671,"output":8,"reasoning":0,"cache":{"read":21415,"write":0}}}}`
 	ev := ParseLineOpenCode(line)
-	if ev == nil {
-		t.Fatal("expected event, got nil")
-	}
-	if ev.Type != EventComplete {
-		t.Errorf("expected EventComplete, got %v", ev.Type)
+	if ev != nil {
+		t.Errorf("expected nil (step_finish does not signal PRD completion; <chief-done/> + buildPrompt drive completion), got %v", ev)
 	}
 }
 

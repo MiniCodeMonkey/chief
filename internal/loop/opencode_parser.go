@@ -110,12 +110,11 @@ func ParseLineOpenCode(line string) *Event {
 		}
 
 	case "step_finish":
-		if ev.Part == nil {
-			return nil
-		}
-		if ev.Part.Reason == "stop" {
-			return &Event{Type: EventComplete}
-		}
+		// step_finish signals the end of a single agent step, not the end of the PRD.
+		// Per-story completion is signaled via the <chief-done/> text marker (handled in
+		// the "text" case above). Overall PRD completion is emitted by the loop when
+		// NextStory() returns nil. Mapping reason=="stop" to EventComplete here would
+		// fire the completion screen after every story.
 		return nil
 
 	case "error":
