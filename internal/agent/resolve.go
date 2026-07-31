@@ -43,8 +43,10 @@ func Resolve(flagAgent, flagPath string, cfg *config.Config) (loop.Provider, err
 		return NewCursorProvider(cliPath), nil
 	case "gemini":
 		return NewGeminiProvider(cliPath), nil
+	case "copilot", "copilot-cli":
+		return NewCopilotProvider(cliPath), nil
 	default:
-		return nil, fmt.Errorf("unknown agent provider %q: expected \"claude\", \"codex\", \"opencode\", \"cursor\", or \"gemini\"", providerName)
+		return nil, fmt.Errorf("unknown agent provider %q: expected \"claude\", \"codex\", \"opencode\", \"cursor\", \"gemini\", or \"copilot\"", providerName)
 	}
 }
 

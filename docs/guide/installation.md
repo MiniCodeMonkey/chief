@@ -54,6 +54,15 @@ To use [Cursor CLI](https://cursor.com/docs/cli/overview) as the agent:
 3. Run `agent login` for authentication.
 4. Run Chief with `chief --agent cursor` or set `CHIEF_AGENT=cursor`, or set `agent.provider: cursor` in `.chief/config.yaml`.
 
+### Option E: GitHub Copilot CLI
+
+To use [GitHub Copilot CLI](https://github.com/features/copilot/cli) as the agent:
+
+1. Install Copilot CLI using the [official instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli).
+2. Ensure `copilot` is on your PATH, or set `agent.cliPath` in `.chief/config.yaml`.
+3. Run `copilot login` for authentication.
+4. Run Chief with `chief --agent copilot` or set `CHIEF_AGENT=copilot`, or set `agent.provider: copilot` in `.chief/config.yaml`.
+
 ### Optional: GitHub CLI (`gh`)
 
 If you want Chief to automatically create pull requests when a PRD completes, install the [GitHub CLI](https://cli.github.com/):

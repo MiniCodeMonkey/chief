@@ -19,6 +19,8 @@ Before you begin, make sure you have:
   - [Codex CLI](https://developers.openai.com/codex/cli/reference)
   - [OpenCode CLI](https://opencode.ai/docs/)
   - [Cursor CLI](https://cursor.com/docs/cli/overview)
+  - [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+  - [GitHub Copilot CLI](https://github.com/features/copilot/cli)
 - A project you want to work on (or create a new one)
 
 ::: tip Verify your agent CLI is working
@@ -27,6 +29,8 @@ Run the version command for your agent to confirm it's installed:
 - `codex --version` (Codex)
 - `opencode --version` (OpenCode)
 - `agent --version` (Cursor CLI)
+- `gemini --version` (Gemini CLI)
+- `copilot --version` (GitHub Copilot CLI)
 :::
 
 ## Step 1: Install Chief

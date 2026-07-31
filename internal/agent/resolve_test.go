@@ -178,6 +178,23 @@ func TestResolve_gemini(t *testing.T) {
 	}
 }
 
+func TestResolve_copilot(t *testing.T) {
+	for _, name := range []string{"copilot", "copilot-cli"} {
+		got := mustResolve(t, name, "", nil)
+		if got.Name() != "Copilot" {
+			t.Errorf("Resolve(%s) name = %q, want Copilot", name, got.Name())
+		}
+		if got.CLIPath() != "copilot" {
+			t.Errorf("Resolve(%s) CLIPath = %q, want copilot", name, got.CLIPath())
+		}
+	}
+
+	got := mustResolve(t, "copilot", "/usr/local/bin/copilot", nil)
+	if got.CLIPath() != "/usr/local/bin/copilot" {
+		t.Errorf("Resolve(copilot, custom path) CLIPath = %q, want /usr/local/bin/copilot", got.CLIPath())
+	}
+}
+
 func TestResolve_unknownProvider(t *testing.T) {
 	_, err := Resolve("typo", "", nil)
 	if err == nil {
@@ -188,6 +205,9 @@ func TestResolve_unknownProvider(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "gemini") {
 		t.Errorf("error should mention gemini as a valid option: %v", err)
+	}
+	if !strings.Contains(err.Error(), "copilot") {
+		t.Errorf("error should mention copilot as a valid option: %v", err)
 	}
 }
 
