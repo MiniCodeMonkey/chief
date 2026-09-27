@@ -23,6 +23,7 @@ type Credentials struct {
 	DeviceName   string    `yaml:"device_name"`
 	DeviceID     string    `yaml:"device_id"`
 	UplinkURL    string    `yaml:"uplink_url"`
+	WebSocketURL string    `yaml:"websocket_url,omitempty"`
 }
 
 // IsExpired returns true if the access token has expired.

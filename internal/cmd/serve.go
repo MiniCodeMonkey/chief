@@ -92,7 +92,10 @@ func RunServe(opts ServeOptions) error {
 	activeRuns := make(map[string]string) // run_id -> prd_id
 
 	// Build WebSocket URL from credentials.
-	wsURL := buildWSURL(creds.UplinkURL)
+	wsURL := creds.WebSocketURL
+	if wsURL == "" {
+		wsURL = buildWSURL(creds.UplinkURL)
+	}
 
 	// Create WebSocket client.
 	client := uplink.NewClient(wsURL, creds.AccessToken)
@@ -689,7 +692,7 @@ func buildWSURL(httpURL string) string {
 	wsURL := strings.TrimRight(httpURL, "/")
 	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
 	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
-	return wsURL + "/ws"
+	return wsURL + "/ws/device"
 }
 
 // collectDiffs runs git diff in the project directory and parses the output.

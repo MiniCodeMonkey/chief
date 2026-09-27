@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/minicodemonkey/chief/internal/auth"
@@ -75,7 +76,7 @@ func RunLogin(opts LoginOptions) error {
 				RefreshToken: pollResp.Token.RefreshToken,
 				Expiry:       time.Now().Add(time.Duration(pollResp.Token.ExpiresIn) * time.Second),
 				DeviceName:   deviceName,
-				DeviceID:     pollResp.Token.DeviceID,
+				DeviceID:     strconv.Itoa(pollResp.Token.DeviceID),
 				UplinkURL:    uplinkURL,
 			}
 

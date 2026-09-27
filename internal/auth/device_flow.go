@@ -13,7 +13,7 @@ import (
 type DeviceCodeResponse struct {
 	DeviceCode string `json:"device_code"`
 	UserCode   string `json:"user_code"`
-	VerifyURL  string `json:"verification_uri"`
+	VerifyURL  string `json:"verify_url"`
 }
 
 // TokenResponse holds the response from a successful token exchange.
@@ -21,7 +21,7 @@ type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
-	DeviceID     string `json:"device_id"`
+	DeviceID     int    `json:"device_id"`
 }
 
 // DeviceFlow handles the OAuth device authorization flow for CLI authentication.

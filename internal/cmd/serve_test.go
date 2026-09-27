@@ -26,9 +26,9 @@ func TestBuildWSURL(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"https://uplink.chiefloop.com", "wss://uplink.chiefloop.com/ws"},
-		{"http://localhost:8080", "ws://localhost:8080/ws"},
-		{"https://uplink.chiefloop.com/", "wss://uplink.chiefloop.com/ws"},
+		{"https://uplink.chiefloop.com", "wss://uplink.chiefloop.com/ws/device"},
+		{"http://localhost:8080", "ws://localhost:8080/ws/device"},
+		{"https://uplink.chiefloop.com/", "wss://uplink.chiefloop.com/ws/device"},
 	}
 
 	for _, tt := range tests {

@@ -83,7 +83,7 @@ func TestPollForTokenSuccess(t *testing.T) {
 			AccessToken:  "access-tok",
 			RefreshToken: "refresh-tok",
 			ExpiresIn:    3600,
-			DeviceID:     "device-42",
+			DeviceID:     42,
 		})
 	}))
 	defer server.Close()
@@ -105,8 +105,8 @@ func TestPollForTokenSuccess(t *testing.T) {
 	if resp.Token.ExpiresIn != 3600 {
 		t.Errorf("expected 3600, got %d", resp.Token.ExpiresIn)
 	}
-	if resp.Token.DeviceID != "device-42" {
-		t.Errorf("expected device-42, got %s", resp.Token.DeviceID)
+	if resp.Token.DeviceID != 42 {
+		t.Errorf("expected 42, got %d", resp.Token.DeviceID)
 	}
 }
 

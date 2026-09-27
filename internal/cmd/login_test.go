@@ -33,7 +33,7 @@ func TestRunLoginSuccess(t *testing.T) {
 				AccessToken:  "test-access-token",
 				RefreshToken: "test-refresh-token",
 				ExpiresIn:    3600,
-				DeviceID:     "dev-123",
+				DeviceID:     123,
 			})
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -67,8 +67,8 @@ func TestRunLoginSuccess(t *testing.T) {
 	if creds.AccessToken != "test-access-token" {
 		t.Errorf("expected access token 'test-access-token', got %q", creds.AccessToken)
 	}
-	if creds.DeviceID != "dev-123" {
-		t.Errorf("expected device ID 'dev-123', got %q", creds.DeviceID)
+	if creds.DeviceID != "123" {
+		t.Errorf("expected device ID '123', got %q", creds.DeviceID)
 	}
 	if creds.UplinkURL != server.URL {
 		t.Errorf("expected uplink URL %q, got %q", server.URL, creds.UplinkURL)
