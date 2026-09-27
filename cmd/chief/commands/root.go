@@ -45,7 +45,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	// Persistent flags (available to all subcommands)
-	rootCmd.PersistentFlags().StringVar(&flagAgent, "agent", "", "Agent CLI to use: claude (default), codex, opencode, cursor, or gemini")
+	rootCmd.PersistentFlags().StringVar(&flagAgent, "agent", "", "Agent CLI to use: claude (default), codex, opencode, cursor, gemini, or copilot")
 	rootCmd.PersistentFlags().StringVar(&flagAgentPath, "agent-path", "", "Custom path to agent CLI binary")
 	rootCmd.PersistentFlags().BoolVar(&flagVerbose, "verbose", false, "Show raw agent output in log")
 
