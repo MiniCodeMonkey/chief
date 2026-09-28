@@ -11,6 +11,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// UserConfigPath returns the path to the global user config file.
+// It respects XDG_CONFIG_HOME: returns $XDG_CONFIG_HOME/chief/config.yaml when set,
+// otherwise falls back to ~/.chief/config.yaml.
+func UserConfigPath() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "chief", "config.yaml")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "~"
+	}
+	return filepath.Join(home, ".chief", "config.yaml")
+}
+
 const configFile = ".chief/config.yaml"
 
 // Config holds project-level settings for Chief.
@@ -203,28 +217,92 @@ func Exists(baseDir string) bool {
 	return err == nil
 }
 
-// Load reads the config from .chief/config.yaml.
-// Returns Default() when the file doesn't exist (no error).
-func Load(baseDir string) (*Config, error) {
-	path := configPath(baseDir)
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return Default(), nil
-		}
-		return nil, err
-	}
-
+// LoadUser reads the global user config from UserConfigPath().
+// Returns Default() (no error) when the file does not exist.
+func LoadUser() (*Config, error) {
 	cfg := Default()
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	if err := decodeInto(UserConfigPath(), cfg); err != nil {
 		return nil, err
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-
 	return cfg, nil
+}
+
+// Load returns the effective config: the global user config with the project
+// config from .chief/config.yaml layered on top. Both files decode into the
+// same struct, and yaml.v3 only overwrites fields whose keys are present, so
+// any key the project file sets wins (including false or ""), and every key it
+// omits keeps the user value.
+func Load(baseDir string) (*Config, error) {
+	cfg := Default()
+	if err := decodeInto(UserConfigPath(), cfg); err != nil {
+		return nil, err
+	}
+	if err := decodeInto(configPath(baseDir), cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// decodeInto unmarshals the YAML file at path into cfg. A missing file leaves
+// cfg unchanged and is not an error.
+func decodeInto(path string, cfg *Config) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return yaml.Unmarshal(data, cfg)
+}
+
+// SaveValue sets a single dotted key (for example "onComplete.push") in the
+// project's .chief/config.yaml and leaves every other key in the file as it
+// is. Keys the project never set stay absent, so they keep inheriting from
+// the user config.
+func SaveValue(baseDir, key string, value any) error {
+	path := configPath(baseDir)
+
+	document := map[string]any{}
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err == nil {
+		if err := yaml.Unmarshal(data, &document); err != nil {
+			return err
+		}
+		if document == nil {
+			document = map[string]any{}
+		}
+	}
+
+	parts := strings.Split(key, ".")
+	node := document
+	for _, part := range parts[:len(parts)-1] {
+		child, ok := node[part].(map[string]any)
+		if !ok {
+			child = map[string]any{}
+			node[part] = child
+		}
+		node = child
+	}
+	node[parts[len(parts)-1]] = value
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	out, err := yaml.Marshal(document)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0o644)
 }
 
 // Save writes the config to .chief/config.yaml.

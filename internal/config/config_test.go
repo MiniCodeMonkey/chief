@@ -8,6 +8,26 @@ import (
 	"time"
 )
 
+func TestUserConfigPath_WithXDG(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/xdg")
+	got := UserConfigPath()
+	want := "/custom/xdg/chief/config.yaml"
+	if got != want {
+		t.Errorf("expected %q, got %q", want, got)
+	}
+}
+
+func TestUserConfigPath_WithoutXDG(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	got := UserConfigPath()
+	if !strings.HasSuffix(got, filepath.Join(".chief", "config.yaml")) {
+		t.Errorf("expected path ending in .chief/config.yaml, got %q", got)
+	}
+	if strings.HasPrefix(got, "~") {
+		t.Errorf("expected expanded home dir, got %q", got)
+	}
+}
+
 func TestDefault(t *testing.T) {
 	cfg := Default()
 	if cfg.Worktree.Setup != "" {
@@ -495,6 +515,212 @@ func TestSaveMkdirError(t *testing.T) {
 
 	if err := Save(dir, &Config{}); err == nil {
 		t.Fatal("expected error when .chief path is a file, got nil")
+	}
+}
+
+func TestLoadUser_FileAbsent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	// No file written — directory exists but config.yaml does not.
+	cfg, err := LoadUser()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+}
+
+func TestLoadUser_FilePresent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "chief")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("theme: gruvbox-dark\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadUser()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Theme != "gruvbox-dark" {
+		t.Errorf("expected theme %q, got %q", "gruvbox-dark", cfg.Theme)
+	}
+}
+
+func TestLoadUser_FileMalformed(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "chief")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(":\tinvalid: yaml: [\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadUser()
+	if err == nil {
+		t.Fatal("expected error for malformed YAML, got nil")
+	}
+}
+
+func TestEndToEnd_UserConfigOnly(t *testing.T) {
+	xdgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	cfgDir := filepath.Join(xdgDir, "chief")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("theme: gruvbox-dark\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+	cfg, err := Load(projectDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Theme != "gruvbox-dark" {
+		t.Errorf("expected theme %q, got %q", "gruvbox-dark", cfg.Theme)
+	}
+}
+
+func TestEndToEnd_ProjectOverridesUser(t *testing.T) {
+	xdgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	cfgDir := filepath.Join(xdgDir, "chief")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("theme: gruvbox-dark\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+	chiefDir := filepath.Join(projectDir, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("theme: dracula\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(projectDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Theme != "dracula" {
+		t.Errorf("expected theme %q, got %q", "dracula", cfg.Theme)
+	}
+}
+
+func TestEndToEnd_ProjectOverridesUserWithZeroValue(t *testing.T) {
+	xdgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	cfgDir := filepath.Join(xdgDir, "chief")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("onComplete:\n  push: true\n  createPR: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+	chiefDir := filepath.Join(projectDir, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The project explicitly opts out of both, even though the user default is true.
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("onComplete:\n  push: false\n  createPR: false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(projectDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.OnComplete.Push {
+		t.Error("expected project's explicit push: false to override the user default")
+	}
+	if cfg.OnComplete.CreatePR {
+		t.Error("expected project's explicit createPR: false to override the user default")
+	}
+}
+
+func TestSaveValue_KeepsInheritedKeysOutOfProject(t *testing.T) {
+	xdgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	cfgDir := filepath.Join(xdgDir, "chief")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("onComplete:\n  push: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+	chiefDir := filepath.Join(projectDir, ".chief")
+	if err := os.MkdirAll(chiefDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chiefDir, "config.yaml"), []byte("worktree:\n  setup: npm install\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SaveValue(projectDir, "onComplete.createPR", true); err != nil {
+		t.Fatalf("SaveValue failed: %v", err)
+	}
+
+	cfg, err := Load(projectDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.OnComplete.Push {
+		t.Error("expected push to keep inheriting true from the user config")
+	}
+	if !cfg.OnComplete.CreatePR {
+		t.Error("expected createPR: true from the saved project value")
+	}
+	if cfg.Worktree.Setup != "npm install" {
+		t.Errorf("expected existing project key to survive, got %q", cfg.Worktree.Setup)
+	}
+
+	data, err := os.ReadFile(filepath.Join(chiefDir, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "push") {
+		t.Errorf("expected push to stay out of the project file, got:\n%s", data)
+	}
+}
+
+func TestLoad_CompilesPatternFromUserConfig(t *testing.T) {
+	xdgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	cfgDir := filepath.Join(xdgDir, "chief")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("worktree:\n  promptBranchPattern: \"^develop$\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(t.TempDir())
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.ShouldPromptForWorktree("develop") {
+		t.Error("expected the user config pattern to match develop")
+	}
+	if cfg.ShouldPromptForWorktree("main") {
+		t.Error("expected the default pattern to be replaced by the user config pattern")
 	}
 }
 

@@ -101,6 +101,20 @@ func (s *SettingsOverlay) ApplyToConfig(cfg *config.Config) {
 	}
 }
 
+// ValueForKey returns the current value of the item with the given key.
+func (s *SettingsOverlay) ValueForKey(key string) (any, bool) {
+	for _, item := range s.items {
+		if item.Key != key {
+			continue
+		}
+		if item.Type == SettingsItemBool {
+			return item.BoolVal, true
+		}
+		return item.StringVal, true
+	}
+	return nil, false
+}
+
 // MoveUp moves the selection up.
 func (s *SettingsOverlay) MoveUp() {
 	if s.selectedIndex > 0 {

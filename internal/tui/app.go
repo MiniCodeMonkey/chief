@@ -292,7 +292,8 @@ func NewAppWithOptions(prdPath string, maxIter int, provider loop.Provider) (*Ap
 		baseDir, _ = os.Getwd()
 	}
 
-	// Load project config
+	// Load project config, merged with the global user config for behavior
+	// (worktree setup, on-complete automation, theme, agent selection).
 	cfg, err := config.Load(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load .chief/config.yaml: %w", err)
@@ -1463,13 +1464,16 @@ func (a App) handleSettingsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.settingsOverlay.IsEditing() {
 		switch msg.String() {
 		case "enter":
+			item := a.settingsOverlay.GetSelectedItem()
 			if err := a.settingsOverlay.ConfirmEdit(); err != nil {
 				// Validation rejected the value; stay in edit mode so the
 				// user can fix it. The overlay renders the error inline.
 				return a, nil
 			}
 			a.settingsOverlay.ApplyToConfig(a.config)
-			_ = config.Save(a.baseDir, a.config)
+			if item != nil {
+				a.saveSetting(item.Key)
+			}
 			return a, nil
 		case "esc":
 			a.settingsOverlay.CancelEdit()
@@ -1513,7 +1517,7 @@ func (a App) handleSettingsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			a.settingsOverlay.ApplyToConfig(a.config)
-			_ = config.Save(a.baseDir, a.config)
+			a.saveSetting(key)
 			return a, nil
 		case SettingsItemString:
 			a.settingsOverlay.StartEditing()
@@ -1546,8 +1550,18 @@ func (a App) handleSettingsGHCheck(msg settingsGHCheckResultMsg) (tea.Model, tea
 
 	// Validation passed - save the config
 	a.settingsOverlay.ApplyToConfig(a.config)
-	_ = config.Save(a.baseDir, a.config)
+	a.saveSetting("onComplete.createPR")
 	return a, nil
+}
+
+// saveSetting writes only the given settings key to the project config file,
+// so values inherited from the user config are not copied into the project.
+func (a App) saveSetting(key string) {
+	// Recompile derived state (the prompt-branch regex) after ApplyToConfig.
+	_ = a.config.Validate()
+	if value, ok := a.settingsOverlay.ValueForKey(key); ok {
+		_ = config.SaveValue(a.baseDir, key, value)
+	}
 }
 
 // handleCompletionKeys handles keyboard input for the completion screen.
