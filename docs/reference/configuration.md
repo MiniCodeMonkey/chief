@@ -14,7 +14,7 @@ Chief stores project-level settings in `.chief/config.yaml`. This file is create
 
 ```yaml
 agent:
-  provider: claude   # or "codex", "opencode", or "cursor"
+  provider: claude   # or "codex", "opencode", "cursor", "gemini", or "copilot"
   cliPath: ""        # optional path to CLI binary
 worktree:
   setup: "npm install"
@@ -27,7 +27,7 @@ onComplete:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, `opencode`, or `cursor` |
+| `agent.provider` | string | `"claude"` | Agent CLI to use: `claude`, `codex`, `opencode`, `cursor`, `gemini`, or `copilot` |
 | `agent.cliPath` | string | `""` | Optional path to the agent binary (e.g. `/usr/local/bin/opencode`). If empty, Chief uses the provider name from PATH. |
 | `worktree.setup` | string | `""` | Shell command to run in new worktrees (e.g., `npm install`, `go mod download`) |
 | `onComplete.push` | bool | `false` | Automatically push the branch to remote when a PRD completes |
@@ -88,7 +88,7 @@ These settings are saved to `.chief/config.yaml` and can be changed at any time 
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--agent <provider>` | Agent CLI to use: `claude`, `codex`, `opencode`, or `cursor` | From config / env / `claude` |
+| `--agent <provider>` | Agent CLI to use: `claude`, `codex`, `opencode`, `cursor`, `gemini`, or `copilot` | From config / env / `claude` |
 | `--agent-path <path>` | Custom path to the agent CLI binary | From config / env |
 | `--max-iterations <n>`, `-n` | Loop iteration limit | Dynamic |
 | `--no-retry` | Disable auto-retry on agent crashes | `false` |
@@ -100,7 +100,7 @@ When `--max-iterations` is not specified, Chief calculates a dynamic limit based
 
 ## Agent
 
-Chief can use **Claude Code** (default), **Codex CLI**, **OpenCode CLI**, **Cursor CLI**, or **Gemini CLI** as the agent. Choose via:
+Chief can use **Claude Code** (default), **Codex CLI**, **OpenCode CLI**, **Cursor CLI**, **Gemini CLI**, or **GitHub Copilot CLI** as the agent. Choose via:
 
 - **Config:** `agent.provider: opencode` and optionally `agent.cliPath: /path/to/opencode` in `.chief/config.yaml`
 - **Environment:** `CHIEF_AGENT=opencode`, `CHIEF_AGENT_PATH=/path/to/opencode`

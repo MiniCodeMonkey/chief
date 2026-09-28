@@ -51,6 +51,13 @@ Error: OpenCode CLI not found in PATH. Install it or set agent.cliPath in .chief
     cliPath: /path/to/agent
   ```
   Run `agent login`. Verify with `agent --version` (or your `cliPath`).
+- **GitHub Copilot:** Install [GitHub Copilot CLI](https://github.com/features/copilot/cli) and ensure `copilot` is in PATH, or set the path in config:
+  ```yaml
+  agent:
+    provider: copilot
+    cliPath: /usr/local/bin/copilot
+  ```
+  Run `copilot login`. Verify with `copilot --version` (or your `cliPath`).
 
 ## Permission Denied
 
@@ -70,9 +77,9 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 **Solution:**
 
-1. Check the agent log for errors (the log file matches your agent: `claude.log`, `codex.log`, `opencode.log`, or `cursor.log`):
+1. Check the agent log for errors (the log file matches your agent: `claude.log`, `codex.log`, `opencode.log`, `cursor.log`, `gemini.log`, or `copilot.log`):
    ```bash
-   tail -100 .chief/prds/your-prd/claude.log  # or codex.log / opencode.log / cursor.log
+   tail -100 .chief/prds/your-prd/copilot.log
    ```
 
 2. Manually mark story complete if appropriate by editing `prd.md`:
@@ -92,7 +99,7 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 1. Check the agent log for what the agent is doing:
    ```bash
-   tail -f .chief/prds/your-prd/claude.log  # or codex.log / opencode.log / cursor.log
+   tail -f .chief/prds/your-prd/copilot.log
    ```
 
 2. Simplify the current story's acceptance criteria
@@ -121,7 +128,7 @@ Chief automatically configures the agent for autonomous operation by disabling p
 
 2. Or investigate why it's taking so many iterations:
    - Story too complex? Split it
-   - Stuck in a loop? Check the agent log (`claude.log`, `codex.log`, `opencode.log`, or `cursor.log`)
+   - Stuck in a loop? Check the matching agent log (for example, `claude.log` or `copilot.log`)
    - Unclear acceptance criteria? Clarify them
 
 ## "No PRD Found"
@@ -262,4 +269,4 @@ If none of these solutions help:
 3. Open a new issue with:
    - Chief version (`chief --version`)
    - Your `prd.md` (sanitized)
-   - Relevant agent log excerpts (e.g. `claude.log`, `codex.log`, `opencode.log`, or `cursor.log`)
+   - Relevant agent log excerpts (for example, `claude.log` or `copilot.log`)

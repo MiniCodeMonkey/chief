@@ -44,7 +44,7 @@ See the [documentation](https://minicodemonkey.github.io/chief/concepts/how-it-w
 
 ## Requirements
 
-- **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)**, **[Codex CLI](https://developers.openai.com/codex/cli/reference)**, **[OpenCode CLI](https://opencode.ai)**, or **[Gemini CLI](https://github.com/google-gemini/gemini-cli)** installed and authenticated
+- **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)**, **[Codex CLI](https://developers.openai.com/codex/cli/reference)**, **[OpenCode CLI](https://opencode.ai)**, **[Gemini CLI](https://github.com/google-gemini/gemini-cli)**, or **[GitHub Copilot CLI](https://github.com/features/copilot/cli)** installed and authenticated
 
 Use Claude by default, or configure another provider in `.chief/config.yaml`:
 
@@ -56,7 +56,7 @@ agent:
 
 Or run with `chief --agent opencode` or set `CHIEF_AGENT=opencode`.
 
-Supported values for `provider` are: `claude`, `codex`, `opencode`, `cursor`, and `gemini`.
+Supported values for `provider` are: `claude`, `codex`, `opencode`, `cursor`, `gemini`, and `copilot`.
 
 ## License
 

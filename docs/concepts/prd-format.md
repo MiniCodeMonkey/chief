@@ -23,7 +23,7 @@ Each PRD lives in its own subdirectory inside `.chief/prds/`:
 
 - **`prd.md`** — Written by you, read and updated by Chief. Contains project context and structured user stories.
 - **`progress.md`** — Written by the agent. Tracks what was done, what changed, and what was learned.
-- **`claude.log`** (or `codex.log` / `opencode.log` / `cursor.log`) — Written by Chief. Raw output from the agent for debugging.
+- **Agent log** (`claude.log`, `codex.log`, `opencode.log`, `cursor.log`, `gemini.log`, or `copilot.log`) — Written by Chief. Raw output from the agent for debugging.
 
 ## prd.md — The PRD File
 
